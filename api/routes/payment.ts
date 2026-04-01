@@ -15,12 +15,14 @@ const UDDOKTAPAY_BASE_URL = process.env.UDDOKTAPAY_BASE_URL || '';
 
 router.post('/create', async (req, res) => {
   try {
-    const { order_id, amount, full_name, email } = req.body;
+    const { order_id, amount, full_name, email, frontend_url } = req.body;
 
-    // Dynamically get the base URL from the incoming request's Origin header to guarantee it perfectly matches
-    // the frontend domain (e.g. .vercel.app, .shop, localhost:5173) the user is actively visiting.
+    // Dynamically get the base URL:
+    // 1. Exact origin reported by the browser checkout page (Most reliable)
+    // 2. Vercel environment variable
+    // 3. Header-based origin
     const origin = req.headers.origin;
-    const baseUrl = process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
+    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
 
     // Handle 100% discount / free orders
     if (amount === 0 || amount === '0') {

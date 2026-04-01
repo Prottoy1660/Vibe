@@ -190,7 +190,8 @@ export const Checkout = () => {
           order_id: order.id,
           amount: totalAmount,
           full_name: user.user_metadata?.full_name || 'Customer',
-          email: user.email
+          email: user.email,
+          frontend_url: window.location.origin
         })
       });
 
