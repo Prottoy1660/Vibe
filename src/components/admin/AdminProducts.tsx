@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plus, Edit2, Trash2, Loader2, Package, Save, Mail, AlertTriangle, Check, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, Package, Save, Mail, AlertTriangle, Check, Users, Lock } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -385,10 +385,14 @@ export const AdminProducts = () => {
                   <td className="py-3 px-4">
                     <div className="flex flex-col gap-0.5">
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                        📧 {product.email_slots ?? 3} slots
+                        <Mail className="w-3.5 h-3.5" /> {product.email_slots ?? 3} slots
                       </span>
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                        {(product.max_users_per_email ?? 1) === 1 ? '🔒 Exclusive' : `👥 ${product.max_users_per_email} shared`}
+                      <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                        {(product.max_users_per_email ?? 1) === 1 ? (
+                          <><Lock className="w-3 h-3 text-amber-500" /> Exclusive</>
+                        ) : (
+                          <><Users className="w-3 h-3 text-indigo-500" /> {product.max_users_per_email} shared</>
+                        )}
                       </span>
                     </div>
                   </td>

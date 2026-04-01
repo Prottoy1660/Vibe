@@ -28,9 +28,9 @@ function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
   for (const email of emails) {
     const d = parseISO(email.created_at);
     let label: string;
-    if (isToday(d)) label = `📅 Today — ${format(d, 'MMMM d, yyyy')}`;
-    else if (isYesterday(d)) label = `📆 Yesterday — ${format(d, 'MMMM d, yyyy')}`;
-    else label = `🗓️ ${format(d, 'EEEE, MMMM d, yyyy')}`;
+    if (isToday(d)) label = `Today — ${format(d, 'MMMM d, yyyy')}`;
+    else if (isYesterday(d)) label = `Yesterday — ${format(d, 'MMMM d, yyyy')}`;
+    else label = `${format(d, 'EEEE, MMMM d, yyyy')}`;
     if (!groups[label]) groups[label] = [];
     groups[label].push(email);
   }
@@ -284,7 +284,7 @@ export const AdminEmails = () => {
       ) : (
         Object.entries(grouped).map(([dateLabel, group]) => {
           const isCollapsed = collapsedDates[dateLabel];
-          const isGroupToday = dateLabel.startsWith('📅 Today');
+          const isGroupToday = dateLabel.startsWith('Today');
           return (
             <div key={dateLabel} className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] overflow-hidden shadow-soft dark:shadow-none">
               {/* Date section header */}
