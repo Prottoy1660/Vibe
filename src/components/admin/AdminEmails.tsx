@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, Mail, Trash2, Eye, EyeOff, CheckCircle2,
   AlertCircle, RefreshCw, Server, Download, Copy, Check,
-  ChevronDown, ChevronRight, Calendar
+  ChevronDown, ChevronRight, Calendar, Users, Lock, CircleDashed
 } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
@@ -14,6 +14,12 @@ interface EmailPool {
   status: 'available' | 'assigned' | 'shared' | 'used';
   created_at: string;
   assigned_at: string | null;
+  current_users?: number;
+  product_id?: string | null;
+  products?: {
+    title: string;
+    max_users_per_email: number;
+  } | null;
 }
 
 // Group emails by date label
@@ -52,7 +58,7 @@ export const AdminEmails = () => {
     try {
       const { data, error } = await supabase
         .from('emails_pool')
-        .select('*')
+        .select('*, products(title, max_users_per_email)')
         .order('created_at', { ascending: false })
         .limit(500);
       if (error) throw error;
@@ -323,6 +329,7 @@ export const AdminEmails = () => {
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email Address</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Password</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacity</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
                         <th className="py-2.5 px-4 text-right text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                       </tr>
@@ -358,6 +365,30 @@ export const AdminEmails = () => {
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${statusStyles[email.status] || statusStyles.used}`}>
                               {email.status}
                             </span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            {email.status === 'available' && !email.product_id ? (
+                              <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500 text-xs font-medium">
+                                <CircleDashed className="w-3.5 h-3.5" /> Empty
+                              </div>
+                            ) : email.products?.max_users_per_email === 1 ? (
+                              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-500 text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-500/20 max-w-max">
+                                <Lock className="w-3 h-3" /> Private (1/1)
+                              </div>
+                            ) : email.products?.max_users_per_email && email.products.max_users_per_email > 1 ? (
+                              <div className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border max-w-max ${
+                                (email.current_users || 0) >= email.products.max_users_per_email
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30'
+                                  : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30'
+                              }`}>
+                                <Users className="w-3 h-3" />
+                                {(email.current_users || 0)} / {email.products.max_users_per_email}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500 text-xs font-medium">
+                                <CircleDashed className="w-3.5 h-3.5" /> Unknown
+                              </div>
+                            )}
                           </td>
                           <td className="py-2.5 px-4 text-xs text-gray-400 dark:text-gray-500">
                             {format(parseISO(email.created_at), 'HH:mm')}
