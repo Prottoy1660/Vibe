@@ -27,6 +27,7 @@ interface UserEmail {
   assigned_at: string;
   is_active: boolean;
   order_id: string;
+  email_slots: number;
   email_details: {
     email: string;
     password: string;
@@ -99,7 +100,7 @@ export const AdobeEmail = () => {
             created_at,
             status,
             auto_renew,
-            products:product_id (id, duration, price)
+            products:product_id (id, duration, price, email_slots, max_users_per_email)
           )
         `)
         .eq('user_id', user.id)
@@ -154,6 +155,7 @@ export const AdobeEmail = () => {
             order_id: item.order_id,
             assigned_at: item.assigned_at,
             is_active: item.is_active,
+            email_slots: item.orders?.products?.email_slots ?? 3,
             email_details: {
               email: poolData?.email || 'Unknown',
               password: poolData?.password || 'Unknown'
@@ -277,9 +279,12 @@ export const AdobeEmail = () => {
     
     // Calculate how many emails have been generated for this specific order
     const orderEmailCount = emails.filter(e => e.order_id === orderId).length;
-    
-    if (orderEmailCount >= 3) {
-      alert('You have reached the maximum limit of 3 emails for this order.');
+
+    // Get slot limit from the product config (falls back to 3 if not set)
+    const slotLimit = emails.find(e => e.order_id === orderId)?.email_slots ?? 3;
+
+    if (orderEmailCount >= slotLimit) {
+      alert(`You have reached the maximum limit of ${slotLimit} email${slotLimit !== 1 ? 's' : ''} for this order.`);
       return;
     }
 

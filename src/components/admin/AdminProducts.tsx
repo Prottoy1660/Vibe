@@ -12,6 +12,8 @@ interface Product {
   description: string;
   image_url?: string;
   is_active: boolean;
+  email_slots: number;          // how many emails user can generate
+  max_users_per_email: number;  // 1 = exclusive, 2+ = shared slot
 }
 
 export const AdminProducts = () => {
@@ -29,7 +31,9 @@ export const AdminProducts = () => {
     icons: [],
     description: '',
     image_url: '',
-    is_active: true
+    is_active: true,
+    email_slots: 3,
+    max_users_per_email: 1,
   });
 
   useEffect(() => {
@@ -147,7 +151,9 @@ export const AdminProducts = () => {
       icons: [],
       description: '',
       image_url: '',
-      is_active: true
+      is_active: true,
+      email_slots: 3,
+      max_users_per_email: 1,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -253,7 +259,7 @@ export const AdminProducts = () => {
                   className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg h-24"
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Image URL (Optional)</label>
                 <input 
                   type="text" 
@@ -263,6 +269,52 @@ export const AdminProducts = () => {
                   placeholder="https://example.com/image.jpg"
                 />
                 <p className="text-xs text-gray-500 mt-1">If provided, this image will be displayed instead of the default gradient banner and icons.</p>
+              </div>
+
+              {/* ── Email Slot Configuration ── */}
+              <div className="md:col-span-2">
+                <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl p-4">
+                  <h5 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
+                    📧 Email Slot Configuration
+                  </h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                        Email Slots <span className="text-xs text-gray-400">(কতটি email generate করতে পারবে)</span>
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={formData.email_slots ?? 3}
+                        onChange={e => setFormData({...formData, email_slots: Number(e.target.value)})}
+                        className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
+                      />
+                      <p className="text-xs text-gray-400 mt-1">উদাহরণ: 3 = user তিনটি email generate করতে পারবে</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                        Max Users Per Email <span className="text-xs text-gray-400">(একটি email কতজন share করবে)</span>
+                      </label>
+                      <select
+                        value={formData.max_users_per_email ?? 1}
+                        onChange={e => setFormData({...formData, max_users_per_email: Number(e.target.value)})}
+                        className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
+                      >
+                        <option value={1}>1 — Exclusive (শুধু একজন)</option>
+                        <option value={2}>2 — Shared (দুইজন একই email পাবে)</option>
+                        <option value={3}>3 — Shared (তিনজন একই email পাবে)</option>
+                        <option value={4}>4 — Shared (চারজন একই email পাবে)</option>
+                        <option value={5}>5 — Shared (পাঁচজন একই email পাবে)</option>
+                      </select>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {(formData.max_users_per_email ?? 1) === 1
+                          ? '✅ Exclusive: প্রতিটি email শুধুমাত্র একজন user পাবে'
+                          : `🔗 Shared: একই email ${formData.max_users_per_email} জন user শেয়ার করবে`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="mt-4 flex justify-end space-x-3">
@@ -290,6 +342,7 @@ export const AdminProducts = () => {
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Product</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Price</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Duration</th>
+                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email Config</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
               </tr>
@@ -303,6 +356,16 @@ export const AdminProducts = () => {
                   </td>
                   <td className="py-3 px-4 font-semibold text-emerald-500">৳{product.price}</td>
                   <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{product.duration}</td>
+                  <td className="py-3 px-4">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                        📧 {product.email_slots ?? 3} slots
+                      </span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                        {(product.max_users_per_email ?? 1) === 1 ? '🔒 Exclusive' : `👥 ${product.max_users_per_email} shared`}
+                      </span>
+                    </div>
+                  </td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                       product.is_active ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'

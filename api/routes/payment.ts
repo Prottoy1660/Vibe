@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { assignEmailForOrder } from '../lib/emailAssignment.js';
 
 dotenv.config();
 
@@ -41,36 +42,8 @@ router.post('/create', async (req, res) => {
       const { data: order } = await supabase.from('orders').select('*').eq('id', order_id).single();
       if (order) {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        const { data: availableEmail } = await supabase.from('emails_pool').select('id').eq('status', 'available').limit(1).single();
-        if (availableEmail) {
-          await supabase.from('emails_pool').update({ status: 'assigned', assigned_at: new Date().toISOString() }).eq('id', availableEmail.id);
-          await supabase.from('user_emails').insert({ user_id: order.user_id, email_id: availableEmail.id, order_id: order.id, is_active: true });
-          await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-          
-          // Update or create generation logs for the current month
-          const currentMonth = new Date().toISOString().substring(0, 7); // Format: YYYY-MM
-          const { data: existingLog } = await supabase
-            .from('email_generation_logs')
-            .select('id, count')
-            .eq('user_id', order.user_id)
-            .eq('month', currentMonth)
-            .single();
-
-          if (existingLog) {
-            await supabase
-              .from('email_generation_logs')
-              .update({ count: existingLog.count + 1 })
-              .eq('id', existingLog.id);
-          } else {
-            await supabase
-              .from('email_generation_logs')
-              .insert({
-                user_id: order.user_id,
-                count: 1,
-                month: currentMonth
-              });
-          }
-        }
+        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
       return res.json({
@@ -87,12 +60,8 @@ router.post('/create', async (req, res) => {
       const { data: order } = await supabase.from('orders').select('*').eq('id', order_id).single();
       if (order) {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        const { data: availableEmail } = await supabase.from('emails_pool').select('id').eq('status', 'available').limit(1).single();
-        if (availableEmail) {
-          await supabase.from('emails_pool').update({ status: 'assigned', assigned_at: new Date().toISOString() }).eq('id', availableEmail.id);
-          await supabase.from('user_emails').insert({ user_id: order.user_id, email_id: availableEmail.id, order_id: order.id, is_active: true });
-          await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-        }
+        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
       return res.json({
@@ -248,59 +217,11 @@ router.post('/webhook', async (req, res) => {
         .single();
 
       if (order) {
-        const { data: availableEmail } = await supabase
-          .from('emails_pool')
-          .select('id')
-          .eq('status', 'available')
-          .limit(1)
-          .single();
+        // Use product-aware email assignment (respects email_slots & max_users_per_email)
+        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
 
-        if (availableEmail) {
-          // Assign email to user
-          await supabase
-            .from('emails_pool')
-            .update({ status: 'assigned', assigned_at: new Date().toISOString() })
-            .eq('id', availableEmail.id);
-
-          await supabase
-            .from('user_emails')
-            .insert({
-              user_id: order.user_id,
-              email_id: availableEmail.id,
-              order_id: order.id,
-              is_active: true
-            });
-
-          // Mark order as completed
-          await supabase
-            .from('orders')
-            .update({ status: 'completed' })
-            .eq('id', order.id);
-
-          // Update or create generation logs for the current month
-          const currentMonth = new Date().toISOString().substring(0, 7); // Format: YYYY-MM
-          const { data: existingLog } = await supabase
-            .from('email_generation_logs')
-            .select('id, count')
-            .eq('user_id', order.user_id)
-            .eq('month', currentMonth)
-            .single();
-
-          if (existingLog) {
-            await supabase
-              .from('email_generation_logs')
-              .update({ count: existingLog.count + 1 })
-              .eq('id', existingLog.id);
-          } else {
-            await supabase
-              .from('email_generation_logs')
-              .insert({
-                user_id: order.user_id,
-                count: 1,
-                month: currentMonth
-              });
-          }
-        }
+        // Mark order as completed
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
       
       // Process Wallet Recharge if applicable

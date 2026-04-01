@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { assignEmailForOrder } from '../lib/emailAssignment.js';
 
 dotenv.config();
 
@@ -94,26 +95,8 @@ router.post('/apply', async (req, res) => {
 
     if (orderError || !order) throw orderError;
 
-    // Assign an available email
-    const { data: availableEmail } = await supabase
-      .from('emails_pool')
-      .select('id')
-      .eq('status', 'available')
-      .limit(1)
-      .single();
-
-    if (availableEmail) {
-      await supabase.from('emails_pool')
-        .update({ status: 'assigned', assigned_at: new Date().toISOString() })
-        .eq('id', availableEmail.id);
-
-      await supabase.from('user_emails').insert({
-        user_id,
-        email_id: availableEmail.id,
-        order_id: order.id,
-        is_active: true,
-      });
-    }
+    // Assign email using product-aware logic (respects email_slots & max_users_per_email)
+    await assignEmailForOrder(supabase, order.id, user_id, redeemCode.product_id);
 
     // Log the usage
     await supabase.from('redeem_code_uses').insert({
