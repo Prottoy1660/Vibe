@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -13,8 +14,50 @@ const CPANEL_API_TOKEN = process.env.CPANEL_API_TOKEN;
 const IMAP_HOST = process.env.IMAP_HOST;
 const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993', 10);
 
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+const verifyUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No authorization header' });
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) return res.status(401).json({ error: 'Invalid token' });
+    
+    (req as any).user = user;
+    next();
+  } catch (err) {
+    console.error('Verify user error:', err);
+    res.status(500).json({ error: 'Server error during authorization' });
+  }
+};
+
+const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No authorization header' });
+    
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) return res.status(401).json({ error: 'Invalid token' });
+    
+    const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    
+    next();
+  } catch (err) {
+    console.error('Verify admin error:', err);
+    res.status(500).json({ error: 'Server error during authorization' });
+  }
+};
+
 // Endpoint to create email accounts via cPanel API
-router.post('/create-emails', async (req, res) => {
+router.post('/create-emails', verifyAdmin, async (req, res) => {
   try {
     const { accounts } = req.body; // Array of { email, password }
     
@@ -73,7 +116,7 @@ router.post('/create-emails', async (req, res) => {
 });
 
 // Endpoint to read inbox for a specific email
-router.post('/inbox', async (req, res) => {
+router.post('/inbox', verifyUser, async (req, res) => {
   try {
     const { email, password } = req.body;
 

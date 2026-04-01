@@ -276,9 +276,14 @@ export const AdobeEmail = () => {
     setInboxLoading(true);
     try {
       const API_URL = import.meta.env.VITE_API_URL || '';
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const response = await fetch(`${API_URL}/api/cpanel/inbox`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
         body: JSON.stringify({ email: emailAddress, password })
       });
       
