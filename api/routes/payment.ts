@@ -265,4 +265,42 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
+router.post('/assign-email', async (req, res) => {
+  try {
+    const { order_id } = req.body;
+    if (!order_id) {
+      return res.status(400).json({ success: false, message: 'Order ID is required' });
+    }
+
+    // Securely lookup the order bypassing RLS to ensure we can read all details
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('*, products(id, email_slots, max_users_per_email)')
+      .eq('id', order_id)
+      .single();
+
+    if (orderError || !order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    // Ensure order is paid/completed before generating/assigning
+    if (order.status !== 'completed' && order.status !== 'paid') {
+      return res.status(400).json({ success: false, message: 'Order is not completed' });
+    }
+
+    // Optional: check max generation limits if you want, but the smart backend respects shared slots natively
+    const result = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+    
+    if (result.success) {
+      return res.json({ success: true, message: 'Email assigned successfully' });
+    } else {
+      return res.status(500).json({ success: false, message: result.error || 'Failed to assign email' });
+    }
+
+  } catch (error: any) {
+    console.error('Manual assign-email error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+  }
+});
+
 export default router;

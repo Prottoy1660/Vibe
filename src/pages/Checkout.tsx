@@ -166,15 +166,19 @@ export const Checkout = () => {
       createdOrderId = order.id;
 
       if (totalAmount === 0) {
-        // Direct assignment logic for 100% free items using the secure RPC function
-        const { data: rpcData, error: rpcError } = await supabase.rpc('assign_available_email', {
-          target_order_id: order.id
-        });
-
-        if (rpcError) {
-          console.error('Failed to assign free email:', rpcError);
-          // Even if assignment fails (e.g., pool is empty), the order is still paid
-          // so we let them proceed and they can try generating later.
+        // Direct assignment logic for 100% free items using the centralized API
+        try {
+          const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_id: order.id }),
+          });
+          const assignData = await res.json();
+          if (!res.ok || !assignData.success) {
+            console.error('Failed to assign free email:', assignData.message);
+          }
+        } catch (err) {
+          console.error('Failed to assign free email network error:', err);
         }
         
         navigate(`/adobe-email?payment=success&order_id=${order.id}`);

@@ -204,7 +204,13 @@ export const AdobeEmail = () => {
                 
                 // 4. Provision fresh email access immediately
                 if (newOrder) {
-                  await supabase.rpc('assign_available_email', { target_order_id: newOrder.id });
+                  try {
+                    await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ order_id: newOrder.id })
+                    });
+                  } catch (e) { console.error('Auto renew assign err:', e); }
                   needsRefetch = true;
                 }
               } else {
@@ -317,12 +323,17 @@ export const AdobeEmail = () => {
         return;
       }
 
-      // Use the secure RPC function to assign the email
-      const { data, error: rpcError } = await supabase.rpc('assign_available_email', {
-        target_order_id: orderId
+      // Use the secure centralized backend to assign the email
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId }),
       });
+      const data = await res.json();
 
-      if (rpcError) throw rpcError;
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to generate email');
+      }
 
       alert('Email generated successfully!');
       fetchEmailData();
