@@ -508,13 +508,13 @@ export const AdobeEmail = () => {
 
               {/* ⚠️ Single-Device Policy Warning — only if product has it enabled */}
               {showDeviceWarning && (
-                <div className="mx-6 mt-4 mb-1 flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl p-3.5">
-                  <span className="text-amber-500 text-lg shrink-0 mt-0.5">⚠️</span>
-                  <div>
-                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
+                <div className="mx-6 mt-4 mb-6 flex items-start gap-3 bg-amber-50 dark:bg-[#2a2215]/80 border border-amber-200 dark:border-[#42331c] rounded-xl p-4 shadow-sm">
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300 mb-1 leading-tight">
                       Single Device Use Only
                     </p>
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-relaxed">
+                    <p className="text-[13px] text-amber-700 dark:text-amber-400/90 leading-relaxed max-w-4xl tracking-tight">
                       This account can only be used on <strong>one device at a time</strong>. 
                       Before signing in, make sure you are signed out of Adobe on all other devices. 
                       Using it on multiple devices simultaneously may cause your access to be revoked.
