@@ -258,7 +258,8 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
 
-      const response = await fetch(`http://localhost:3001/api/admin/users/${userId}`, {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_URL}/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

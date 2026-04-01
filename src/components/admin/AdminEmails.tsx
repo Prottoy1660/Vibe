@@ -118,7 +118,8 @@ export const AdminEmails = () => {
       }
 
       // 1. Hit backend API which connects to cPanel
-      const response = await fetch('http://localhost:3001/api/cpanel/create-emails', {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accounts: newAccounts })

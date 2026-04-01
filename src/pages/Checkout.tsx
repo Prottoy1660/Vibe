@@ -177,7 +177,8 @@ export const Checkout = () => {
       }
 
       // 2. Call backend to get UddoktaPay checkout URL for non-zero amounts
-      const response = await fetch('http://localhost:3001/api/payment/create', {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_URL}/api/payment/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
