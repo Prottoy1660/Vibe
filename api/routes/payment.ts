@@ -116,11 +116,23 @@ router.post('/create', async (req, res) => {
     if (data.status) {
       res.json({ success: true, payment_url: data.payment_url });
     } else {
+      // Clean up the abandoned order from the DB using Service Role to bypass RLS
+      if (order_id) {
+        await supabase.from('orders').delete().eq('id', order_id);
+      }
       res.status(400).json({ success: false, message: data.message || 'Failed to generate payment URL' });
     }
 
   } catch (error) {
     console.error('Error creating payment:', error);
+    // Attempt cleanup if exception occurred
+    if (req.body?.order_id) {
+      try {
+        await supabase.from('orders').delete().eq('id', req.body.order_id);
+      } catch (cleanupErr) {
+        console.error('Failed to cleanup on exception:', cleanupErr);
+      }
+    }
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
