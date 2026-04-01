@@ -317,25 +317,27 @@ export const AdminProducts = () => {
                       </p>
                     </div>
                   </div>
+                </div>
+              </div>
 
-                  {/* Single Device Warning Toggle */}
-                  <div className="mt-4 pt-4 border-t border-indigo-100 dark:border-indigo-500/20 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">⚠️ Single Device Warning</p>
-                      <p className="text-xs text-gray-400 mt-0.5">Enable করলে user-কে বলবে এই account একটি device-এ ব্যবহার করতে হবে</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({...formData, single_device_warning: !formData.single_device_warning})}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        formData.single_device_warning ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                        formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
-                      }`} />
-                    </button>
+              {/* ── Single Device Warning — standalone prominent row ── */}
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-200">⚠️ Single Device Warning</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">Enable করলে user-কে সতর্ক করা হবে — এই account শুধু একটি device-এ ব্যবহার করতে হবে</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({...formData, single_device_warning: !formData.single_device_warning})}
+                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
+                      formData.single_device_warning ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
                 </div>
               </div>
             </div>
