@@ -120,12 +120,17 @@ export async function assignEmailForOrder(
     }
 
     // Link email to this user's order
-    await supabase.from('user_emails').insert({
+    const { error: insertError } = await supabase.from('user_emails').insert({
       user_id: userId,
       email_id: emailId,
       order_id: orderId,
       is_active: true,
     });
+
+    if (insertError) {
+      console.error('[assignEmailForOrder] Failed to insert user_email relation:', insertError);
+      throw insertError;
+    }
 
     return { success: true, emailId: emailId! };
   } catch (err: any) {
