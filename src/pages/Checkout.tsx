@@ -135,6 +135,8 @@ export const Checkout = () => {
     setPaymentError('');
     setProcessing(true);
 
+    let createdOrderId: string | null = null;
+
     try {
       if (!user || !product) throw new Error('Missing user or product information');
 
@@ -159,6 +161,7 @@ export const Checkout = () => {
         .single();
 
       if (orderError) throw orderError;
+      createdOrderId = order.id;
 
       if (totalAmount === 0) {
         // Direct assignment logic for 100% free items using the secure RPC function
@@ -203,6 +206,15 @@ export const Checkout = () => {
     } catch (error: any) {
       console.error('Payment processing error:', error);
       setPaymentError(error.message || 'Failed to process payment. Please try again.');
+      
+      // Cleanup the abandoned order from the database so it doesn't flood the UI
+      if (createdOrderId) {
+        try {
+          await supabase.from('orders').delete().eq('id', createdOrderId);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup abandoned order:', cleanupError);
+        }
+      }
     } finally {
       setProcessing(false);
     }
