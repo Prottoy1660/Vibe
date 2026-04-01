@@ -14,6 +14,16 @@ const UDDOKTAPAY_API_KEY = process.env.UDDOKTAPAY_API_KEY || '';
 const UDDOKTAPAY_BASE_URL = process.env.UDDOKTAPAY_BASE_URL || '';
 
 router.post('/create', async (req, res) => {
+  // --- Background Lazy Auto-Cleanup Task --- //
+  // Silently destroy all pending/abandoned orders older than 30 minutes
+  try {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    await supabase.from('orders').delete().eq('status', 'pending').lt('created_at', thirtyMinsAgo);
+  } catch (err) {
+    console.error('Scheduled lazy cleanup failed:', err);
+  }
+  // ----------------------------------------- //
+
   try {
     const { order_id, amount, full_name, email, frontend_url } = req.body;
 
@@ -139,6 +149,13 @@ router.post('/create', async (req, res) => {
 });
 
 router.post('/webhook', async (req, res) => {
+  // --- Background Lazy Auto-Cleanup Task --- //
+  try {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    await supabase.from('orders').delete().eq('status', 'pending').lt('created_at', thirtyMinsAgo);
+  } catch (err) {}
+  // ----------------------------------------- //
+
   try {
     const { metadata, status } = req.body;
     

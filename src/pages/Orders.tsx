@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Filter, ShoppingCart, Loader2 } from 'lucide-react';
+import { Search, Filter, ShoppingCart, Loader2, CreditCard } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Order {
@@ -20,6 +20,7 @@ export const Orders = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -42,17 +43,25 @@ export const Orders = () => {
         
         // Transform data
         if (data) {
-          const formattedOrders = data.map((item: any) => ({
-            id: item.id,
-            created_at: item.created_at,
-            status: item.status,
-            total_amount: item.total_amount,
-            product: {
-              title: item.product?.title || 'Unknown Product',
-              title_bn: item.product?.title_bn || ''
-            }
-          }));
-          setOrders(formattedOrders);
+          const now = new Date().getTime();
+          const formattedOrders = data.map((item: any) => {
+            const orderTime = new Date(item.created_at).getTime();
+            const isExpired = item.status === 'pending' && (now - orderTime > 30 * 60 * 1000);
+            
+            return {
+              id: item.id,
+              created_at: item.created_at,
+              status: isExpired ? 'expired' : item.status,
+              total_amount: item.total_amount,
+              product: {
+                title: item.product?.title || 'Unknown Product',
+                title_bn: item.product?.title_bn || ''
+              }
+            };
+          });
+          
+          // Only show non-expired orders in the user dashboard (since expired ones will be auto-deleted by backend shortly)
+          setOrders(formattedOrders.filter(o => o.status !== 'expired'));
         }
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -76,11 +85,46 @@ export const Orders = () => {
       case 'paid':
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Paid</span>;
       case 'pending':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Pending</span>;
+        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">Time Left: &lt;30m</span>;
+      case 'expired':
+        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-400">Expired</span>;
       case 'cancelled':
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Cancelled</span>;
       default:
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-white/10 text-gray-800 dark:text-gray-100">{status}</span>;
+    }
+  };
+
+  const handlePayNow = async (orderId: string, amount: number) => {
+    try {
+      setProcessingId(orderId);
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      
+      const response = await fetch(`${API_URL}/api/payment/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          order_id: orderId,
+          amount: amount,
+          full_name: user?.user_metadata?.full_name || 'Customer',
+          email: user?.email,
+          frontend_url: window.location.origin
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && data.payment_url) {
+        window.location.href = data.payment_url;
+      } else {
+        throw new Error(data.message || 'Failed to initialize payment');
+      }
+    } catch (error) {
+      console.error('Payment retry error:', error);
+      alert('Failed to process payment retry. Please try creating a new order.');
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -127,6 +171,7 @@ export const Orders = () => {
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Date</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Action</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
@@ -146,6 +191,22 @@ export const Orders = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(order.status)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                      {order.status === 'pending' && (
+                        <button
+                          onClick={() => handlePayNow(order.id, order.total_amount)}
+                          disabled={processingId === order.id}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-lg shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-colors"
+                        >
+                          {processingId === order.id ? (
+                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                          ) : (
+                            <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                          )}
+                          Pay Now
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
