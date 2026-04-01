@@ -17,7 +17,8 @@ import {
   TrendingUp,
   User as UserIcon,
   Sun,
-  Moon
+  Moon,
+  Fingerprint
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -83,6 +84,7 @@ export const Layout = () => {
         { name: 'User Subscriptions', href: '/admin?tab=user_emails', icon: ShieldAlert },
         { name: 'Important Notices', href: '/admin?tab=notices', icon: Info },
         { name: 'Email Inventory', href: '/admin?tab=emails', icon: Mail },
+        { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
       ]
     },
     {
