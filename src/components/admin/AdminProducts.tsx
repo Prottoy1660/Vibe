@@ -306,9 +306,6 @@ export const AdminProducts = () => {
                       >
                         <option value={1}>1 — Exclusive (private, one user only)</option>
                         <option value={2}>2 — Shared (2 users share one email)</option>
-                        <option value={3}>3 — Shared (3 users share one email)</option>
-                        <option value={4}>4 — Shared (4 users share one email)</option>
-                        <option value={5}>5 — Shared (5 users share one email)</option>
                       </select>
                       <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                         {(formData.max_users_per_email ?? 1) === 1
