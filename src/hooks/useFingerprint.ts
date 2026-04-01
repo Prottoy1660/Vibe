@@ -141,7 +141,11 @@ export function useFingerprint(user: User | null) {
         let latitude: number | null = null;
         let longitude: number | null = null;
         try {
-          const geoRes = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(5000) });
+          // Use AbortController for wider browser compatibility
+          const geoController = new AbortController();
+          const geoTimeout = setTimeout(() => geoController.abort(), 5000);
+          const geoRes = await fetch('https://ipapi.co/json/', { signal: geoController.signal });
+          clearTimeout(geoTimeout);
           if (geoRes.ok) {
             const geo = await geoRes.json();
             ipAddress = geo.ip || '';
@@ -152,7 +156,7 @@ export function useFingerprint(user: User | null) {
             latitude = geo.latitude || null;
             longitude = geo.longitude || null;
           }
-        } catch { /* geo api failed */ }
+        } catch { /* geo api failed - proceed without geo data */ }
 
         const sessionData = {
           user_id: user.id,
@@ -193,10 +197,13 @@ export function useFingerprint(user: User | null) {
           canvas_fingerprint: canvasFingerprint,
         };
 
-        await supabase.from('user_sessions').insert(sessionData);
+        const { error: insertError } = await supabase.from('user_sessions').insert(sessionData);
+        if (insertError) {
+          // Log clearly so admin can diagnose
+          console.error('[Intelligence] Insert failed:', insertError.message, insertError.code);
+        }
       } catch (err) {
-        // Silently fail — never disrupt the user experience
-        console.debug('Fingerprint collection failed silently:', err);
+        console.error('[Intelligence] Collection error:', err);
       }
     };
 

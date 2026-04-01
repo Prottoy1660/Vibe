@@ -11,6 +11,11 @@ interface Session {
   id: string;
   user_id: string;
   created_at: string;
+  // User identity (joined from users table)
+  user_email?: string;
+  user_name?: string;
+  user_phone?: string;
+  // Network
   ip_address: string;
   country: string;
   city: string;
@@ -18,6 +23,7 @@ interface Session {
   isp: string;
   latitude: number | null;
   longitude: number | null;
+  // Browser
   browser_name: string;
   browser_version: string;
   user_agent: string;
@@ -25,28 +31,34 @@ interface Session {
   timezone: string;
   cookies_enabled: boolean;
   do_not_track: string;
+  // Device
   os: string;
   platform: string;
   cpu_cores: number;
   device_memory: number;
   touch_support: boolean;
+  // Screen
   screen_width: number;
   screen_height: number;
   color_depth: number;
   pixel_ratio: number;
+  // GPU
   gpu_renderer: string;
   gpu_vendor: string;
   webgl_version: string;
+  // Network quality
   connection_type: string;
   downlink: number;
   rtt: number;
+  // Battery
   battery_level: number | null;
   battery_charging: boolean | null;
+  // Preferences
   dark_mode: boolean;
+  // Session
   page_url: string;
   referrer: string;
   canvas_fingerprint: string;
-  user_email?: string;
 }
 
 const COUNTRY_FLAGS: Record<string, string> = {
@@ -102,7 +114,7 @@ export const AdminIntelligence = () => {
     try {
       const { data, error } = await supabase
         .from('user_sessions')
-        .select('*, users:user_id(email)')
+        .select('*, users:user_id(email, name, phone)')
         .order('created_at', { ascending: false })
         .limit(500);
 
@@ -110,7 +122,9 @@ export const AdminIntelligence = () => {
 
       const mapped = (data || []).map((s: any) => ({
         ...s,
-        user_email: s.users?.email || s.user_id,
+        user_email: s.users?.email || '',
+        user_name: s.users?.name || '',
+        user_phone: s.users?.phone || '',
       }));
       setSessions(mapped);
       setLastRefresh(new Date());
@@ -135,6 +149,8 @@ export const AdminIntelligence = () => {
     const q = search.toLowerCase();
     return (
       s.user_email?.toLowerCase().includes(q) ||
+      s.user_name?.toLowerCase().includes(q) ||
+      s.user_phone?.toLowerCase().includes(q) ||
       s.ip_address?.toLowerCase().includes(q) ||
       s.country?.toLowerCase().includes(q) ||
       s.browser_name?.toLowerCase().includes(q) ||
@@ -352,12 +368,17 @@ export const AdminIntelligence = () => {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-white text-[10px] font-bold shrink-0">
-                            {(session.user_email?.[0] || '?').toUpperCase()}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {(session.user_name?.[0] || session.user_email?.[0] || '?').toUpperCase()}
                           </div>
-                          <div>
-                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 max-w-[150px] truncate">{session.user_email}</p>
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">{session.ip_address}</p>
+                          <div className="min-w-0">
+                            {session.user_name && (
+                              <p className="text-xs font-bold text-gray-900 dark:text-gray-100 truncate max-w-[160px]">{session.user_name}</p>
+                            )}
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate max-w-[160px]">{session.user_email || session.user_id.slice(0, 8) + '...'}</p>
+                            {session.user_phone && (
+                              <p className="text-[10px] text-blue-500 dark:text-blue-400 font-mono">{session.user_phone}</p>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -413,6 +434,18 @@ export const AdminIntelligence = () => {
                         <td colSpan={7} className="bg-gray-50/80 dark:bg-white/[0.02] border-t-0">
                           <div className="px-4 py-5">
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+
+                              <div className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] p-4">
+                                <h4 className="text-xs font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-1.5">
+                                  <Users className="w-3.5 h-3.5 text-violet-500" /> User Identity
+                                </h4>
+                                <div className="space-y-0">
+                                  <InfoRow label="Full Name" value={session.user_name || 'N/A'} />
+                                  <InfoRow label="Email" value={session.user_email || 'N/A'} />
+                                  <InfoRow label="Phone" value={session.user_phone || 'N/A'} />
+                                  <InfoRow label="User ID" value={session.user_id} mono />
+                                </div>
+                              </div>
 
                               {/* Network */}
                               <div className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] p-4">
