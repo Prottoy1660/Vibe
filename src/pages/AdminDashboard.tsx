@@ -28,6 +28,7 @@ import { AdminUserEmails } from '../components/admin/AdminUserEmails';
 import { AdminAnalytics } from '../components/admin/AdminAnalytics';
 import { AdminBulkUpload } from '../components/admin/AdminBulkUpload';
 import { AdminIntelligence } from '../components/admin/AdminIntelligence';
+import { AdminRedeemCodes } from '../components/admin/AdminRedeemCodes';
 import { TrendingUp, ShieldAlert } from 'lucide-react';
 
 export const AdminDashboard = () => {
@@ -264,6 +265,7 @@ export const AdminDashboard = () => {
           {activeTab === 'analytics' && 'Financial Analytics'}
           {activeTab === 'user_emails' && 'User Subscriptions'}
           {activeTab === 'intelligence' && '🔍 User Intelligence'}
+          {activeTab === 'redeem' && '🎁 Redeem Codes'}
         </h1>
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
           <ShieldAlert className="w-5 h-5 text-indigo-500" />
@@ -280,6 +282,7 @@ export const AdminDashboard = () => {
       {activeTab === 'analytics' && <AdminAnalytics />}
       {activeTab === 'user_emails' && <AdminUserEmails />}
       {activeTab === 'intelligence' && <AdminIntelligence />}
+      {activeTab === 'redeem' && <AdminRedeemCodes />}
 
       {activeTab === 'overview' && (
         <div className="space-y-6">

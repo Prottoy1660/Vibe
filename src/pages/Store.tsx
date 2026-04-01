@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, ShoppingBag, Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Search, ShoppingBag, Loader2, Gift, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Product {
   id: string;
@@ -21,6 +22,16 @@ export const Store = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState<'adobe' | 'envato'>('adobe');
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // Redeem code state
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeemValidating, setRedeemValidating] = useState(false);
+  const [redeemApplying, setRedeemApplying] = useState(false);
+  const [redeemInfo, setRedeemInfo] = useState<any>(null);
+  const [redeemError, setRedeemError] = useState('');
+  const [redeemSuccess, setRedeemSuccess] = useState('');
+  const [showRedeemPanel, setShowRedeemPanel] = useState(false);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -57,6 +68,61 @@ export const Store = () => {
 
   const handleBuyNow = (productId: string) => {
     navigate(`/checkout/${productId}`);
+  };
+
+  const handleRedeemValidate = async () => {
+    const code = redeemCode.toUpperCase().trim();
+    if (!code) return;
+    setRedeemValidating(true);
+    setRedeemError('');
+    setRedeemInfo(null);
+    setRedeemSuccess('');
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/redeem/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRedeemInfo(data.code);
+      } else {
+        setRedeemError(data.message || 'Invalid code');
+      }
+    } catch {
+      setRedeemError('Could not connect to server. Try again.');
+    } finally {
+      setRedeemValidating(false);
+    }
+  };
+
+  const handleRedeemApply = async () => {
+    if (!user) { navigate('/login'); return; }
+    if (!redeemInfo) return;
+    setRedeemApplying(true);
+    setRedeemError('');
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/redeem/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: redeemCode.toUpperCase().trim(), user_id: user.id }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRedeemSuccess('🎉 Code redeemed! Your access has been activated.');
+        setRedeemInfo(null);
+        setRedeemCode('');
+        setTimeout(() => navigate('/adobe-email'), 2000);
+      } else {
+        setRedeemError(data.message || 'Could not apply code.');
+      }
+    } catch {
+      setRedeemError('Could not connect to server. Try again.');
+    } finally {
+      setRedeemApplying(false);
+    }
   };
 
   return (
@@ -178,15 +244,97 @@ export const Store = () => {
             <Search className="h-8 w-8 text-gray-400 dark:text-gray-500" />
           </div>
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1">No products found</h3>
-          <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500">We couldn't find anything matching "{searchQuery}"</p>
-          <button 
-            onClick={() => {setSearchQuery(''); setCategory('adobe');}}
-            className="mt-4 text-primary font-medium hover:underline"
-          >
-            Clear filters
-          </button>
+          <p className="text-gray-500 dark:text-gray-400">No results for "{searchQuery}"</p>
+          <button onClick={() => { setSearchQuery(''); setCategory('adobe'); }} className="mt-4 text-primary font-medium hover:underline">Clear filters</button>
         </div>
       )}
+
+      {/* Redeem Code Section */}
+      <div className="mt-4">
+        <button
+          onClick={() => { setShowRedeemPanel(p => !p); setRedeemError(''); setRedeemInfo(null); setRedeemSuccess(''); }}
+          className="w-full flex items-center justify-center gap-2 py-3.5 px-6 border-2 border-dashed border-emerald-200 dark:border-emerald-500/20 rounded-2xl text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/5 transition-all text-sm font-semibold group"
+        >
+          <Gift className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          Have a Redeem Code? Click here to activate your free access
+          <Sparkles className="w-4 h-4" />
+        </button>
+
+        <AnimatePresence>
+          {showRedeemPanel && (
+            <motion.div
+              initial={{ opacity: 0, height: 0, marginTop: 0 }}
+              animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+              exit={{ opacity: 0, height: 0, marginTop: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="bg-white dark:bg-[#151518] rounded-2xl border border-emerald-100 dark:border-emerald-500/20 p-6 shadow-soft dark:shadow-none">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-xl">
+                    <Gift className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Redeem Your Gift Code</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Enter the code you received to unlock your free subscription instantly.</p>
+                  </div>
+                </div>
+
+                {redeemSuccess ? (
+                  <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl text-emerald-700 dark:text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    {redeemSuccess}
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-3">
+                      <input
+                        value={redeemCode}
+                        onChange={e => { setRedeemCode(e.target.value.toUpperCase()); setRedeemError(''); setRedeemInfo(null); }}
+                        onKeyDown={e => e.key === 'Enter' && handleRedeemValidate()}
+                        placeholder="e.g. ABCD-EFGH-IJKL"
+                        className="flex-1 px-4 py-3 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-mono tracking-widest font-bold text-gray-900 dark:text-gray-100 placeholder:font-sans placeholder:tracking-normal placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-all"
+                      />
+                      <button
+                        onClick={handleRedeemValidate}
+                        disabled={redeemValidating || !redeemCode}
+                        className="px-5 py-3 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/15 disabled:opacity-50 text-gray-700 dark:text-gray-300 rounded-xl font-semibold text-sm transition-all"
+                      >
+                        {redeemValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Check'}
+                      </button>
+                    </div>
+
+                    {redeemError && (
+                      <div className="mt-3 flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 px-4 py-2.5 rounded-xl">
+                        <AlertCircle className="w-4 h-4 shrink-0" /> {redeemError}
+                      </div>
+                    )}
+
+                    {redeemInfo && (
+                      <div className="mt-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl">
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-2">✅ Valid Code — Grants Access To:</p>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-bold text-gray-900 dark:text-gray-100">{redeemInfo.products?.title}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{redeemInfo.products?.duration} subscription • ৳{redeemInfo.products?.price} value</p>
+                          </div>
+                          <button
+                            onClick={handleRedeemApply}
+                            disabled={redeemApplying}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
+                          >
+                            {redeemApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
+                            Redeem Now
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 };

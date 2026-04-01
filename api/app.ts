@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.js'
 import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
 import adminRoutes from './routes/admin.js'
+import redeemRoutes from './routes/redeem.js'
 import rateLimit from 'express-rate-limit'
 
 // for esm mode
@@ -54,8 +55,9 @@ app.use(globalLimiter)
  */
 app.use('/api/auth', authRoutes)
 app.use('/api/payment', paymentRoutes)
-app.use('/api/cpanel', strictLimiter, cpanelRoutes) // Apply stricter rate limit to cpanel operations
+app.use('/api/cpanel', strictLimiter, cpanelRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/redeem', redeemRoutes)
 
 /**
  * health

@@ -18,7 +18,8 @@ import {
   User as UserIcon,
   Sun,
   Moon,
-  Fingerprint
+  Fingerprint,
+  Gift
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -85,6 +86,7 @@ export const Layout = () => {
         { name: 'Important Notices', href: '/admin?tab=notices', icon: Info },
         { name: 'Email Inventory', href: '/admin?tab=emails', icon: Mail },
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
+        { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
       ]
     },
     {
