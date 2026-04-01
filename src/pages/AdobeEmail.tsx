@@ -436,6 +436,9 @@ export const AdobeEmail = () => {
           const isUnassigned = orderId === 'unassigned';
           const isActive = firstEmail?.subscription_details && !firstEmail.subscription_details.is_expired;
           const emailsGenerated = orderEmails.length;
+          // Dynamic slot limit — 1 means email is auto-assigned, no manual generation needed
+          const slotLimit = firstEmail?.email_slots ?? 3;
+          const canGenerate = slotLimit > 1; // hide generate button for single-slot products
           
           return (
             <div key={orderId} className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
@@ -452,7 +455,9 @@ export const AdobeEmail = () => {
                     )}
                   </h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">
-                    {emailsGenerated} of 3 emails generated for this subscription
+                    {canGenerate
+                      ? `${emailsGenerated} of ${slotLimit} emails generated for this subscription`
+                      : 'Email automatically assigned to this subscription'}
                   </p>
                 </div>
                 
@@ -465,12 +470,13 @@ export const AdobeEmail = () => {
                     <Mail className="w-4 h-4 mr-1.5" />
                     Mail Access
                   </button>
-                  {!isUnassigned && isActive && (
+                  {/* Only show Generate Email button for multi-slot products */}
+                  {canGenerate && !isUnassigned && isActive && (
                     <button 
                       onClick={() => handleGenerateEmail(orderId)}
-                      disabled={emailsGenerated >= 3 || generating}
+                      disabled={emailsGenerated >= slotLimit || generating}
                       className={`flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
-                        emailsGenerated >= 3 || generating
+                        emailsGenerated >= slotLimit || generating
                           ? 'border-gray-200 dark:border-[#26262d] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-white/5 cursor-not-allowed'
                           : 'border-gray-300 dark:border-[#303038] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 bg-white dark:bg-[#151518]'
                       }`}
@@ -480,7 +486,7 @@ export const AdobeEmail = () => {
                       ) : (
                         <RefreshCw className="w-4 h-4 mr-1.5" />
                       )}
-                      Generate Email ({3 - emailsGenerated}/3)
+                      Generate Email ({slotLimit - emailsGenerated}/{slotLimit})
                     </button>
                   )}
                 </div>
