@@ -74,14 +74,18 @@ router.post('/apply', async (req, res) => {
       return res.status(400).json({ success: false, message: 'You have already used this redeem code.' });
     }
 
-    // Create a free completed order
+    // Get the actual product price to record the real cost in the system
+    const productPrice = (redeemCode.products as any)?.price ?? 0;
+
+    // Create the order with the REAL product price — user pays ৳0 but
+    // the system records the full value so revenue/analytics stay accurate
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
         user_id,
         product_id: redeemCode.product_id,
         payment_method: 'redeem_code',
-        total_amount: 0,
+        total_amount: productPrice,   // ← actual price, not 0
         status: 'completed',
         payment_status: 'paid',
       })
