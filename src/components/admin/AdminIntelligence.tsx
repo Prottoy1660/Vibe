@@ -3,9 +3,9 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, RefreshCw, Download, Globe, Monitor, Cpu, Wifi,
   Battery, Eye, ChevronRight, ChevronDown, Search, X,
-  Activity, Users, MapPin, Fingerprint
+  Activity, Users, MapPin, Fingerprint, Trash2, AlertTriangle
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, subDays } from 'date-fns';
 
 interface Session {
   id: string;
@@ -109,9 +109,16 @@ export const AdminIntelligence = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [deleting, setDeleting] = useState(false);
 
   const fetchSessions = useCallback(async () => {
     try {
+      // Auto-purge sessions older than 7 days on every load
+      await supabase
+        .from('user_sessions')
+        .delete()
+        .lt('created_at', subDays(new Date(), 7).toISOString());
+
       const { data, error } = await supabase
         .from('user_sessions')
         .select('*, users:user_id(email, name, phone)')
@@ -134,6 +141,20 @@ export const AdminIntelligence = () => {
       setLoading(false);
     }
   }, []);
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm('Delete ALL user intelligence sessions? This cannot be undone.')) return;
+    setDeleting(true);
+    try {
+      await supabase.from('user_sessions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      setSessions([]);
+      setExpandedId(null);
+    } catch (err) {
+      console.error('Delete all failed:', err);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     fetchSessions();
@@ -236,6 +257,14 @@ export const AdminIntelligence = () => {
               className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-purple-700 rounded-lg text-xs font-bold hover:bg-purple-50 transition-all"
             >
               <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <button
+              onClick={handleDeleteAll}
+              disabled={deleting || sessions.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/80 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold transition-all"
+            >
+              {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Delete All
             </button>
           </div>
         </div>

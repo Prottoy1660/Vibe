@@ -210,6 +210,25 @@ export function useFingerprint(user: User | null) {
           canvas_fingerprint: canvasFingerprint,
         };
 
+        // Deduplication: skip if this device already logged a session within 7 days
+        // (same canvas fingerprint = same browser/device config, nothing new to record)
+        if (canvasFingerprint) {
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          const { data: existingSession } = await supabase
+            .from('user_sessions')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('canvas_fingerprint', canvasFingerprint)
+            .gte('created_at', sevenDaysAgo)
+            .limit(1)
+            .single();
+
+          if (existingSession) {
+            // Same device, same user, recent session exists — nothing new to capture
+            return;
+          }
+        }
+
         const { error: insertError } = await supabase.from('user_sessions').insert(sessionData);
         if (insertError) {
           // Log clearly so admin can diagnose
