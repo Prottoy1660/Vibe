@@ -56,11 +56,15 @@ export const AdminProducts = () => {
   const handleSave = async () => {
     try {
       if (editingId) {
-        // Update
+        // Sanitize payload
+        const updatePayload = { ...formData };
+        delete updatePayload.id;
+        delete (updatePayload as any).created_at;
+
         const { error } = await supabase
           .from('products')
           .update({
-            ...formData,
+            ...updatePayload,
             // Ensure icons is properly formatted as a JSON array or string array based on schema
             icons: Array.isArray(formData.icons) ? formData.icons : (formData.icons as string).split(',').map((i: string) => i.trim())
           })
@@ -82,9 +86,9 @@ export const AdminProducts = () => {
       setEditingId(null);
       setIsAdding(false);
       fetchProducts();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving product:', error);
-      alert('Error saving product');
+      alert(`Error saving product: ${error.message || 'Unknown database error'}. Check if the image_url column exists in Supabase!`);
     }
   };
 
