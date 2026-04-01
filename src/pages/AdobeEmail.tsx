@@ -95,9 +95,11 @@ export const AdobeEmail = () => {
           is_active,
           emails_pool:email_id (email, password),
           orders:order_id (
+            id,
             created_at,
             status,
-            products:product_id (duration)
+            auto_renew,
+            products:product_id (id, duration, price)
           )
         `)
         .eq('user_id', user.id)
@@ -159,6 +161,66 @@ export const AdobeEmail = () => {
             subscription_details
           };
         });
+        
+        // ---- LAZY AUTO-RENEWAL EVALUATION ---- //
+        let needsRefetch = false;
+        
+        for (const emailObj of validFormattedEmails) {
+          const rawItem = userEmails.find((ue: any) => ue.id === emailObj.id);
+          const orderData: any = rawItem?.orders;
+          const subData = emailObj.subscription_details;
+          
+          if (subData?.is_expired && orderData?.auto_renew === true) {
+            console.log(`Evaluating Auto-Renew for expired order: ${orderData.id}`);
+            try {
+              const productPrice = Number(orderData.products?.price || 0);
+              
+              const { data: uData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+              const currentBalance = Number(uData?.wallet_balance) || 0;
+              
+              if (currentBalance >= productPrice && productPrice > 0) {
+                console.log(`Wallet sufficient (${currentBalance}), processing renewal for ${productPrice}...`);
+                
+                // 1. Deduct wallet
+                await supabase.from('users').update({ wallet_balance: currentBalance - productPrice }).eq('id', user.id);
+                
+                // 2. Shut off auto-renew on the old order so it doesn't duplicate
+                await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
+                
+                // 3. Create new completed order perfectly inheriting context
+                const { data: newOrder } = await supabase.from('orders').insert({
+                  user_id: user.id,
+                  product_id: orderData.products.id,
+                  payment_method: 'wallet',
+                  total_amount: productPrice,
+                  status: 'completed',
+                  payment_status: 'paid',
+                  auto_renew: true // Propagate the setting forwards!
+                }).select().single();
+                
+                // 4. Provision fresh email access immediately
+                if (newOrder) {
+                  await supabase.rpc('assign_available_email', { target_order_id: newOrder.id });
+                  needsRefetch = true;
+                }
+              } else {
+                console.log(`Insufficient wallet balance (${currentBalance} < ${productPrice}). Suspending Auto-Renew.`);
+                await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
+              }
+            } catch (renewalErr) {
+              console.error('Lazy auto-renewal failed:', renewalErr);
+              // Fail safe: turn off auto-renew to prevent infinite error loops
+              await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
+            }
+          }
+        }
+        
+        if (needsRefetch) {
+          console.log('Renewal complete, refetching fresh email state...');
+          return fetchEmailData(); // Restart the loop completely
+        }
+        // ------------------------------------- //
+
         setEmails(validFormattedEmails);
       }
       

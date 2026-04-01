@@ -76,6 +76,20 @@ export const Dashboard = () => {
           }));
         }
 
+        // Fetch actual wallet balance
+        const { data: walletData } = await supabase
+          .from('users')
+          .select('wallet_balance')
+          .eq('id', user.id)
+          .single();
+          
+        if (walletData) {
+          setStats(prev => ({
+            ...prev,
+            walletBalance: Number(walletData.wallet_balance) || 0,
+          }));
+        }
+
         // Fetch notices
         const { data: noticesData } = await supabase
           .from('notices')

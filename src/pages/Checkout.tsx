@@ -38,6 +38,7 @@ export const Checkout = () => {
   const [paymentError, setPaymentError] = useState('');
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
+  const [isAutoRenew, setIsAutoRenew] = useState(false);
 
   useEffect(() => {
     const fetchProductAndUser = async () => {
@@ -120,7 +121,9 @@ export const Checkout = () => {
   };
 
   const handlePayment = async () => {
-    const totalAmount = product!.price * (1 - discount / 100);
+    let baseAmount = product!.price * (1 - discount / 100);
+    // If auto-renew is enabled, charge double the base amount (1 for current month + 1 for next month wallet recharge)
+    const totalAmount = isAutoRenew && baseAmount > 0 ? baseAmount * 2 : baseAmount;
 
     if (totalAmount > 0 && !paymentMethod) {
       setPaymentError('The payment method field is required.');
@@ -155,7 +158,8 @@ export const Checkout = () => {
           payment_method: totalAmount === 0 ? 'coupon' : paymentMethod,
           total_amount: totalAmount,
           status: totalAmount === 0 ? 'paid' : 'pending',
-          payment_status: totalAmount === 0 ? 'paid' : 'pending'
+          payment_status: totalAmount === 0 ? 'paid' : 'pending',
+          auto_renew: isAutoRenew
         })
         .select()
         .single();
@@ -191,7 +195,9 @@ export const Checkout = () => {
           amount: totalAmount,
           full_name: user.user_metadata?.full_name || 'Customer',
           email: user.email,
-          frontend_url: window.location.origin
+          frontend_url: window.location.origin,
+          is_recharge: isAutoRenew,
+          recharge_amount: isAutoRenew ? baseAmount : 0
         })
       });
 
@@ -232,7 +238,8 @@ export const Checkout = () => {
   if (!product) return null;
 
   const originalPrice = product.price;
-  const finalPrice = originalPrice * (1 - discount / 100);
+  const basePriceAfterDiscount = originalPrice * (1 - discount / 100);
+  const finalPrice = isAutoRenew && basePriceAfterDiscount > 0 ? basePriceAfterDiscount * 2 : basePriceAfterDiscount;
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">
@@ -400,6 +407,13 @@ export const Checkout = () => {
                 </div>
               )}
               
+              {isAutoRenew && basePriceAfterDiscount > 0 && (
+                <div className="flex justify-between items-center text-sm text-indigo-600 dark:text-indigo-400">
+                  <span>Advance Wallet Recharge (Next Month)</span>
+                  <span>+৳{basePriceAfterDiscount.toFixed(2)}</span>
+                </div>
+              )}
+              
               <div className="pt-4 border-t border-gray-100 dark:border-[#26262d]">
                 <div className="flex justify-between items-end">
                   <span className="text-base font-bold text-gray-900 dark:text-gray-100">Total</span>
@@ -410,6 +424,29 @@ export const Checkout = () => {
                 </div>
               </div>
             </div>
+            
+            {/* Auto-Renew Option */}
+            {basePriceAfterDiscount > 0 && (
+              <div className="p-5 border-t border-gray-100 dark:border-[#26262d] bg-indigo-50/50 dark:bg-indigo-500/5">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 pr-4">
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center">
+                      <Zap className="w-4 h-4 mr-1.5 text-indigo-500" />
+                      Auto-Renew (Advance Recharge)
+                    </h4>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      Prepay for next month now and we'll keep it safely deposited in your Wallet Balance. Next month, your subscription will automatically renew without any hassle!
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => setIsAutoRenew(!isAutoRenew)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isAutoRenew ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-[#303038]'}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isAutoRenew ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                  </button>
+                </div>
+              </div>
+            )}
             
             <div className="p-6 bg-gray-50/50 dark:bg-white/5 border-t border-gray-100 dark:border-[#26262d]">
               <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">

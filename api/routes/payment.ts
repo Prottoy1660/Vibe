@@ -106,7 +106,9 @@ router.post('/create', async (req, res) => {
       email,
       amount: amount.toString(),
       metadata: {
-        order_id
+        order_id,
+        is_recharge: req.body.is_recharge || false,
+        recharge_amount: req.body.recharge_amount || 0
       },
       redirect_url: `${baseUrl}/adobe-email?payment=success`,
       cancel_url: `${baseUrl}/store?payment=cancelled`,
@@ -233,6 +235,30 @@ router.post('/webhook', async (req, res) => {
                 month: currentMonth
               });
           }
+        }
+      }
+      
+      // Process Wallet Recharge if applicable
+      if (metadata.is_recharge && metadata.recharge_amount > 0) {
+        try {
+          // Fetch current balance
+          const { data: userData } = await supabase
+            .from('users')
+            .select('wallet_balance')
+            .eq('id', order.user_id)
+            .single();
+            
+          const currentBalance = Number(userData?.wallet_balance) || 0;
+          const newBalance = currentBalance + Number(metadata.recharge_amount);
+          
+          await supabase
+            .from('users')
+            .update({ wallet_balance: newBalance })
+            .eq('id', order.user_id);
+            
+          console.log(`Successfully recharged wallet for user ${order.user_id} with amount ${metadata.recharge_amount}`);
+        } catch (walletErr) {
+          console.error('Error recharging user wallet via webhook:', walletErr);
         }
       }
     }
