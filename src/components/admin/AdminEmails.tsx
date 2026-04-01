@@ -1,40 +1,60 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Mail, Trash2, Eye, EyeOff, CheckCircle2, AlertCircle, RefreshCw, Server } from 'lucide-react';
-import { format } from 'date-fns';
+import {
+  Loader2, Mail, Trash2, Eye, EyeOff, CheckCircle2,
+  AlertCircle, RefreshCw, Server, Download, Copy, Check,
+  ChevronDown, ChevronRight, Calendar
+} from 'lucide-react';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
 interface EmailPool {
   id: string;
   email: string;
   password: string;
-  status: 'available' | 'assigned' | 'used';
+  status: 'available' | 'assigned' | 'shared' | 'used';
   created_at: string;
   assigned_at: string | null;
+}
+
+// Group emails by date label
+function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
+  const groups: Record<string, EmailPool[]> = {};
+  for (const email of emails) {
+    const d = parseISO(email.created_at);
+    let label: string;
+    if (isToday(d)) label = `📅 Today — ${format(d, 'MMMM d, yyyy')}`;
+    else if (isYesterday(d)) label = `📆 Yesterday — ${format(d, 'MMMM d, yyyy')}`;
+    else label = `🗓️ ${format(d, 'EEEE, MMMM d, yyyy')}`;
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(email);
+  }
+  return groups;
 }
 
 export const AdminEmails = () => {
   const [emails, setEmails] = useState<EmailPool[]>([]);
   const [loading, setLoading] = useState(true);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
-  
-  // Auto-generation state
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [collapsedDates, setCollapsedDates] = useState<Record<string, boolean>>({});
+
+  // Generator state
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
   const [genDomain, setGenDomain] = useState('vibeaccess.space');
   const [genPrefix, setGenPrefix] = useState('adobe');
 
-  useEffect(() => {
-    fetchEmails();
-  }, []);
+  useEffect(() => { fetchEmails(); }, []);
 
   const fetchEmails = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('emails_pool')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(200);
-
+        .limit(500);
       if (error) throw error;
       setEmails(data || []);
     } catch (error) {
@@ -44,261 +64,320 @@ export const AdminEmails = () => {
     }
   };
 
-  const togglePasswordVisibility = (id: string) => {
-    setShowPasswords(prev => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
+  const togglePasswordVisibility = (id: string) =>
+    setShowPasswords(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const toggleDateCollapse = (label: string) =>
+    setCollapsedDates(prev => ({ ...prev, [label]: !prev[label] }));
+
+  const copyText = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
   };
 
   const handleDelete = async (id: string, status: string) => {
     if (status !== 'available') {
-      if (!window.confirm(`This email is currently marked as '${status}'. Deleting it might affect user access. Are you absolutely sure?`)) {
-        return;
-      }
+      if (!window.confirm(`This email is '${status}'. Deleting might affect user access. Continue?`)) return;
     } else {
-      if (!window.confirm('Are you sure you want to delete this email from the pool?')) {
-        return;
-      }
+      if (!window.confirm('Delete this email from the pool?')) return;
     }
-    
     try {
-      const { error } = await supabase
-        .from('emails_pool')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('emails_pool').delete().eq('id', id);
       if (error) throw error;
-      fetchEmails();
+      setEmails(prev => prev.filter(e => e.id !== id));
     } catch (error) {
-      console.error('Error deleting email:', error);
       alert('Failed to delete email');
     }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm(`⚠️ Delete ALL ${emails.length} emails from the pool? This cannot be undone and may break active subscriptions!`)) return;
+    setDeletingAll(true);
+    try {
+      await supabase.from('emails_pool').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      setEmails([]);
+    } catch (err) {
+      alert('Failed to delete all emails');
+    } finally {
+      setDeletingAll(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!emails.length) return;
+    const rows = emails.map(e => [
+      e.email,
+      e.password,
+      e.status,
+      format(parseISO(e.created_at), 'yyyy-MM-dd HH:mm'),
+      e.assigned_at ? format(parseISO(e.assigned_at), 'yyyy-MM-dd HH:mm') : ''
+    ].join(','));
+    const csv = ['Email,Password,Status,Created At,Assigned At', ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `email_inventory_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyDateGroup = (group: EmailPool[]) => {
+    const text = group.map(e => `${e.email} | ${e.password} | ${e.status}`).join('\n');
+    navigator.clipboard.writeText(text);
   };
 
   const generateRandomPassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
     let pass = '';
-    for (let i = 0; i < 12; i++) {
-      pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
+    for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
     return pass;
   };
 
   const handleAutoGenerate = async () => {
-    if (!genPrefix || !genDomain) {
-      alert('Prefix and domain are required');
-      return;
-    }
-    
-    if (genCount < 1 || genCount > 50) {
-      alert('Please generate between 1 and 50 emails at a time');
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to generate ${genCount} emails?\nFormat: ${genPrefix}.xyz@${genDomain}`)) {
-      return;
-    }
+    if (!genPrefix || !genDomain) { alert('Prefix and domain are required'); return; }
+    if (genCount < 1 || genCount > 50) { alert('Generate between 1 and 50 emails'); return; }
+    if (!window.confirm(`Generate ${genCount} emails?\nFormat: ${genPrefix}.xyz@${genDomain}`)) return;
 
     setGenerating(true);
-
     try {
-      // Create random accounts
-      const newAccounts = [];
-      for (let i = 0; i < genCount; i++) {
-        // Generate random 4 char string for uniqueness
-        const randomStr = Math.random().toString(36).substring(2, 6);
-        const email = `${genPrefix}.${randomStr}@${genDomain}`;
-        const password = generateRandomPassword();
-        
-        newAccounts.push({
-          email,
-          password,
-          status: 'available'
-        });
-      }
+      const newAccounts = Array.from({ length: genCount }, () => ({
+        email: `${genPrefix}.${Math.random().toString(36).substring(2, 6)}@${genDomain}`,
+        password: generateRandomPassword(),
+        status: 'available'
+      }));
 
-      // 1. Hit backend API which connects to cPanel
       const API_URL = import.meta.env.VITE_API_URL || '';
       const { data: { session } } = await supabase.auth.getSession();
-      
       const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ accounts: newAccounts })
       });
-      
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'cPanel creation failed');
-      }
-      
-      // 2. Save to database
-      const { error } = await supabase
-        .from('emails_pool')
-        .insert(newAccounts);
+      if (!response.ok) throw new Error(data.error || 'cPanel creation failed');
 
+      const { error } = await supabase.from('emails_pool').insert(newAccounts);
       if (error) throw error;
-      
-      alert(`Success! ${genCount} emails have been created in cPanel and saved to the database.`);
+
+      alert(`✅ ${genCount} emails created and saved!`);
       fetchEmails();
-      
     } catch (error: any) {
-      console.error('Error generating emails:', error);
-      alert(`Failed to generate emails: ${error.message}`);
+      alert(`Failed: ${error.message}`);
     } finally {
       setGenerating(false);
     }
   };
 
-  if (loading) {
-    return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
-  }
+  if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
   const availableCount = emails.filter(e => e.status === 'available').length;
-  const assignedCount = emails.filter(e => e.status === 'assigned').length;
+  const assignedCount = emails.filter(e => e.status === 'assigned' || e.status === 'shared').length;
+
+  // Today's count for quick stats
+  const todayCount = emails.filter(e => isToday(parseISO(e.created_at))).length;
+
+  const grouped = groupByDate(emails);
+
+  const statusStyles: Record<string, string> = {
+    available: 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300',
+    assigned: 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300',
+    shared: 'bg-violet-100 dark:bg-violet-500/10 text-violet-700 dark:text-violet-300',
+    used: 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300',
+  };
 
   return (
-    <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-      <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-gray-50/50 dark:bg-white/5 transition-colors duration-300">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <Mail className="w-5 h-5 mr-2 text-primary" />
-            Email Inventory
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Manage all Adobe emails in the system.</p>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <div className="bg-green-50 dark:bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-green-100 dark:border-emerald-500/20 flex items-center transition-colors duration-300">
-            <CheckCircle2 className="w-4 h-4 text-green-600 dark:text-emerald-400 mr-1.5" />
-            <span className="text-sm font-medium text-green-800 dark:text-emerald-200">{availableCount} Available</span>
+    <div className="space-y-4">
+
+      {/* Header Card */}
+      <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
+        <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-gray-50/50 dark:bg-white/5">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" /> Email Inventory
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              {emails.length} total &bull; <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{todayCount} added today</span>
+            </p>
           </div>
-          <div className="bg-blue-50 dark:bg-blue-500/10 px-3 py-1.5 rounded-lg border border-blue-100 dark:border-blue-500/20 flex items-center transition-colors duration-300">
-            <AlertCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 mr-1.5" />
-            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">{assignedCount} Assigned</span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Status chips */}
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-green-50 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300 rounded-lg text-xs font-semibold border border-green-100 dark:border-emerald-500/20">
+                <CheckCircle2 className="w-3.5 h-3.5" /> {availableCount} Available
+              </span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-semibold border border-blue-100 dark:border-blue-500/20">
+                <AlertCircle className="w-3.5 h-3.5" /> {assignedCount} In Use
+              </span>
+            </div>
+
+            {/* Action buttons */}
+            <button
+              onClick={fetchEmails}
+              className="p-2 text-gray-500 dark:text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleExportCSV}
+              disabled={!emails.length}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+            <button
+              onClick={handleDeleteAll}
+              disabled={deletingAll || !emails.length}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors"
+            >
+              {deletingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              Delete All
+            </button>
+          </div>
+        </div>
+
+        {/* cPanel Auto Generator */}
+        <div className="p-6 border-b border-gray-100 dark:border-[#26262d]">
+          <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2 text-sm">
+            <Server className="w-4 h-4 text-indigo-500" /> cPanel Auto Generator
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end bg-indigo-50/60 dark:bg-[#111113] p-4 rounded-xl border border-indigo-100 dark:border-[#303038]">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Prefix</label>
+              <input type="text" value={genPrefix} onChange={e => setGenPrefix(e.target.value)}
+                className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100" placeholder="e.g. team" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Domain</label>
+              <input type="text" value={genDomain} onChange={e => setGenDomain(e.target.value)}
+                className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100" placeholder="example.com" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Count (1–50)</label>
+              <input type="number" min="1" max="50" value={genCount} onChange={e => setGenCount(parseInt(e.target.value) || 1)}
+                className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100" />
+            </div>
+            <button onClick={handleAutoGenerate} disabled={generating}
+              className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
+              {generating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><RefreshCw className="w-4 h-4" />Auto Generate</>}
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="p-6 border-b border-gray-100 dark:border-[#26262d]">
-        <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
-          <Server className="w-4 h-4 mr-2 text-indigo-500" />
-          cPanel Auto Generator
-        </h4>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-indigo-50/60 dark:bg-[#111113] p-4 rounded-xl border border-indigo-100 dark:border-[#303038] transition-colors duration-300">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Prefix</label>
-            <input 
-              type="text" 
-              value={genPrefix}
-              onChange={e => setGenPrefix(e.target.value)}
-              className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#1c1c21] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
-              placeholder="e.g. team"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Domain</label>
-            <input 
-              type="text" 
-              value={genDomain}
-              onChange={e => setGenDomain(e.target.value)}
-              className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#1c1c21] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
-              placeholder="example.com"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">Amount to Generate</label>
-            <input 
-              type="number" 
-              min="1"
-              max="50"
-              value={genCount}
-              onChange={e => setGenCount(parseInt(e.target.value) || 1)}
-              className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#1c1c21] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
-            />
-          </div>
-          <button 
-            onClick={handleAutoGenerate}
-            disabled={generating}
-            className="w-full py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 transition-colors flex items-center justify-center disabled:opacity-50"
-          >
-            {generating ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Generating...</>
-            ) : (
-              <><RefreshCw className="w-4 h-4 mr-2" /> Auto Generate</>
-            )}
-          </button>
+      {/* Date-wise grouped email list */}
+      {Object.keys(grouped).length === 0 ? (
+        <div className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] py-16 text-center">
+          <Mail className="w-12 h-12 text-gray-200 dark:text-gray-700 mx-auto mb-3" />
+          <p className="text-gray-500 dark:text-gray-400 font-medium">No emails in the pool yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Use the Auto Generator above to add emails.</p>
         </div>
-      </div>
+      ) : (
+        Object.entries(grouped).map(([dateLabel, group]) => {
+          const isCollapsed = collapsedDates[dateLabel];
+          const isGroupToday = dateLabel.startsWith('📅 Today');
+          return (
+            <div key={dateLabel} className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] overflow-hidden shadow-soft dark:shadow-none">
+              {/* Date section header */}
+              <div
+                className={`flex items-center justify-between px-5 py-3 cursor-pointer select-none ${
+                  isGroupToday
+                    ? 'bg-emerald-50 dark:bg-emerald-500/10 border-b border-emerald-100 dark:border-emerald-500/20'
+                    : 'bg-gray-50 dark:bg-white/5 border-b border-gray-100 dark:border-[#26262d]'
+                }`}
+                onClick={() => toggleDateCollapse(dateLabel)}
+              >
+                <div className="flex items-center gap-2">
+                  <Calendar className={`w-4 h-4 ${isGroupToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'}`} />
+                  <span className={`text-sm font-bold ${isGroupToday ? 'text-emerald-800 dark:text-emerald-200' : 'text-gray-700 dark:text-gray-300'}`}>
+                    {dateLabel}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    isGroupToday ? 'bg-emerald-200 dark:bg-emerald-500/30 text-emerald-800 dark:text-emerald-200' : 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-400'
+                  }`}>
+                    {group.length} emails
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleCopyDateGroup(group); }}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    title="Copy all emails in this group"
+                  >
+                    <Copy className="w-3 h-3" /> Copy All
+                  </button>
+                  {isCollapsed ? <ChevronRight className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                </div>
+              </div>
 
-      <div className="p-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-[#26262d]">
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email Address</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Password</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Added Date</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {emails.map(email => (
-                <tr key={email.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
-                  <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100">{email.email}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-mono text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded">
-                        {showPasswords[email.id] ? email.password : '••••••••'}
-                      </span>
-                      <button 
-                        onClick={() => togglePasswordVisibility(email.id)}
-                        className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 p-1 transition-colors duration-300"
-                        title={showPasswords[email.id] ? "Hide Password" : "Show Password"}
-                      >
-                        {showPasswords[email.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
-                      email.status === 'available' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300' : 
-                      email.status === 'assigned' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' : 
-                      'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
-                    }`}>
-                      {email.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
-                    {format(new Date(email.created_at), 'MMM dd, yyyy HH:mm')}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <button 
-                      onClick={() => handleDelete(email.id, email.status)}
-                      className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded inline-flex items-center transition-colors duration-300"
-                      title="Delete Email"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {emails.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No emails found in the pool.
-                  </td>
-                </tr>
+              {/* Email rows */}
+              {!isCollapsed && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-[#26262d]">
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">#</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email Address</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Password</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
+                        <th className="py-2.5 px-4 text-right text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.map((email, idx) => (
+                        <tr key={email.id} className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] transition-colors">
+                          <td className="py-2.5 px-4 text-xs text-gray-400 dark:text-gray-600">{idx + 1}</td>
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100">{email.email}</span>
+                              <button onClick={() => copyText(email.email, `e-${email.id}`)} className="text-gray-300 dark:text-gray-600 hover:text-primary transition-colors" title="Copy email">
+                                {copiedId === `e-${email.id}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded">
+                                {showPasswords[email.id] ? email.password : '••••••••'}
+                              </span>
+                              <button onClick={() => togglePasswordVisibility(email.id)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                                {showPasswords[email.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              {showPasswords[email.id] && (
+                                <button onClick={() => copyText(email.password, `p-${email.id}`)} className="text-gray-300 dark:text-gray-600 hover:text-primary transition-colors">
+                                  {copiedId === `p-${email.id}` ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${statusStyles[email.status] || statusStyles.used}`}>
+                              {email.status}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-gray-400 dark:text-gray-500">
+                            {format(parseISO(email.created_at), 'HH:mm')}
+                          </td>
+                          <td className="py-2.5 px-4 text-right">
+                            <button onClick={() => handleDelete(email.id, email.status)}
+                              className="p-1 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 rounded transition-colors" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 };
