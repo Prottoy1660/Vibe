@@ -98,6 +98,14 @@ export function useFingerprint(user: User | null) {
 
     const collect = async () => {
       try {
+        // Skip admins — only capture regular customer data
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (userData?.role === 'admin') return;
+
         const ua = navigator.userAgent;
         const browser = parseBrowser(ua);
         const os = parseOS(ua, navigator.platform);
