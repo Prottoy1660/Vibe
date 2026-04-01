@@ -12,8 +12,9 @@ interface Product {
   description: string;
   image_url?: string;
   is_active: boolean;
-  email_slots: number;          // how many emails user can generate
-  max_users_per_email: number;  // 1 = exclusive, 2+ = shared slot
+  email_slots: number;
+  max_users_per_email: number;
+  single_device_warning: boolean;
 }
 
 export const AdminProducts = () => {
@@ -34,6 +35,7 @@ export const AdminProducts = () => {
     is_active: true,
     email_slots: 3,
     max_users_per_email: 1,
+    single_device_warning: false,
   });
 
   useEffect(() => {
@@ -154,6 +156,7 @@ export const AdminProducts = () => {
       is_active: true,
       email_slots: 3,
       max_users_per_email: 1,
+      single_device_warning: false,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -313,6 +316,25 @@ export const AdminProducts = () => {
                           : `🔗 Shared: একই email ${formData.max_users_per_email} জন user শেয়ার করবে`}
                       </p>
                     </div>
+                  </div>
+
+                  {/* Single Device Warning Toggle */}
+                  <div className="mt-4 pt-4 border-t border-indigo-100 dark:border-indigo-500/20 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">⚠️ Single Device Warning</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Enable করলে user-কে বলবে এই account একটি device-এ ব্যবহার করতে হবে</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, single_device_warning: !formData.single_device_warning})}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        formData.single_device_warning ? 'bg-amber-500' : 'bg-gray-200 dark:bg-gray-700'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
                   </div>
                 </div>
               </div>

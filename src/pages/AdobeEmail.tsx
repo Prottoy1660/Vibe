@@ -28,6 +28,7 @@ interface UserEmail {
   is_active: boolean;
   order_id: string;
   email_slots: number;
+  single_device_warning: boolean;
   email_details: {
     email: string;
     password: string;
@@ -100,7 +101,7 @@ export const AdobeEmail = () => {
             created_at,
             status,
             auto_renew,
-            products:product_id (id, duration, price, email_slots, max_users_per_email)
+            products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning)
           )
         `)
         .eq('user_id', user.id)
@@ -156,6 +157,7 @@ export const AdobeEmail = () => {
             assigned_at: item.assigned_at,
             is_active: item.is_active,
             email_slots: item.orders?.products?.email_slots ?? 3,
+            single_device_warning: item.orders?.products?.single_device_warning ?? false,
             email_details: {
               email: poolData?.email || 'Unknown',
               password: poolData?.password || 'Unknown'
@@ -438,7 +440,8 @@ export const AdobeEmail = () => {
           const emailsGenerated = orderEmails.length;
           // Dynamic slot limit — 1 means email is auto-assigned, no manual generation needed
           const slotLimit = firstEmail?.email_slots ?? 3;
-          const canGenerate = slotLimit > 1; // hide generate button for single-slot products
+          const canGenerate = slotLimit > 1;
+          const showDeviceWarning = firstEmail?.single_device_warning ?? false;
           
           return (
             <div key={orderId} className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
@@ -492,20 +495,22 @@ export const AdobeEmail = () => {
                 </div>
               </div>
 
-              {/* ⚠️ Single-Device Policy Warning */}
-              <div className="mx-6 mt-4 mb-1 flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl p-3.5">
-                <span className="text-amber-500 text-lg shrink-0 mt-0.5">⚠️</span>
-                <div>
-                  <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
-                    Single Device Use Only
-                  </p>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-relaxed">
-                    This account can only be used on <strong>one device at a time</strong>. 
-                    Before signing in, make sure you are signed out of Adobe on all other devices. 
-                    Using it on multiple devices simultaneously may cause your access to be revoked.
-                  </p>
+              {/* ⚠️ Single-Device Policy Warning — only if product has it enabled */}
+              {showDeviceWarning && (
+                <div className="mx-6 mt-4 mb-1 flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl p-3.5">
+                  <span className="text-amber-500 text-lg shrink-0 mt-0.5">⚠️</span>
+                  <div>
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
+                      Single Device Use Only
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-relaxed">
+                      This account can only be used on <strong>one device at a time</strong>. 
+                      Before signing in, make sure you are signed out of Adobe on all other devices. 
+                      Using it on multiple devices simultaneously may cause your access to be revoked.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
