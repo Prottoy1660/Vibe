@@ -486,6 +486,21 @@ export const AdobeEmail = () => {
                 </div>
               </div>
 
+              {/* ⚠️ Single-Device Policy Warning */}
+              <div className="mx-6 mt-4 mb-1 flex items-start gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl p-3.5">
+                <span className="text-amber-500 text-lg shrink-0 mt-0.5">⚠️</span>
+                <div>
+                  <p className="text-sm font-bold text-amber-800 dark:text-amber-300">
+                    Single Device Use Only
+                  </p>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5 leading-relaxed">
+                    This account can only be used on <strong>one device at a time</strong>. 
+                    Before signing in, make sure you are signed out of Adobe on all other devices. 
+                    Using it on multiple devices simultaneously may cause your access to be revoked.
+                  </p>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
                   <thead className="bg-gray-50 dark:bg-white/5">
