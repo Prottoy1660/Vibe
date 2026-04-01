@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Plus, Edit2, Trash2, Loader2, Package, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Loader2, Package, Save, Mail, AlertTriangle, Check, Users } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -278,12 +278,12 @@ export const AdminProducts = () => {
               <div className="md:col-span-2">
                 <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl p-4">
                   <h5 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                    📧 Email Slot Configuration
+                    <Mail className="w-4 h-4" /> Email Slot Configuration
                   </h5>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        Email Slots <span className="text-xs text-gray-400">(কতটি email generate করতে পারবে)</span>
+                        Email Slots
                       </label>
                       <input
                         type="number"
@@ -293,27 +293,27 @@ export const AdminProducts = () => {
                         onChange={e => setFormData({...formData, email_slots: Number(e.target.value)})}
                         className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
                       />
-                      <p className="text-xs text-gray-400 mt-1">উদাহরণ: 3 = user তিনটি email generate করতে পারবে</p>
+                      <p className="text-xs text-gray-400 mt-1">How many emails the user can generate for this subscription (e.g. 3)</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        Max Users Per Email <span className="text-xs text-gray-400">(একটি email কতজন share করবে)</span>
+                        Max Users Per Email
                       </label>
                       <select
                         value={formData.max_users_per_email ?? 1}
                         onChange={e => setFormData({...formData, max_users_per_email: Number(e.target.value)})}
                         className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
                       >
-                        <option value={1}>1 — Exclusive (শুধু একজন)</option>
-                        <option value={2}>2 — Shared (দুইজন একই email পাবে)</option>
-                        <option value={3}>3 — Shared (তিনজন একই email পাবে)</option>
-                        <option value={4}>4 — Shared (চারজন একই email পাবে)</option>
-                        <option value={5}>5 — Shared (পাঁচজন একই email পাবে)</option>
+                        <option value={1}>1 — Exclusive (private, one user only)</option>
+                        <option value={2}>2 — Shared (2 users share one email)</option>
+                        <option value={3}>3 — Shared (3 users share one email)</option>
+                        <option value={4}>4 — Shared (4 users share one email)</option>
+                        <option value={5}>5 — Shared (5 users share one email)</option>
                       </select>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
                         {(formData.max_users_per_email ?? 1) === 1
-                          ? '✅ Exclusive: প্রতিটি email শুধুমাত্র একজন user পাবে'
-                          : `🔗 Shared: একই email ${formData.max_users_per_email} জন user শেয়ার করবে`}
+                          ? <><Check className="w-3 h-3 text-emerald-500" /> Exclusive — each email is assigned to one user only</>
+                          : <><Users className="w-3 h-3 text-indigo-400" /> Shared — {formData.max_users_per_email} users will receive the same email &amp; password</>}
                       </p>
                     </div>
                   </div>
@@ -324,8 +324,10 @@ export const AdminProducts = () => {
               <div className="md:col-span-2">
                 <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3">
                   <div>
-                    <p className="text-sm font-bold text-amber-800 dark:text-amber-200">⚠️ Single Device Warning</p>
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">Enable করলে user-কে সতর্ক করা হবে — এই account শুধু একটি device-এ ব্যবহার করতে হবে</p>
+                    <p className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4" /> Single Device Warning
+                    </p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">When enabled, users will see a warning that this account can only be used on one device at a time.</p>
                   </div>
                   <button
                     type="button"
