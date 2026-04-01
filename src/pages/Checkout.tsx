@@ -121,9 +121,7 @@ export const Checkout = () => {
   };
 
   const handlePayment = async () => {
-    let baseAmount = product!.price * (1 - discount / 100);
-    // If auto-renew is enabled, charge double the base amount (1 for current month + 1 for next month wallet recharge)
-    const totalAmount = isAutoRenew && baseAmount > 0 ? baseAmount * 2 : baseAmount;
+    const totalAmount = product!.price * (1 - discount / 100);
 
     if (totalAmount > 0 && !paymentMethod) {
       setPaymentError('The payment method field is required.');
@@ -195,9 +193,7 @@ export const Checkout = () => {
           amount: totalAmount,
           full_name: user.user_metadata?.full_name || 'Customer',
           email: user.email,
-          frontend_url: window.location.origin,
-          is_recharge: isAutoRenew,
-          recharge_amount: isAutoRenew ? baseAmount : 0
+          frontend_url: window.location.origin
         })
       });
 
@@ -238,8 +234,7 @@ export const Checkout = () => {
   if (!product) return null;
 
   const originalPrice = product.price;
-  const basePriceAfterDiscount = originalPrice * (1 - discount / 100);
-  const finalPrice = isAutoRenew && basePriceAfterDiscount > 0 ? basePriceAfterDiscount * 2 : basePriceAfterDiscount;
+  const finalPrice = originalPrice * (1 - discount / 100);
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">
@@ -407,13 +402,6 @@ export const Checkout = () => {
                 </div>
               )}
               
-              {isAutoRenew && basePriceAfterDiscount > 0 && (
-                <div className="flex justify-between items-center text-sm text-indigo-600 dark:text-indigo-400">
-                  <span>Advance Wallet Recharge (Next Month)</span>
-                  <span>+৳{basePriceAfterDiscount.toFixed(2)}</span>
-                </div>
-              )}
-              
               <div className="pt-4 border-t border-gray-100 dark:border-[#26262d]">
                 <div className="flex justify-between items-end">
                   <span className="text-base font-bold text-gray-900 dark:text-gray-100">Total</span>
@@ -426,16 +414,16 @@ export const Checkout = () => {
             </div>
             
             {/* Auto-Renew Option */}
-            {basePriceAfterDiscount > 0 && (
+            {finalPrice > 0 && (
               <div className="p-5 border-t border-gray-100 dark:border-[#26262d] bg-indigo-50/50 dark:bg-indigo-500/5">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 pr-4">
                     <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center">
                       <Zap className="w-4 h-4 mr-1.5 text-indigo-500" />
-                      Auto-Renew (Advance Recharge)
+                      Enable Auto-Renewal
                     </h4>
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      Prepay for next month now and we'll keep it safely deposited in your Wallet Balance. Next month, your subscription will automatically renew without any hassle!
+                      When this subscription expires, automatically renew it by deducting from your Wallet Balance if you have sufficient funds.
                     </p>
                   </div>
                   <button 

@@ -150,6 +150,71 @@ router.post('/create', async (req, res) => {
   }
 });
 
+router.post('/recharge', async (req, res) => {
+  try {
+    const { user_id, amount, full_name, email, frontend_url } = req.body;
+
+    const origin = req.headers.origin;
+    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
+
+    if (!user_id || !amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid recharge parameters' });
+    }
+
+    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
+      console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
+      
+      const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user_id).single();
+      const currentBalance = Number(userData?.wallet_balance) || 0;
+      await supabase.from('users').update({ wallet_balance: currentBalance + Number(amount) }).eq('id', user_id);
+
+      return res.json({
+        success: true,
+        payment_url: `${baseUrl}/dashboard?recharge=success`
+      });
+    }
+
+    // Creating abstract random ID to uniquely identify this standalone transaction log if needed
+    const recharge_id = `rech_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+    const payload = {
+      full_name: full_name || 'Customer',
+      email: email || 'user@example.com',
+      amount: amount.toString(),
+      metadata: {
+        is_standalone_recharge: true,
+        user_id,
+        recharge_amount: amount,
+        recharge_id
+      },
+      redirect_url: `${baseUrl}/dashboard?recharge=success`,
+      cancel_url: `${baseUrl}/dashboard?recharge=cancelled`,
+      webhook_url: `${baseUrl}/api/payment/webhook`
+    };
+
+    const response = await fetch(`${UDDOKTAPAY_BASE_URL}/api/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'RT-UDDOKTAPAY-API-KEY': UDDOKTAPAY_API_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json() as any;
+
+    if (data.status) {
+      res.json({ success: true, payment_url: data.payment_url });
+    } else {
+      res.status(400).json({ success: false, message: data.message || 'Failed to generate recharge URL' });
+    }
+
+  } catch (error) {
+    console.error('Error creating recharge session:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 router.post('/webhook', async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   try {
@@ -239,13 +304,13 @@ router.post('/webhook', async (req, res) => {
       }
       
       // Process Wallet Recharge if applicable
-      if (metadata.is_recharge && metadata.recharge_amount > 0) {
+      if (metadata.is_standalone_recharge && metadata.user_id && metadata.recharge_amount > 0) {
         try {
           // Fetch current balance
           const { data: userData } = await supabase
             .from('users')
             .select('wallet_balance')
-            .eq('id', order.user_id)
+            .eq('id', metadata.user_id)
             .single();
             
           const currentBalance = Number(userData?.wallet_balance) || 0;
@@ -254,11 +319,20 @@ router.post('/webhook', async (req, res) => {
           await supabase
             .from('users')
             .update({ wallet_balance: newBalance })
-            .eq('id', order.user_id);
+            .eq('id', metadata.user_id);
             
-          console.log(`Successfully recharged wallet for user ${order.user_id} with amount ${metadata.recharge_amount}`);
+          console.log(`Successfully standalone recharged wallet for user ${metadata.user_id} with amount ${metadata.recharge_amount}`);
         } catch (walletErr) {
-          console.error('Error recharging user wallet via webhook:', walletErr);
+          console.error('Error standalone recharging user wallet via webhook:', walletErr);
+        }
+      } else if (metadata.is_recharge && metadata.recharge_amount > 0 && order?.user_id) {
+        // Legacy fallback for old orders that might still be processing
+        try {
+          const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', order.user_id).single();
+          const currentBalance = Number(userData?.wallet_balance) || 0;
+          await supabase.from('users').update({ wallet_balance: currentBalance + Number(metadata.recharge_amount) }).eq('id', order.user_id);
+        } catch (walletErr) {
+          console.error(walletErr);
         }
       }
     }

@@ -8,9 +8,10 @@ import {
   Wallet,
   LogOut,
   Info,
-  Clock
+  Clock,
+  Plus
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
@@ -41,8 +42,19 @@ export const Dashboard = () => {
   });
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showRechargeModal, setShowRechargeModal] = useState(false);
+  const [rechargeAmount, setRechargeAmount] = useState('');
+  const [recharging, setRecharging] = useState(false);
 
   useEffect(() => {
+    // Check for successful recharge redirect
+    const searchParams = new URLSearchParams(window.location.search);
+    const rechargeStatus = searchParams.get('recharge');
+    if (rechargeStatus === 'success') {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      alert('Wallet recharge successful! Your balance has been updated.');
+    }
+
     const fetchDashboardData = async () => {
       if (!user) return;
 
@@ -113,6 +125,44 @@ export const Dashboard = () => {
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const userInitials = userName.substring(0, 2).toUpperCase();
+
+  const handleRecharge = async () => {
+    const amount = Number(rechargeAmount);
+    if (isNaN(amount) || amount < 10) {
+      alert('Please enter a valid amount (minimum 10 BDT)');
+      return;
+    }
+
+    setRecharging(true);
+    try {
+      if (!user) return;
+      
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const response = await fetch(`${API_URL}/api/payment/recharge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          amount: amount,
+          full_name: user?.user_metadata?.full_name || 'Customer',
+          email: user?.email,
+          frontend_url: window.location.origin
+        })
+      });
+
+      const data = await response.json();
+      if (data.success && data.payment_url) {
+        window.location.href = data.payment_url;
+      } else {
+        throw new Error(data.message || 'Failed to initialize recharge payment');
+      }
+    } catch (error: any) {
+      console.error('Recharge error:', error);
+      alert('Failed to process recharge: ' + error.message);
+    } finally {
+      setRecharging(false);
+    }
+  };
 
   const statCards = [
     {
@@ -204,14 +254,22 @@ export const Dashboard = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.1 }}
-            className="bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300 relative overflow-hidden group"
+            className={`bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300 relative overflow-hidden group ${stat.title === 'Wallet Balance' ? 'ring-1 ring-primary/20 cursor-pointer hover:shadow-md' : ''}`}
+            onClick={() => stat.title === 'Wallet Balance' && setShowRechargeModal(true)}
           >
             <div className="relative z-10">
               <div className="flex items-center justify-between mb-4">
                 <div className={`p-3 rounded-xl ${stat.bgColor.split(' ')[0]} dark:${stat.bgColor.split(' ')[0].replace('100', '500/10').replace('10', '500/10')}`}>
                   <stat.icon className={`w-6 h-6 ${stat.color} dark:${stat.color.replace('500', '400')}`} />
                 </div>
-                <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{stat.title}</span>
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{stat.title}</span>
+                  {stat.title === 'Wallet Balance' && (
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full mt-1 flex items-center">
+                      <Plus className="w-3 h-3 mr-0.5" /> ADD FUNDS
+                    </span>
+                  )}
+                </div>
               </div>
               <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</h3>
             </div>
@@ -324,6 +382,94 @@ export const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Wallet Recharge Modal */}
+      <AnimatePresence>
+        {showRechargeModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setShowRechargeModal(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-[#151518] rounded-2xl shadow-xl w-full max-w-md overflow-hidden relative z-10 border border-gray-100 dark:border-[#26262d]"
+            >
+              <div className="p-6">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">Recharge Wallet</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                  Add funds to your Vibe Access wallet. These funds will be securely held and automatically used for your auto-renewing subscriptions, so you never lose access.
+                </p>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Amount (BDT)
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <span className="text-gray-500 dark:text-gray-400 font-medium font-mono text-lg">৳</span>
+                      </div>
+                      <input
+                        type="number"
+                        min="10"
+                        value={rechargeAmount}
+                        onChange={(e) => setRechargeAmount(e.target.value)}
+                        placeholder="e.g. 500"
+                        className="block w-full pl-10 pr-4 py-3 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all font-medium text-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {[150, 300, 500, 1000].map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setRechargeAmount(amt.toString())}
+                        className="flex-1 py-2 text-sm font-medium border border-gray-200 dark:border-[#26262d] rounded-lg text-gray-600 dark:text-gray-300 hover:bg-primary/5 hover:text-primary hover:border-primary/30 transition-colors"
+                      >
+                        ৳{amt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-[#26262d] flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowRechargeModal(false)}
+                  disabled={recharging}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-[#151518] border border-gray-200 dark:border-[#26262d] rounded-lg hover:bg-gray-50 dark:hover:bg-[#1c1c21] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRecharge}
+                  disabled={recharging || !rechargeAmount || Number(rechargeAmount) < 10}
+                  className="px-6 py-2 text-sm font-medium text-white bg-primary disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 rounded-lg shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-primary flex items-center"
+                >
+                  {recharging ? (
+                    'Processing...'
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4 mr-2" />
+                      Recharge via UddoktaPay
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
