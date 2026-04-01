@@ -85,11 +85,16 @@ function getGPUInfo(): { renderer: string; vendor: string; version: string } {
 }
 
 export function useFingerprint(user: User | null) {
-  const hasFired = useRef(false);
+  // Track WHICH user we last captured — not just 'did we fire'
+  // This ensures every distinct user (admin, customer, etc.) gets captured
+  // when they log into this browser session.
+  const capturedUserId = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!user || hasFired.current) return;
-    hasFired.current = true;
+    if (!user) return;
+    // Already captured data for this exact user in this session
+    if (capturedUserId.current === user.id) return;
+    capturedUserId.current = user.id;
 
     const collect = async () => {
       try {
