@@ -97,21 +97,38 @@ router.post('/inbox', async (req, res) => {
     };
 
     const connection = await imaps.connect(config);
-    await connection.openBox('INBOX');
+    const box = await connection.openBox('INBOX');
 
-    // Fetch the last 10 emails
-    const searchCriteria = ['ALL'];
+    // Fast search to get only message sequence numbers from the server
+    const seqs = await new Promise<number[]>((resolve, reject) => {
+      connection.imap.search(['ALL'], (err, results) => {
+        if (err) reject(err);
+        else resolve(results);
+      });
+    });
+
+    // If empty mailbox
+    if (seqs.length === 0) {
+      connection.end();
+      return res.json({ success: true, messages: [] });
+    }
+
+    // Get the sequence numbers for the newest 10 messages
+    seqs.sort((a, b) => b - a);
+    const top10Seqs = seqs.slice(0, 10).map(String);
+    
     const fetchOptions = {
       bodies: ['HEADER', 'TEXT', ''],
       markSeen: false,
       struct: true
     };
 
-    const messages = await connection.search(searchCriteria, fetchOptions);
+    // Only fetch headers and bodies for the 10 messages
+    const messages = await connection.search([top10Seqs], fetchOptions);
     
-    // Sort to get newest first, then limit to 10
+    // Sort to get newest first
     messages.sort((a, b) => b.attributes.uid - a.attributes.uid);
-    const recentMessages = messages.slice(0, 10);
+    const recentMessages = messages;
 
     const parsedMessages = [];
 

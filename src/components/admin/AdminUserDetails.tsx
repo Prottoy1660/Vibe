@@ -187,7 +187,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
           `)
           .eq('user_id', userId)
           .order('created_at', { ascending: false })
-          .limit(20);
+          .limit(200);
 
         if (!logsError) {
           setActivityLogs(logs || []);

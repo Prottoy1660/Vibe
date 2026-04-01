@@ -56,7 +56,8 @@ export const AdminUserEmails = () => {
             products:product_id (duration)
           )
         `)
-        .order('assigned_at', { ascending: false });
+        .order('assigned_at', { ascending: false })
+        .limit(200);
 
       if (error) throw error;
 

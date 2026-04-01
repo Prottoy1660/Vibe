@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.js'
 import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
 import adminRoutes from './routes/admin.js'
+import rateLimit from 'express-rate-limit'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -29,12 +30,31 @@ app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+// Rate Limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per `window` (here, per 15 minutes)
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' }
+})
+
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // Limit each IP to 50 requests per `window` (here, per 15 minutes)
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many cPanel requests, please wait and try again' }
+})
+
+app.use(globalLimiter)
+
 /**
  * API Routes
  */
 app.use('/api/auth', authRoutes)
 app.use('/api/payment', paymentRoutes)
-app.use('/api/cpanel', cpanelRoutes)
+app.use('/api/cpanel', strictLimiter, cpanelRoutes) // Apply stricter rate limit to cpanel operations
 app.use('/api/admin', adminRoutes)
 
 /**

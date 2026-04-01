@@ -39,7 +39,8 @@ export const AdminOrders = () => {
           users (email, name, phone),
           products (title)
         `)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) throw error;
       setOrders(data as unknown as Order[] || []);

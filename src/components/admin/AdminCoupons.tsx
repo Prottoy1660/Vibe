@@ -35,7 +35,8 @@ export const AdminCoupons = () => {
       const { data, error } = await supabase
         .from('coupons')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) throw error;
       setCoupons(data || []);

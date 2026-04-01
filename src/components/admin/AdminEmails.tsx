@@ -32,7 +32,8 @@ export const AdminEmails = () => {
       const { data, error } = await supabase
         .from('emails_pool')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(200);
 
       if (error) throw error;
       setEmails(data || []);
