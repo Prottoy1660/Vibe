@@ -17,12 +17,11 @@ router.post('/create', async (req, res) => {
   try {
     const { order_id, amount, full_name, email } = req.body;
 
-    // Use frontend URL from environment or fallback to localhost
-    const baseUrl = process.env.FRONTEND_URL || (
-      process.env.NODE_ENV === 'production' 
-        ? 'https://vibeaccessbd.shop' 
-        : 'http://localhost:5173'
-    );
+    // Dynamically get the base URL from the incoming request headers to guarantee it perfectly matches
+    // whatever domain (e.g. vercel.app, .shop, localhost) the user is actively visiting.
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers.host;
+    const baseUrl = process.env.FRONTEND_URL || `${protocol}://${host}`;
 
     // Handle 100% discount / free orders
     if (amount === 0 || amount === '0') {
