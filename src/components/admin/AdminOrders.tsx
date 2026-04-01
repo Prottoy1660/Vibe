@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, ShoppingBag, CheckCircle, XCircle, RotateCcw } from 'lucide-react';
+import { Loader2, ShoppingBag, CheckCircle, XCircle, RotateCcw, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Order {
@@ -174,6 +174,49 @@ export const AdminOrders = () => {
     }
   };
 
+  const handleDeleteAllPending = async () => {
+    if (!window.confirm('Are you absolutely sure you want to delete ALL pending/failed orders? This will clear the clutter.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      
+      alert('All pending orders have been successfully deleted.');
+      fetchOrders();
+    } catch (error) {
+      console.error('Error deleting pending orders:', error);
+      alert('Failed to delete pending orders');
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!window.confirm('Are you sure you want to permanently delete this order?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', orderId);
+
+      if (error) throw error;
+      
+      fetchOrders();
+    } catch (error) {
+      console.error('Error deleting order:', error);
+      alert('Failed to delete order');
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
   }
@@ -185,6 +228,16 @@ export const AdminOrders = () => {
           <ShoppingBag className="w-5 h-5 mr-2 text-blue-600" />
           Order Management
         </h3>
+        
+        {orders.some(o => o.status === 'pending') && (
+          <button 
+            onClick={handleDeleteAllPending}
+            className="px-4 py-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete All Pending
+          </button>
+        )}
       </div>
 
       <div className="p-6">
@@ -248,6 +301,14 @@ export const AdminOrders = () => {
                           </button>
                         </>
                       )}
+                      
+                      <button 
+                        onClick={() => handleDeleteOrder(order.id)}
+                        className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-600 outline outline-1 outline-gray-200 dark:outline-[#303038] hover:bg-red-50 dark:hover:bg-red-500/10 rounded flex items-center text-xs transition-colors duration-300 ml-1"
+                        title="Delete Order Permanently"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                       
                       {(order.status === 'completed' || order.status === 'paid') && (
                         <button 
