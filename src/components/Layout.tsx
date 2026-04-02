@@ -19,7 +19,8 @@ import {
   Sun,
   Moon,
   Fingerprint,
-  Gift
+  Gift,
+  CircleHelp
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -87,6 +88,7 @@ export const Layout = () => {
         { name: 'Email Inventory', href: '/admin?tab=emails', icon: Mail },
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
+        { name: 'Tutorial & Help Page', href: '/admin?tab=tutorial_help', icon: CircleHelp },
       ]
     },
     {
@@ -108,6 +110,7 @@ export const Layout = () => {
       name: 'Services',
       items: [
         { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
+        { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
       ],
     },
     {

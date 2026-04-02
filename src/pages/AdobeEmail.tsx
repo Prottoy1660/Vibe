@@ -613,7 +613,10 @@ export const AdobeEmail = () => {
                       Auto Renew: {orderAutoRenew ? 'ON' : 'OFF'}
                     </button>
                   )}
-                  <button className="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors">
+                  <button
+                    onClick={() => navigate('/tutorial-help')}
+                    className="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors"
+                  >
                     <PlayCircle className="w-4 h-4 mr-1.5" />
                     Tutorial
                   </button>
@@ -945,11 +948,17 @@ export const AdobeEmail = () => {
                   required
                   value={requestForm.productId}
                   onChange={(e) => setRequestForm({ ...requestForm, productId: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-200 dark:border-[#303038] rounded-xl bg-gray-50 dark:bg-white/5 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                  className="w-full px-4 py-2.5 border-2 border-gray-300 dark:border-indigo-500/70 rounded-xl bg-white dark:bg-[#1f1f28] text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary/70 focus:border-primary outline-none transition-all"
                 >
-                  <option value="">Select an option</option>
+                  <option value="" className="bg-white text-gray-700 dark:bg-[#1f1f28] dark:text-gray-300">
+                    Select an option
+                  </option>
                   {personalProducts.map((product) => (
-                    <option key={product.id} value={product.id}>
+                    <option
+                      key={product.id}
+                      value={product.id}
+                      className="bg-white text-gray-900 dark:bg-[#1f1f28] dark:text-gray-100"
+                    >
                       {product.title} - ৳{product.price} ({product.duration})
                     </option>
                   ))}
