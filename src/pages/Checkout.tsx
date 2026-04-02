@@ -143,7 +143,7 @@ export const Checkout = () => {
     const gatewayAmount = Math.max(0, totalAmount - safeWalletDeduction);
 
     if (discount > 0 && !appliedCouponId) {
-      setPaymentError('কুপন আবার Apply করুন / Please apply your coupon again before paying.');
+      setPaymentError('Please apply your coupon again before paying.');
       return;
     }
 
