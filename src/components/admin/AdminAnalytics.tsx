@@ -19,6 +19,7 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+  const [chartView, setChartView] = useState<'revenue' | 'payments' | 'both'>('revenue');
 
   useEffect(() => {
     fetchData();
@@ -185,112 +186,154 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
       </div>
 
       {/* Main Charts Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Revenue Trend Chart */}
-        <div className="lg:col-span-2 bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">
-          <div className="mb-6 flex justify-between items-center">
-            <div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Revenue Trend</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">Daily revenue over the selected period</p>
+      <div className="space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { id: 'revenue', label: 'Revenue trend' },
+                { id: 'payments', label: 'Payment methods' },
+                { id: 'both', label: 'Both charts' },
+              ] as const
+            ).map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setChartView(t.id)}
+                className={`px-3 py-2 text-sm font-semibold rounded-lg transition-all ${
+                  chartView === t.id
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/25'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Pick one view to reduce clutter.
+          </p>
+        </div>
+
+        <div className={chartView === 'both' ? 'grid grid-cols-1 lg:grid-cols-3 gap-6' : 'grid grid-cols-1 gap-6'}>
+          {(chartView === 'revenue' || chartView === 'both') && (
+            <div className={chartView === 'both' ? 'lg:col-span-2' : ''}>
+              <div className="bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">
+                <div className="mb-6">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Revenue trend</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
+                    Daily revenue over the selected period
+                  </p>
+                </div>
+
+                <div className="h-[300px] w-full">
+                  {loading ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                        <XAxis
+                          dataKey="date"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#9ca3af', fontSize: 12 }}
+                          dy={10}
+                          minTickGap={20}
+                        />
+                        <YAxis
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: '#9ca3af', fontSize: 12 }}
+                          tickFormatter={(value) => `৳${value}`}
+                          dx={-10}
+                        />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area
+                          type="monotone"
+                          dataKey="revenue"
+                          stroke="#8B5CF6"
+                          strokeWidth={3}
+                          fillOpacity={1}
+                          fill="url(#colorRevenue)"
+                          activeDot={{ r: 6, strokeWidth: 0, fill: '#8B5CF6' }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-          
-          <div className="h-[300px] w-full">
-            {loading ? (
-              <div className="w-full h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={dailyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                  <XAxis 
-                    dataKey="date" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#9ca3af', fontSize: 12 }} 
-                    dy={10}
-                    minTickGap={20}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: '#9ca3af', fontSize: 12 }}
-                    tickFormatter={(value) => `৳${value}`}
-                    dx={-10}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="#8B5CF6" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorRevenue)" 
-                    activeDot={{ r: 6, strokeWidth: 0, fill: '#8B5CF6' }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
+          )}
 
-        {/* Payment Methods Breakdown */}
-        <div className="bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">
-          <div className="mb-2">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Payment Methods</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">Distribution of gateways</p>
-          </div>
-          
-          <div className="h-[250px] w-full flex flex-col justify-center">
-             {loading ? (
-              <div className="w-full h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
-              </div>
-            ) : paymentMethodData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={paymentMethodData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {paymentMethodData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => [`${value} Orders`, 'Count']}
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                  />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    height={36} 
-                    iconType="circle"
-                    formatter={(value) => <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{value}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
-                No payment data available
-              </div>
-            )}
-          </div>
-        </div>
+          {(chartView === 'payments' || chartView === 'both') && (
+            <div className={chartView === 'both' ? 'lg:col-span-1' : ''}>
+              <div className="bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">
+                <div className="mb-2">
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Payment methods</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
+                    Distribution of gateways
+                  </p>
+                </div>
 
+                <div className="h-[250px] w-full flex flex-col justify-center">
+                  {loading ? (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Loader2 className="w-8 h-8 animate-spin text-primary opacity-50" />
+                    </div>
+                  ) : paymentMethodData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={paymentMethodData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                          stroke="none"
+                        >
+                          {paymentMethodData.map((_entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => [`${value} Orders`, 'Count']}
+                          contentStyle={{
+                            borderRadius: '12px',
+                            border: 'none',
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                          }}
+                        />
+                        <Legend
+                          verticalAlign="bottom"
+                          height={36}
+                          iconType="circle"
+                          formatter={(value) => (
+                            <span className="text-sm text-gray-700 dark:text-gray-200 font-medium">{value}</span>
+                          )}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
+                      No payment data available
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
