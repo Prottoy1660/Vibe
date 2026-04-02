@@ -95,7 +95,7 @@ router.post('/apply', requireUser, async (req, res) => {
         product_id: productId,
         payment_method: 'redeem_code',
         total_amount: productPrice,   // ← actual price, not 0
-        status: 'completed',
+        status: 'paid',               // Insert as 'paid' first, upgrade if provision succeeds
         payment_status: 'paid',
       })
       .select()
@@ -104,7 +104,12 @@ router.post('/apply', requireUser, async (req, res) => {
     if (orderError || !order) throw orderError;
 
     // Assign email using product-aware logic (respects email_slots & max_users_per_email)
-    await assignEmailForOrder(supabase, order.id, user.id, productId);
+    const assignment = await assignEmailForOrder(supabase, order.id, user.id, productId);
+    
+    // Only set to completed if we successfully provisioned an email
+    if (assignment.success) {
+      await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+    }
 
     // Attach order_id to the (already created) use record (best-effort)
     try {

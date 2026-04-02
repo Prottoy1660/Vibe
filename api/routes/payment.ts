@@ -747,24 +747,28 @@ router.post('/bulk-assign-emails', requireUser, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Forbidden: Admins only' });
     }
 
-    // Fetch all orders that are paid but stuck/not completed, filtering out personal ones.
-    const { data: paidOrders, error: fetchErr } = await supabase
+    // Fetch all orders that are paid or completed, filtering out personal ones.
+    // Joining with user_emails allows us to see if the order got an email or not.
+    const { data: candidateOrders, error: fetchErr } = await supabase
       .from('orders')
-      .select('*, products!inner(id, is_personal)')
-      .eq('status', 'paid')
+      .select('*, products!inner(id, is_personal), user_emails(id)')
+      .in('status', ['paid', 'completed'])
       .eq('payment_status', 'paid')
       .eq('products.is_personal', false);
       
     if (fetchErr) throw fetchErr;
     
-    if (!paidOrders || paidOrders.length === 0) {
+    // Filter strictly to orders that have NO assigned emails at all
+    const unfulfilledOrders = candidateOrders.filter((o: any) => !o.user_emails || o.user_emails.length === 0);
+    
+    if (!unfulfilledOrders || unfulfilledOrders.length === 0) {
       return res.json({ success: true, message: 'No missing/unfulfilled orders found.', results: [] });
     }
     
     const results = [];
     let successCount = 0;
     
-    for (const order of paidOrders) {
+    for (const order of unfulfilledOrders) {
       const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
       if (assignment.success) {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
@@ -786,7 +790,7 @@ router.post('/bulk-assign-emails', requireUser, async (req, res) => {
     
     return res.json({ 
       success: true, 
-      message: `Successfully fulfilled ${successCount} out of ${paidOrders.length} pending emails.`,
+      message: `Successfully fulfilled ${successCount} out of ${unfulfilledOrders.length} pending emails.`,
       results 
     });
 
