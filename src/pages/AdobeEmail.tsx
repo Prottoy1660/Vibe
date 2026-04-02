@@ -6,7 +6,7 @@ import {
   AlertCircle, 
   KeyRound, 
   ShoppingBag, 
-  PlayCircle, 
+  BookOpen, 
   Mail, 
   RefreshCw,
   Search,
@@ -17,7 +17,9 @@ import {
   Calendar,
   CreditCard,
   Inbox,
-  X
+  X,
+  Sparkles,
+  ExternalLink
 } from 'lucide-react';
 import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
 
@@ -494,70 +496,88 @@ export const AdobeEmail = () => {
     return acc;
   }, {} as Record<string, typeof filteredEmails>);
 
-  // Get all unique active subscriptions for the summary boxes
-  const activeSubscriptions = Object.values(emailsByOrder)
-    .map(orderEmails => orderEmails[0]) // Get the first email of each order to check subscription details
-    .filter(email => email?.subscription_details && !email.subscription_details.is_expired);
+  const btnOutline =
+    'inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-900/50 px-3 py-2 text-sm font-medium text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors';
+  const btnPrimary =
+    'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors disabled:opacity-50';
 
   return (
-    <div className="space-y-6 pb-12 max-w-6xl mx-auto">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Adobe</h1>
+    <div className="space-y-6 pb-16 max-w-5xl mx-auto">
+      <div>
+        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5" />
+          Services
+        </p>
+        <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight mt-1">
+          Adobe access
+        </h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
+          Your pooled Adobe logins, renewal, and inbox—one place. Use copy buttons to paste into Adobe’s sign-in page.
+        </p>
       </div>
 
-      {/* Status Banner */}
       {!hasActiveSubscription && (
-        <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center text-red-600 font-medium">
-            <AlertCircle className="w-5 h-5 mr-2" />
-            No Active Subscription
+        <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center text-red-800 dark:text-red-200 font-medium text-sm">
+            <AlertCircle className="w-5 h-5 mr-2 shrink-0" />
+            No active subscription
           </div>
-          <div className="flex gap-3 w-full sm:w-auto">
-            <button 
-              onClick={() => navigate('/store')}
-              className="flex-1 sm:flex-none flex items-center justify-center px-4 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-            >
-              <ShoppingBag className="w-4 h-4 mr-2" />
-              Buy Now
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/store')}
+            className={btnPrimary}
+          >
+            <ShoppingBag className="w-4 h-4" />
+            Browse store
+          </button>
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-[#26262d] flex justify-between items-end">
-        <nav className="flex space-x-8">
-          <button 
-            onClick={() => setActiveTab('emails')}
-            className={`border-b-2 py-4 px-1 text-sm font-medium flex items-center transition-colors ${
-              activeTab === 'emails' 
-                ? 'border-primary text-primary' 
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            <Mail className="w-4 h-4 mr-2" />
-            Adobe Emails
-          </button>
-          <button 
-            onClick={() => setActiveTab('personal')}
-            className={`border-b-2 py-4 px-1 text-sm font-medium flex items-center transition-colors ${
-              activeTab === 'personal' 
-                ? 'border-primary text-primary' 
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-            }`}
-          >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Personal Subscriptions
-          </button>
-        </nav>
-        {activeTab === 'personal' && (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2 p-1 rounded-xl bg-gray-100 dark:bg-zinc-900/80 border border-gray-200 dark:border-zinc-800">
           <button
-            onClick={() => setIsRequestModalOpen(true)}
-            className="mb-2 flex items-center px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors"
+            type="button"
+            onClick={() => setActiveTab('emails')}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'emails'
+                ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
+            }`}
           >
-            <CreditCard className="w-4 h-4 mr-2" />
-            Personal Adobe Subscription Request
+            <Mail className="w-4 h-4" />
+            Team / pooled emails
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('personal')}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              activeTab === 'personal'
+                ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
+            }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            Personal subscriptions
+          </button>
+        </div>
+        {activeTab === 'personal' && (
+          <button type="button" onClick={() => setIsRequestModalOpen(true)} className={btnPrimary}>
+            <CreditCard className="w-4 h-4" />
+            Request personal plan
+          </button>
+        )}
+        {activeTab === 'emails' && emails.length > 0 && (
+          <div className="relative w-full sm:max-w-xs sm:ml-auto">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter by email…"
+              className="w-full rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 py-2.5 pl-10 pr-3 text-sm text-gray-900 dark:text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+              aria-label="Search assigned emails"
+            />
+          </div>
         )}
       </div>
 
@@ -576,198 +596,250 @@ export const AdobeEmail = () => {
           const orderAutoRenew = firstEmail?.order_auto_renew ?? false;
           
           return (
-            <div key={orderId} className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-              <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                    Subscription {isUnassigned ? '(Unknown)' : `#${index + 1}`}
+            <div
+              key={orderId}
+              className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden"
+            >
+              <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 gap-y-2">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-zinc-100">
+                      Plan {isUnassigned ? '(unknown order)' : `#${index + 1}`}
+                    </h3>
                     {!isUnassigned && (
-                      <span className={`ml-3 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                          isActive
+                            ? 'border-emerald-700 bg-emerald-950 text-emerald-100'
+                            : 'border-red-800 bg-red-950 text-red-100'
+                        }`}
+                      >
                         {isActive ? 'Active' : 'Expired'}
                       </span>
                     )}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1.5 leading-relaxed">
                     {canGenerate
-                      ? `${emailsGenerated} of ${slotLimit} emails generated for this subscription`
-                      : 'Email automatically assigned to this subscription'}
+                      ? `${emailsGenerated} of ${slotLimit} Adobe addresses used for this plan.`
+                      : 'One address is assigned automatically for this plan.'}
                   </p>
                 </div>
-                
-                <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+
+                <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full lg:w-auto lg:max-w-xl">
                   {!isUnassigned && isActive && (
-                    <button
-                      onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
-                      disabled={togglingAutoRenewOrderId === orderId}
-                      className={`flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
-                        orderAutoRenew
-                          ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:border-indigo-500/30 dark:text-indigo-300'
-                          : 'border-gray-300 text-gray-700 dark:border-[#303038] dark:text-gray-200 dark:bg-white/5'
-                      }`}
-                    >
-                      {togglingAutoRenewOrderId === orderId ? (
-                        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                      ) : null}
-                      Auto Renew: {orderAutoRenew ? 'ON' : 'OFF'}
-                    </button>
+                    <div className="flex items-center justify-between sm:justify-start gap-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/40 px-3 py-2">
+                      <div className="text-left">
+                        <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Auto-renew</p>
+                        <p className="text-xs text-gray-600 dark:text-zinc-400">
+                          {orderAutoRenew ? 'Uses wallet when term ends' : 'Off — renew manually'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={orderAutoRenew}
+                        disabled={togglingAutoRenewOrderId === orderId}
+                        onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
+                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 ${
+                          orderAutoRenew ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                        }`}
+                      >
+                        {togglingAutoRenewOrderId === orderId ? (
+                          <Loader2 className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
+                        ) : (
+                          <span
+                            className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                              orderAutoRenew ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+                            }`}
+                          />
+                        )}
+                      </button>
+                    </div>
                   )}
-                  <button
-                    onClick={() => navigate('/tutorial-help')}
-                    className="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors"
-                  >
-                    <PlayCircle className="w-4 h-4 mr-1.5" />
-                    Tutorial
-                  </button>
-                  <button className="flex items-center px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-100 transition-colors">
-                    <Mail className="w-4 h-4 mr-1.5" />
-                    Mail Access
-                  </button>
-                  {/* Only show Generate Email button for multi-slot products */}
-                  {canGenerate && !isUnassigned && isActive && (
-                    <button 
-                      onClick={() => handleGenerateEmail(orderId)}
-                      disabled={emailsGenerated >= slotLimit || generating}
-                      className={`flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
-                        emailsGenerated >= slotLimit || generating
-                          ? 'border-gray-200 dark:border-[#26262d] text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-white/5 cursor-not-allowed'
-                          : 'border-gray-300 dark:border-[#303038] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 bg-white dark:bg-[#151518]'
-                      }`}
-                    >
-                      {generating ? (
-                        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4 mr-1.5" />
-                      )}
-                      Generate Email ({slotLimit - emailsGenerated}/{slotLimit})
+
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => navigate('/tutorial-help')} className={btnOutline}>
+                      <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                      How to sign in
                     </button>
-                  )}
+                    <a
+                      href="https://account.adobe.com/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={btnOutline}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      Adobe account site
+                    </a>
+                    {canGenerate && !isUnassigned && isActive && (
+                      <button
+                        type="button"
+                        onClick={() => handleGenerateEmail(orderId)}
+                        disabled={emailsGenerated >= slotLimit || generating}
+                        className={`${btnOutline} disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        Add email ({slotLimit - emailsGenerated} left)
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* ⚠️ Single-Device Policy Warning — only if product has it enabled */}
               {showDeviceWarning && (
-                <div className="mx-6 mt-4 mb-6 flex items-start gap-3 bg-amber-50 dark:bg-[#2a2215]/80 border border-amber-200 dark:border-[#42331c] rounded-xl p-4 shadow-sm">
-                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-amber-800 dark:text-amber-300 mb-1 leading-tight">
-                      Single Device Use Only
-                    </p>
-                    <p className="text-[13px] text-amber-700 dark:text-amber-400/90 leading-relaxed max-w-4xl tracking-tight">
-                      This account can only be used on <strong>one device at a time</strong>. 
-                      Before signing in, make sure you are signed out of Adobe on all other devices. 
-                      Using it on multiple devices simultaneously may cause your access to be revoked.
+                <div className="mx-5 sm:mx-6 mt-2 mb-4 flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/25 p-4">
+                  <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">One device at a time</p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300/90 mt-1 leading-relaxed">
+                      Sign out of Adobe on other devices before using this login. Simultaneous use can revoke access.
                     </p>
                   </div>
                 </div>
               )}
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
-                  <thead className="bg-gray-50 dark:bg-white/5">
-                    <tr>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Email Address</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Password</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Assigned Date</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Expiration</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
-                      <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
-                    {orderEmails.map((email, emailIndex) => {
-                      const isReplaced = emailIndex > 0; // First email is the latest, others are replaced
-                      
-                      return (
-                        <tr key={email.id} className={`hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors ${isReplaced ? 'opacity-60 bg-gray-50/50 dark:bg-white/5' : ''}`}>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center font-bold ${isReplaced ? 'bg-gray-200 text-gray-500 dark:text-gray-400 dark:text-gray-500' : 'bg-red-100 text-red-600'}`}>
-                                A
-                              </div>
-                              <div className="ml-4">
-                                <div className={`text-sm font-medium ${isReplaced ? 'text-gray-500 dark:text-gray-400 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>{email.email_details.email}</div>
-                              </div>
+              <div className="p-4 sm:p-6 space-y-4">
+                {orderEmails.map((email, emailIndex) => {
+                  const isReplaced = emailIndex > 0;
+                  const sub = email.subscription_details;
+
+                  return (
+                    <div
+                      key={email.id}
+                      className={`rounded-xl border p-4 sm:p-5 transition-colors ${
+                        isReplaced
+                          ? 'border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/20 opacity-75'
+                          : 'border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-900/30'
+                      }`}
+                    >
+                      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 flex-1 space-y-4">
+                          <div className="flex gap-3">
+                            <div
+                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
+                                isReplaced ? 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' : 'bg-red-500/15 text-red-600 dark:text-red-400'
+                              }`}
+                            >
+                              A
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className={`text-sm font-mono px-2 py-1 rounded inline-block ${isReplaced ? 'text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-white/5' : 'text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-white/10'}`}>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
+                                Email address
+                              </p>
+                              <p
+                                className={`mt-0.5 break-all font-mono text-sm sm:text-base ${
+                                  isReplaced
+                                    ? 'text-zinc-500 line-through dark:text-zinc-500'
+                                    : 'text-gray-900 dark:text-zinc-100'
+                                }`}
+                              >
+                                {email.email_details.email}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
+                              Password
+                            </p>
+                            <div className="mt-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-950 px-3 py-2.5 font-mono text-sm text-zinc-900 dark:text-zinc-100">
                               {email.email_details.password}
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                            {format(new Date(email.assigned_at), 'MMM dd, yyyy')}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {email.subscription_details ? (
-                              <div className="flex flex-col">
-                                <span className={`text-sm font-bold flex items-center ${
-                                  isReplaced ? 'text-gray-400 dark:text-gray-500' :
-                                  email.subscription_details.is_expired ? 'text-red-600' : 'text-green-600'
-                                }`}>
-                                  {email.subscription_details.days_left} Days Left
-                                </span>
-                                <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 flex items-center mt-1">
-                                  <Calendar className="w-3 h-3 mr-1" />
-                                  {format(email.subscription_details.expires_at, 'MMM dd, yyyy')}
-                                </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-6 text-sm">
+                            <div>
+                              <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Assigned</p>
+                              <p className="mt-0.5 text-gray-800 dark:text-zinc-200">
+                                {format(new Date(email.assigned_at), 'MMM d, yyyy')}
+                              </p>
+                            </div>
+                            {sub ? (
+                              <div>
+                                <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Subscription ends</p>
+                                <p
+                                  className={`mt-0.5 font-medium ${
+                                    isReplaced
+                                      ? 'text-zinc-500'
+                                      : sub.is_expired
+                                        ? 'text-red-600 dark:text-red-400'
+                                        : 'text-emerald-700 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {sub.days_left} days left · {format(sub.expires_at, 'MMM d, yyyy')}
+                                </p>
                                 {!isReplaced && (
-                                  <div className="w-full bg-gray-200 h-1.5 rounded-full mt-1.5 overflow-hidden">
-                                    <div 
-                                      className={`h-full rounded-full transition-all duration-1000 ${email.subscription_details.is_expired ? 'bg-red-500' : 'bg-green-500'}`} 
-                                      style={{ width: `${Math.min(100, Math.max(0, (email.subscription_details.days_left / 30) * 100))}%` }}
-                                    ></div>
+                                  <div className="mt-2 h-1.5 max-w-[200px] overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                    <div
+                                      className={`h-full rounded-full ${sub.is_expired ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                      style={{
+                                        width: `${Math.min(100, Math.max(0, (sub.days_left / 30) * 100))}%`,
+                                      }}
+                                    />
                                   </div>
                                 )}
                               </div>
                             ) : (
-                              <span className="text-sm text-gray-400 dark:text-gray-500 italic">Unknown</span>
+                              <p className="text-zinc-500 text-sm italic">End date unavailable</p>
                             )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {isReplaced ? (
-                              <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                                Replaced
-                              </span>
-                            ) : (
-                              <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                email.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                              }`}>
-                                {email.is_active ? 'Active' : 'Inactive'}
-                              </span>
-                            )}
-                          </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex justify-end space-x-2">
-                              <button 
-                                onClick={() => handleOpenInbox(email.email_details.email, email.email_details.password)}
-                                className="text-indigo-500 hover:text-indigo-700 transition-colors p-1 flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 rounded mr-2 px-2"
-                                title="Check Inbox"
-                              >
-                                <Inbox className="w-4 h-4 mr-1" /> <span className="text-xs font-medium">Inbox</span>
-                              </button>
-                              <button 
-                                onClick={() => copyToClipboard(email.email_details.email, `email-${email.id}`)}
-                                className="text-gray-400 dark:text-gray-500 hover:text-primary transition-colors p-1"
-                                title="Copy Email"
-                              >
-                                {copiedId === `email-${email.id}` ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
-                              </button>
-                              <button 
-                                onClick={() => copyToClipboard(email.email_details.password, `pass-${email.id}`)}
-                                className="text-gray-400 dark:text-gray-500 hover:text-primary transition-colors p-1"
-                                title="Copy Password"
-                              >
-                                {copiedId === `pass-${email.id}` ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <KeyRound className="w-5 h-5" />}
-                              </button>
+                            <div className="flex items-end">
+                              {isReplaced ? (
+                                <span className="rounded-full border border-zinc-300 dark:border-zinc-600 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                                  Replaced
+                                </span>
+                              ) : (
+                                <span
+                                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                    email.is_active
+                                      ? 'border-emerald-800 bg-emerald-950 text-emerald-100'
+                                      : 'border-red-800 bg-red-950 text-red-100'
+                                  }`}
+                                >
+                                  {email.is_active ? 'Active' : 'Inactive'}
+                                </span>
+                              )}
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInbox(email.email_details.email, email.email_details.password)}
+                            className={btnPrimary}
+                          >
+                            <Inbox className="w-4 h-4" />
+                            Open inbox
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(email.email_details.email, `email-${email.id}`)}
+                            className={btnOutline}
+                          >
+                            {copiedId === `email-${email.id}` ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            ) : (
+                              <Copy className="w-4 h-4" />
+                            )}
+                            Copy email
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(email.email_details.password, `pass-${email.id}`)}
+                            className={btnOutline}
+                          >
+                            {copiedId === `pass-${email.id}` ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            ) : (
+                              <KeyRound className="w-4 h-4" />
+                            )}
+                            Copy password
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -825,13 +897,13 @@ export const AdobeEmail = () => {
               ) : personalOrders.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
-                    <thead className="bg-gray-50 dark:bg-white/5">
+                    <thead className="bg-gray-100/90 dark:bg-zinc-900/80">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email Address</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Auto Renew</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiration</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Email</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Plan</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Auto-renew</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Ends</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
@@ -875,10 +947,10 @@ export const AdobeEmail = () => {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              order.status === 'completed' || order.status === 'paid' 
-                                ? 'bg-green-100 text-green-800' 
-                                : 'bg-orange-100 text-orange-800'
+                            <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${
+                              order.status === 'completed' || order.status === 'paid'
+                                ? 'border-emerald-800 bg-emerald-950 text-emerald-100'
+                                : 'border-amber-800 bg-amber-950 text-amber-100'
                             }`}>
                               {order.status === 'completed' || order.status === 'paid' ? 'Active' : 'Pending'}
                             </span>

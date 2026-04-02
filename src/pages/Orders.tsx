@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, Filter, ShoppingCart, Loader2, CreditCard } from 'lucide-react';
+import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
 
@@ -16,12 +17,33 @@ interface Order {
   };
 }
 
+type StatusFilter = 'all' | 'pending' | 'paid' | 'completed' | 'issue';
+
+function statusCaption(effectiveStatus: string): string {
+  switch (effectiveStatus.toLowerCase()) {
+    case 'completed':
+      return 'Your order is complete — use Adobe Email for login details.';
+    case 'paid':
+      return 'Payment received. We are assigning your access; check Adobe Email shortly.';
+    case 'pending':
+      return 'Complete payment to confirm this order.';
+    case 'cancelled':
+      return 'This order was cancelled.';
+    case 'refunded':
+      return 'This order was refunded.';
+    default:
+      return '';
+  }
+}
+
 export const Orders = () => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(Date.now());
 
   useEffect(() => {
@@ -42,7 +64,7 @@ export const Orders = () => {
   useEffect(() => {
     const fetchOrders = async () => {
       if (!user) return;
-      
+
       try {
         const { data, error } = await supabase
           .from('orders')
@@ -57,21 +79,18 @@ export const Orders = () => {
           .order('created_at', { ascending: false });
 
         if (error) throw error;
-        
-        // Transform data
+
         if (data) {
-          const formattedOrders = data.map((item: any) => {
-            return {
-              id: item.id,
-              created_at: item.created_at,
-              status: item.status,
-              total_amount: item.total_amount,
-              product: {
-                title: item.product?.title || 'Unknown Product',
-                title_bn: item.product?.title_bn || ''
-              }
-            };
-          });
+          const formattedOrders = data.map((item: any) => ({
+            id: item.id,
+            created_at: item.created_at,
+            status: item.status,
+            total_amount: item.total_amount,
+            product: {
+              title: item.product?.title || 'Unknown Product',
+              title_bn: item.product?.title_bn || '',
+            },
+          }));
           setOrders(formattedOrders);
         }
       } catch (error) {
@@ -84,36 +103,116 @@ export const Orders = () => {
     fetchOrders();
   }, [user]);
 
-  const filteredOrders = orders
-    .filter((order) => getEffectiveStatus(order) !== 'expired')
-    .filter(order =>
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.product.title.toLowerCase().includes(searchQuery.toLowerCase())
+  const activeOrders = useMemo(
+    () => orders.filter((order) => getEffectiveStatus(order) !== 'expired'),
+    [orders, nowMs]
+  );
+
+  const filteredOrders = useMemo(() => {
+    let list = activeOrders.filter(
+      (order) =>
+        order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.product.title.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    if (statusFilter === 'all') return list;
+
+    list = list.filter((order) => {
+      const s = getEffectiveStatus(order).toLowerCase();
+      if (statusFilter === 'pending') return s === 'pending';
+      if (statusFilter === 'paid') return s === 'paid';
+      if (statusFilter === 'completed') return s === 'completed';
+      if (statusFilter === 'issue') return s === 'cancelled' || s === 'refunded';
+      return true;
+    });
+
+    return list;
+  }, [activeOrders, searchQuery, statusFilter, nowMs]);
+
+  const counts = useMemo(() => {
+    const c = { all: activeOrders.length, pending: 0, paid: 0, completed: 0, issue: 0 };
+    for (const o of activeOrders) {
+      const s = getEffectiveStatus(o).toLowerCase();
+      if (s === 'pending') c.pending++;
+      else if (s === 'paid') c.paid++;
+      else if (s === 'completed') c.completed++;
+      else if (s === 'cancelled' || s === 'refunded') c.issue++;
+    }
+    return c;
+  }, [activeOrders, nowMs]);
+
+  /** Solid dark pills in dark mode so text never inherits low-contrast white on pastel. */
   const getStatusBadge = (status: string, createdAt?: string) => {
+    const base =
+      'px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border';
     switch (status.toLowerCase()) {
       case 'completed':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>;
+        return (
+          <span
+            className={`${base} border-emerald-200 bg-emerald-100 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100`}
+          >
+            Completed
+          </span>
+        );
       case 'paid':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Paid</span>;
+        return (
+          <span
+            className={`${base} border-sky-200 bg-sky-100 text-sky-900 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100`}
+          >
+            Paid
+          </span>
+        );
       case 'pending':
         if (!createdAt) {
-          return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">Pending</span>;
+          return (
+            <span
+              className={`${base} border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100`}
+            >
+              Pending
+            </span>
+          );
         }
         const remainingMs = getPendingRemainingMs(createdAt);
         const remainingMinutes = Math.max(0, Math.ceil(remainingMs / (60 * 1000)));
         return (
-          <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
-            Time Left: {remainingMinutes}m
+          <span
+            className={`${base} border-amber-200 bg-amber-100 text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100`}
+          >
+            {remainingMinutes > 0 ? `Pay within ~${remainingMinutes}m` : 'Pending'}
           </span>
         );
       case 'expired':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-400">Expired</span>;
+        return (
+          <span
+            className={`${base} border-zinc-200 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200`}
+          >
+            Expired
+          </span>
+        );
       case 'cancelled':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">Cancelled</span>;
+        return (
+          <span
+            className={`${base} border-red-200 bg-red-100 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-100`}
+          >
+            Cancelled
+          </span>
+        );
+      case 'refunded':
+        return (
+          <span
+            className={`${base} border-zinc-300 bg-zinc-200 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100`}
+          >
+            Refunded
+          </span>
+        );
       default:
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-white/10 text-gray-800 dark:text-gray-100">{status}</span>;
+        return (
+          <span
+            className={`${base} border-zinc-200 bg-zinc-100 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100`}
+          >
+            {status}
+          </span>
+        );
     }
   };
 
@@ -125,7 +224,7 @@ export const Orders = () => {
         amount: amount,
         full_name: user?.user_metadata?.full_name || 'Customer',
         email: user?.email,
-        frontend_url: window.location.origin
+        frontend_url: window.location.origin,
       });
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;
@@ -140,131 +239,239 @@ export const Orders = () => {
     }
   };
 
-  const getTimelineSteps = (status: string) => {
-    const normalized = status.toLowerCase();
-    const steps = ['Order', 'Payment', 'Provisioning', 'Completed'];
-    let activeIndex = 0;
-    if (normalized === 'pending') activeIndex = 0;
-    else if (normalized === 'paid') activeIndex = 1;
-    else if (normalized === 'completed') activeIndex = 3;
-    else if (normalized === 'cancelled' || normalized === 'expired' || normalized === 'refunded') activeIndex = -1;
-    return { steps, activeIndex };
+  const copyOrderId = (id: string) => {
+    void navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    window.setTimeout(() => setCopiedId(null), 2000);
   };
 
-  return (
-    <div className="space-y-6 pb-12 max-w-6xl mx-auto">
-      <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-2">
-        <span>Orders</span> <span className="mx-2">&gt;</span> <span>List</span>
-      </div>
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Orders</h1>
+  const filterTabs = useMemo(() => {
+    const tabs: { key: StatusFilter; label: string }[] = [
+      { key: 'all', label: 'All' },
+      { key: 'pending', label: 'Awaiting payment' },
+      { key: 'paid', label: 'Paid' },
+      { key: 'completed', label: 'Completed' },
+    ];
+    if (counts.issue > 0) tabs.push({ key: 'issue', label: 'Cancelled / refunded' });
+    return tabs;
+  }, [counts.issue]);
 
-      <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-        <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex justify-end gap-3 bg-gray-50/50 dark:bg-white/5">
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-            </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="block w-full sm:w-64 pl-10 pr-3 py-2 border border-gray-200 dark:border-[#26262d] rounded-lg text-sm focus:ring-primary focus:border-primary outline-none dark:bg-[#111113] dark:text-gray-100"
-              placeholder="Search orders..."
-            />
+  return (
+    <div className="space-y-6 pb-16 max-w-5xl mx-auto px-0 sm:px-0">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            Purchases
+          </p>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight mt-1">Your orders</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-lg">
+            See payment status, open Adobe access when ready, or copy an order ID for support.
+          </p>
+        </div>
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total orders', value: counts.all, tone: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-500/10' },
+          { label: 'Awaiting payment', value: counts.pending, tone: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-500/10' },
+          { label: 'Paid (processing)', value: counts.paid, tone: 'text-sky-700 dark:text-sky-400', bg: 'bg-sky-500/10' },
+          { label: 'Completed', value: counts.completed, tone: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-500/10' },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="rounded-xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] px-4 py-3 shadow-sm dark:shadow-none"
+          >
+            <p className="text-[11px] font-medium text-gray-500 dark:text-gray-500 uppercase tracking-wide">{s.label}</p>
+            <p className={`text-xl font-semibold tabular-nums mt-0.5 ${s.tone}`}>{s.value}</p>
           </div>
-          <button className="flex items-center justify-center p-2 border border-gray-200 dark:border-[#26262d] rounded-lg bg-white dark:bg-[#151518] text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors relative">
-            <Filter className="h-5 w-5" />
-            <span className="absolute -top-1 -right-1 bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] flex items-center justify-center">
-              0
-            </span>
-          </button>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-white/5 space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {filterTabs.map((tab) => {
+                const n =
+                  tab.key === 'all'
+                    ? counts.all
+                    : tab.key === 'pending'
+                      ? counts.pending
+                      : tab.key === 'paid'
+                        ? counts.paid
+                        : tab.key === 'completed'
+                          ? counts.completed
+                          : counts.issue;
+                const active = statusFilter === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setStatusFilter(tab.key)}
+                    className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors ${
+                      active
+                        ? 'bg-indigo-600 text-white dark:bg-indigo-500 shadow-sm'
+                        : 'bg-gray-50 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/40'
+                    }`}
+                  >
+                    {tab.label}
+                    <span
+                      className={`rounded-md px-1.5 py-0.5 text-xs tabular-nums ${
+                        active ? 'bg-white/20' : 'bg-white dark:bg-white/10 text-gray-600 dark:text-gray-300'
+                      }`}
+                    >
+                      {n}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative w-full lg:max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-gray-200 dark:border-[#2e2e36] bg-white dark:bg-[#16161a] py-2.5 pl-10 pr-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+                placeholder="Search by product or order ID…"
+                aria-label="Search orders"
+              />
+            </div>
+          </div>
         </div>
 
         {loading ? (
-          <div className="p-12 flex justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <div className="p-14 flex justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
           </div>
         ) : filteredOrders.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
-              <thead className="bg-gray-50 dark:bg-white/5">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Order ID</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Product</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Date</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Status</th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Action</th>
+            <table className="min-w-[720px] w-full divide-y divide-gray-100 dark:divide-white/10">
+              <thead>
+                <tr className="bg-gray-50/90 dark:bg-white/[0.03] text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <th scope="col" className="px-4 sm:px-5 py-3">
+                    Order
+                  </th>
+                  <th scope="col" className="px-4 sm:px-5 py-3">
+                    Product
+                  </th>
+                  <th scope="col" className="px-4 sm:px-5 py-3 hidden sm:table-cell">
+                    Date
+                  </th>
+                  <th scope="col" className="px-4 sm:px-5 py-3">
+                    Total
+                  </th>
+                  <th scope="col" className="px-4 sm:px-5 py-3 min-w-[200px]">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 sm:px-5 py-3 text-right">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {filteredOrders.map((order) => {
                   const effectiveStatus = getEffectiveStatus(order);
-                  const timeline = getTimelineSteps(effectiveStatus);
+                  const cap = statusCaption(effectiveStatus);
                   return (
-                  <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                      #{order.id.substring(0, 8)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                      {order.product.title}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                      {format(new Date(order.created_at), 'MMM dd, yyyy')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                      ৳{order.total_amount.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(effectiveStatus, order.created_at)}
-                      <div className="mt-2 flex items-center gap-1.5">
-                        {timeline.steps.map((step, idx) => {
-                          const activeIndex = timeline.activeIndex;
-                          const active = activeIndex >= 0 && idx <= activeIndex;
-                          return (
-                            <div key={step} className="flex items-center">
-                              <span
-                                title={step}
-                                className={`h-1.5 w-7 rounded-full ${active ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-white/10'}`}
-                              />
-                              {idx < 3 ? <span className="w-1" /> : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                      {effectiveStatus === 'pending' && (
-                        <button
-                          onClick={() => handlePayNow(order.id, order.total_amount)}
-                          disabled={processingId === order.id}
-                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-lg shadow-sm text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-colors"
-                        >
-                          {processingId === order.id ? (
-                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                          ) : (
-                            <CreditCard className="w-3.5 h-3.5 mr-1.5" />
+                    <tr key={order.id} className="hover:bg-gray-50/80 dark:hover:bg-white/[0.02] transition-colors align-top">
+                      <td className="px-4 sm:px-5 py-4">
+                        <span className="font-mono text-xs font-medium text-gray-900 dark:text-gray-100">#{order.id.substring(0, 8)}</span>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 sm:hidden">{format(new Date(order.created_at), 'MMM d, yyyy')}</p>
+                      </td>
+                      <td className="px-4 sm:px-5 py-4">
+                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{order.product.title}</span>
+                      </td>
+                      <td className="px-4 sm:px-5 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap hidden sm:table-cell">
+                        {format(new Date(order.created_at), 'MMM d, yyyy')}
+                      </td>
+                      <td className="px-4 sm:px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap tabular-nums">
+                        ৳{Number(order.total_amount).toFixed(2)}
+                      </td>
+                      <td className="px-4 sm:px-5 py-4">
+                        <div className="space-y-1.5 max-w-xs">
+                          {getStatusBadge(effectiveStatus, order.created_at)}
+                          {cap ? <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{cap}</p> : null}
+                        </div>
+                      </td>
+                      <td className="px-4 sm:px-5 py-4 text-right">
+                        <div className="flex flex-col items-end gap-2">
+                          {effectiveStatus === 'pending' ? (
+                            <button
+                              type="button"
+                              onClick={() => handlePayNow(order.id, order.total_amount)}
+                              disabled={processingId === order.id}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs sm:text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors w-full sm:w-auto"
+                            >
+                              {processingId === order.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CreditCard className="h-4 w-4" />
+                              )}
+                              Pay now
+                            </button>
+                          ) : null}
+                          {(effectiveStatus === 'paid' || effectiveStatus === 'completed') && (
+                            <Link
+                              to="/adobe-email"
+                              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs sm:text-sm font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15 transition-colors w-full sm:w-auto"
+                            >
+                              <Package className="h-4 w-4 shrink-0" />
+                              Adobe email
+                              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                            </Link>
                           )}
-                          Pay Now
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                )})}
+                          <button
+                            type="button"
+                            onClick={() => copyOrderId(order.id)}
+                            className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                          >
+                            {copiedId === order.id ? (
+                              <>
+                                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                Copied
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3.5 w-3.5" />
+                                Copy full ID
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="p-16 text-center flex flex-col items-center justify-center">
-            <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center mb-4 border border-gray-100 dark:border-[#26262d]">
-              <ShoppingCart className="w-8 h-8 text-gray-300" />
+          <div className="p-14 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5">
+              <ShoppingCart className="h-7 w-7 text-gray-400" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-1">No orders yet</h3>
-            <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm max-w-md">
-              {searchQuery 
-                ? `No orders found matching "${searchQuery}"` 
-                : "Your orders will appear here once you make a purchase"}
+            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">No orders match</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+              {searchQuery || statusFilter !== 'all'
+                ? 'Try another filter or clear the search.'
+                : 'When you buy from the store, your orders will show up here.'}
             </p>
+            {(searchQuery || statusFilter !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('all');
+                }}
+                className="mt-4 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                Reset filters
+              </button>
+            )}
           </div>
         )}
       </div>
