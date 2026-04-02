@@ -79,7 +79,7 @@ export const AdobeEmail = () => {
   const [personalOrders, setPersonalOrders] = useState<any[]>([]);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [personalProducts, setPersonalProducts] = useState<any[]>([]);
-  const [requestForm, setRequestForm] = useState({ email: '', productId: '' });
+  const [requestForm, setRequestForm] = useState({ email: '', productId: '', autoRenew: true });
   const [submittingRequest, setSubmittingRequest] = useState(false);
 
   const fetchEmailData = async () => {
@@ -450,7 +450,7 @@ export const AdobeEmail = () => {
       return;
     }
     setIsRequestModalOpen(false);
-    navigate(`/checkout/${requestForm.productId}?personal_email=${encodeURIComponent(requestForm.email)}`);
+    navigate(`/checkout/${requestForm.productId}?personal_email=${encodeURIComponent(requestForm.email)}&auto_renew=${requestForm.autoRenew}`);
   };
 
   // Group emails by order_id
@@ -778,6 +778,7 @@ export const AdobeEmail = () => {
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email Address</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Auto Renew</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiration</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       </tr>
@@ -791,6 +792,15 @@ export const AdobeEmail = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {order.products?.title} ({order.products?.duration})
                             <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Ordered: {format(new Date(order.created_at), 'MMM dd, yyyy')}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 inline-flex text-[10px] uppercase font-bold tracking-wider rounded-full ${
+                              order.auto_renew 
+                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-400' 
+                                : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400'
+                            }`}>
+                              {order.auto_renew ? 'ON' : 'OFF'}
+                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {(order.status === 'completed' || order.status === 'paid') && order.expiresAt ? (
@@ -892,6 +902,24 @@ export const AdobeEmail = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="flex items-center justify-between py-2 border-t border-gray-100 dark:border-[#26262d] mt-2">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Auto Renew</p>
+                  <p className="text-xs text-gray-500">Automatically renew using wallet balance</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRequestForm({ ...requestForm, autoRenew: !requestForm.autoRenew })}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-[#151518] ${
+                    requestForm.autoRenew ? 'bg-primary' : 'bg-gray-200 dark:bg-[#303038]'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                    requestForm.autoRenew ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
               </div>
 
               <div className="flex gap-3 pt-4">

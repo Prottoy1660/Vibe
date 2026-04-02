@@ -27,6 +27,7 @@ export const Checkout = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const personalEmail = searchParams.get('personal_email');
+  const autoRenewParam = searchParams.get('auto_renew');
   
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export const Checkout = () => {
   const [paymentError, setPaymentError] = useState('');
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
-  const [isAutoRenew, setIsAutoRenew] = useState(false);
+  const [isAutoRenew, setIsAutoRenew] = useState(autoRenewParam === 'false' ? false : true);
 
   useEffect(() => {
     const fetchProductAndUser = async () => {
