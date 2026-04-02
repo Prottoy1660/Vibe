@@ -491,7 +491,7 @@ export const AdobeEmail = () => {
         {activeTab === 'personal' && (
           <button
             onClick={() => setIsRequestModalOpen(true)}
-            className="mb-2 flex items-center px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
+            className="mb-2 flex items-center px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-medium transition-colors"
           >
             <CreditCard className="w-4 h-4 mr-2" />
             Personal Adobe Subscription Request
@@ -852,7 +852,7 @@ export const AdobeEmail = () => {
                 <button
                   type="submit"
                   disabled={submittingRequest}
-                  className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors flex justify-center items-center"
+                  className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors flex justify-center items-center"
                 >
                   {submittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit'}
                 </button>
