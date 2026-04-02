@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from './apiBase';
+import { supabase } from './supabase';
 
 type Json = Record<string, any>;
 
@@ -105,9 +106,15 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
   let lastErr: any = null;
   for (const base of ordered) {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(body)
       });
 

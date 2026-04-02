@@ -14,7 +14,37 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const UDDOKTAPAY_API_KEY = process.env.UDDOKTAPAY_API_KEY || '';
 const UDDOKTAPAY_BASE_URL = process.env.UDDOKTAPAY_BASE_URL || '';
 
-router.post('/create', async (req, res) => {
+async function requireUser(req: any, res: any, next: any) {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '';
+    if (!token) return res.status(401).json({ success: false, message: 'Missing Authorization token' });
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return res.status(401).json({ success: false, message: 'Invalid token' });
+
+    req.user = data.user;
+    return next();
+  } catch (e: any) {
+    return res.status(401).json({ success: false, message: e?.message || 'Unauthorized' });
+  }
+}
+
+async function computeOrderPricing(orderId: string) {
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .select('id, user_id, product_id, status, payment_status, total_amount, products(price, is_personal, duration)')
+    .eq('id', orderId)
+    .single();
+  if (orderError || !order) throw new Error('Order not found');
+
+  const productPrice = Number((order as any).products?.price);
+  if (!Number.isFinite(productPrice) || productPrice < 0) throw new Error('Invalid product price');
+
+  return { order, productPrice };
+}
+
+router.post('/create', requireUser, async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   // Silently destroy all pending/abandoned orders older than 30 minutes
   try {
@@ -26,7 +56,14 @@ router.post('/create', async (req, res) => {
   // ----------------------------------------- //
 
   try {
-    const { order_id, amount, full_name, email, frontend_url, user_id, wallet_deduction } = req.body;
+    const { order_id, full_name, email, frontend_url, wallet_deduction } = req.body;
+    if (!order_id) return res.status(400).json({ success: false, message: 'Missing order_id' });
+
+    const user = (req as any).user;
+    const { order, productPrice } = await computeOrderPricing(order_id);
+    if (order.user_id !== user.id) {
+      return res.status(403).json({ success: false, message: 'Order does not belong to user' });
+    }
 
     // Dynamically get the base URL:
     // 1. Exact origin reported by the browser checkout page (Most reliable)
@@ -35,19 +72,35 @@ router.post('/create', async (req, res) => {
     const origin = req.headers.origin;
     const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
 
-    // Handle 100% discount / free orders
-    if (amount === 0 || amount === '0') {
+    // Server-side wallet deduction cap (never trust client)
+    const requestedWallet = Number(wallet_deduction) || 0;
+    const walletDeduction = Math.max(0, Math.min(productPrice, requestedWallet));
+    const gatewayAmount = Math.max(0, productPrice - walletDeduction);
+
+    // Normalize stored totals (server-side truth)
+    try {
+      await supabase
+        .from('orders')
+        .update({
+          total_amount: productPrice,
+          payment_method: gatewayAmount === 0 ? 'wallet' : (walletDeduction > 0 ? 'wallet+gateway' : 'gateway'),
+        })
+        .eq('id', order_id);
+    } catch {}
+
+    // Handle 100% wallet-paid orders
+    if (gatewayAmount === 0) {
       console.log(`Processing free order: ${order_id}`);
 
       // If this order used wallet balance (full wallet payment), deduct it now.
-      if (user_id && Number(wallet_deduction) > 0) {
-        const deduction = Number(wallet_deduction);
-        const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user_id).single();
-        const currentBalance = Number(userData?.wallet_balance) || 0;
-        if (currentBalance < deduction) {
+      if (walletDeduction > 0) {
+        const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+          p_user_id: user.id,
+          p_amount: walletDeduction,
+        });
+        if (deductErr) {
           return res.status(400).json({ success: false, message: 'Insufficient wallet balance.' });
         }
-        await supabase.from('users').update({ wallet_balance: currentBalance - deduction }).eq('id', user_id);
       }
       
       const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
@@ -138,13 +191,13 @@ router.post('/create', async (req, res) => {
     const payload = {
       full_name,
       email,
-      amount: amount.toString(),
+      amount: gatewayAmount.toString(),
       metadata: {
         order_id,
         is_recharge: req.body.is_recharge || false,
         recharge_amount: req.body.recharge_amount || 0,
-        user_id: user_id || null,
-        wallet_deduction: Number(wallet_deduction) || 0
+        user_id: user.id,
+        wallet_deduction: walletDeduction
       },
       redirect_url: `${baseUrl}/adobe-email?payment=success`,
       cancel_url: `${baseUrl}/store?payment=cancelled`,
@@ -190,23 +243,24 @@ router.post('/create', async (req, res) => {
   }
 });
 
-router.post('/recharge', async (req, res) => {
+router.post('/recharge', requireUser, async (req, res) => {
   try {
-    const { user_id, amount, full_name, email, frontend_url } = req.body;
+    const { amount, full_name, email, frontend_url } = req.body;
+    const user = (req as any).user;
 
     const origin = req.headers.origin;
     const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
 
-    if (!user_id || !amount || amount <= 0) {
+    if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid recharge parameters' });
     }
 
     if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
       console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
       
-      const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user_id).single();
+      const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
       const currentBalance = Number(userData?.wallet_balance) || 0;
-      await supabase.from('users').update({ wallet_balance: currentBalance + Number(amount) }).eq('id', user_id);
+      await supabase.from('users').update({ wallet_balance: currentBalance + Number(amount) }).eq('id', user.id);
 
       return res.json({
         success: true,
@@ -223,7 +277,7 @@ router.post('/recharge', async (req, res) => {
       amount: amount.toString(),
       metadata: {
         is_standalone_recharge: true,
-        user_id,
+        user_id: user.id,
         recharge_amount: amount,
         recharge_id
       },
@@ -324,21 +378,12 @@ router.post('/webhook', async (req, res) => {
 
       // For mixed checkout, deduct wallet part only after gateway confirms completion.
       if (walletDeduction > 0 && orderUserId) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('wallet_balance')
-          .eq('id', orderUserId)
-          .single();
-        const currentBalance = Number(userData?.wallet_balance) || 0;
-        if (currentBalance < walletDeduction) {
+        const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+          p_user_id: orderUserId,
+          p_amount: walletDeduction,
+        });
+        if (deductErr) {
           return res.status(400).json({ error: 'Insufficient wallet balance during mixed-payment settlement' });
-        }
-        const { error: walletUpdateError } = await supabase
-          .from('users')
-          .update({ wallet_balance: currentBalance - walletDeduction })
-          .eq('id', orderUserId);
-        if (walletUpdateError) {
-          throw walletUpdateError;
         }
       }
       

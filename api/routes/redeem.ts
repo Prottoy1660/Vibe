@@ -10,6 +10,22 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+async function requireUser(req: any, res: any, next: any) {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '';
+    if (!token) return res.status(401).json({ success: false, message: 'Missing Authorization token' });
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) return res.status(401).json({ success: false, message: 'Invalid token' });
+
+    req.user = data.user;
+    return next();
+  } catch (e: any) {
+    return res.status(401).json({ success: false, message: e?.message || 'Unauthorized' });
+  }
+}
+
 // POST /api/redeem/validate — check a code without consuming it
 router.post('/validate', async (req, res) => {
   try {
@@ -39,52 +55,38 @@ router.post('/validate', async (req, res) => {
 });
 
 // POST /api/redeem/apply — consume the code and provision the product
-router.post('/apply', async (req, res) => {
+router.post('/apply', requireUser, async (req, res) => {
   try {
-    const { code, user_id } = req.body;
-    if (!code || !user_id) return res.status(400).json({ success: false, message: 'Code and user_id are required' });
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+    const user = (req as any).user;
 
-    // Fetch and lock the redeem code
-    const { data: redeemCode, error: fetchError } = await supabase
-      .from('redeem_codes')
-      .select(`
-        id, code, is_used, max_uses, used_count, product_id,
-        products:product_id (id, title, price)
-      `)
-      .eq('code', code.toUpperCase().trim())
-      .eq('is_active', true)
+    // Atomically consume code (locks row + enforces max uses)
+    const { data: productId, error: applyErr } = await supabase.rpc('apply_redeem_code', {
+      p_user_id: user.id,
+      p_code: code,
+    });
+
+    if (applyErr || !productId) {
+      return res.status(400).json({ success: false, message: applyErr?.message || 'Could not redeem code' });
+    }
+
+    // Get real product price to record value in analytics
+    const { data: productRow, error: productErr } = await supabase
+      .from('products')
+      .select('price')
+      .eq('id', productId)
       .single();
-
-    if (fetchError || !redeemCode) {
-      return res.status(404).json({ success: false, message: 'Invalid or expired redeem code.' });
-    }
-
-    if (redeemCode.is_used || redeemCode.used_count >= redeemCode.max_uses) {
-      return res.status(400).json({ success: false, message: 'This redeem code has already been fully used.' });
-    }
-
-    // Check if this user already used this code
-    const { data: existingUse } = await supabase
-      .from('redeem_code_uses')
-      .select('id')
-      .eq('redeem_code_id', redeemCode.id)
-      .eq('user_id', user_id)
-      .single();
-
-    if (existingUse) {
-      return res.status(400).json({ success: false, message: 'You have already used this redeem code.' });
-    }
-
-    // Get the actual product price to record the real cost in the system
-    const productPrice = (redeemCode.products as any)?.price ?? 0;
+    if (productErr) throw productErr;
+    const productPrice = Number((productRow as any)?.price) || 0;
 
     // Create the order with the REAL product price — user pays ৳0 but
     // the system records the full value so revenue/analytics stay accurate
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
-        user_id,
-        product_id: redeemCode.product_id,
+        user_id: user.id,
+        product_id: productId,
         payment_method: 'redeem_code',
         total_amount: productPrice,   // ← actual price, not 0
         status: 'completed',
@@ -96,21 +98,23 @@ router.post('/apply', async (req, res) => {
     if (orderError || !order) throw orderError;
 
     // Assign email using product-aware logic (respects email_slots & max_users_per_email)
-    await assignEmailForOrder(supabase, order.id, user_id, redeemCode.product_id);
+    await assignEmailForOrder(supabase, order.id, user.id, productId);
 
-    // Log the usage
-    await supabase.from('redeem_code_uses').insert({
-      redeem_code_id: redeemCode.id,
-      user_id,
-      order_id: order.id,
-    });
-
-    // Update usage count; mark as fully used if needed
-    const newUsedCount = redeemCode.used_count + 1;
-    await supabase.from('redeem_codes').update({
-      used_count: newUsedCount,
-      is_used: newUsedCount >= redeemCode.max_uses,
-    }).eq('id', redeemCode.id);
+    // Attach order_id to the (already created) use record (best-effort)
+    try {
+      const { data: redeemCodeRow } = await supabase
+        .from('redeem_codes')
+        .select('id')
+        .eq('code', code.toUpperCase().trim())
+        .single();
+      if (redeemCodeRow?.id) {
+        await supabase
+          .from('redeem_code_uses')
+          .update({ order_id: order.id })
+          .eq('user_id', user.id)
+          .eq('redeem_code_id', redeemCodeRow.id);
+      }
+    } catch {}
 
     res.json({ success: true, message: 'Code redeemed successfully!', order_id: order.id });
   } catch (err) {

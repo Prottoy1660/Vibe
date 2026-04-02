@@ -28,7 +28,25 @@ dotenv.config()
 
 const app: express.Application = express()
 
-app.use(cors())
+const allowedOrigins = new Set(
+  [
+    process.env.FRONTEND_URL,
+    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ].filter(Boolean) as string[]
+);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // allow server-to-server calls (no Origin header)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+}))
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
