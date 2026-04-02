@@ -22,6 +22,22 @@ export const Orders = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const getPendingRemainingMs = (createdAt: string) => {
+    const created = new Date(createdAt).getTime();
+    return 30 * 60 * 1000 - (nowMs - created);
+  };
+
+  const getEffectiveStatus = (order: Order) => {
+    if (order.status !== 'pending') return order.status;
+    return getPendingRemainingMs(order.created_at) <= 0 ? 'expired' : 'pending';
+  };
 
   useEffect(() => {
     const fetchOrders = async () => {
@@ -44,15 +60,11 @@ export const Orders = () => {
         
         // Transform data
         if (data) {
-          const now = new Date().getTime();
           const formattedOrders = data.map((item: any) => {
-            const orderTime = new Date(item.created_at).getTime();
-            const isExpired = item.status === 'pending' && (now - orderTime > 30 * 60 * 1000);
-            
             return {
               id: item.id,
               created_at: item.created_at,
-              status: isExpired ? 'expired' : item.status,
+              status: item.status,
               total_amount: item.total_amount,
               product: {
                 title: item.product?.title || 'Unknown Product',
@@ -60,9 +72,7 @@ export const Orders = () => {
               }
             };
           });
-          
-          // Only show non-expired orders in the user dashboard (since expired ones will be auto-deleted by backend shortly)
-          setOrders(formattedOrders.filter(o => o.status !== 'expired'));
+          setOrders(formattedOrders);
         }
       } catch (error) {
         console.error('Error fetching orders:', error);
@@ -74,19 +84,30 @@ export const Orders = () => {
     fetchOrders();
   }, [user]);
 
-  const filteredOrders = orders.filter(order => 
-    order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.product.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredOrders = orders
+    .filter((order) => getEffectiveStatus(order) !== 'expired')
+    .filter(order =>
+      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.product.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, createdAt?: string) => {
     switch (status.toLowerCase()) {
       case 'completed':
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Completed</span>;
       case 'paid':
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Paid</span>;
       case 'pending':
-        return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">Time Left: &lt;30m</span>;
+        if (!createdAt) {
+          return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">Pending</span>;
+        }
+        const remainingMs = getPendingRemainingMs(createdAt);
+        const remainingMinutes = Math.max(0, Math.ceil(remainingMs / (60 * 1000)));
+        return (
+          <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">
+            Time Left: {remainingMinutes}m
+          </span>
+        );
       case 'expired':
         return <span className="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-400">Expired</span>;
       case 'cancelled':
@@ -166,7 +187,9 @@ export const Orders = () => {
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
-                {filteredOrders.map((order) => (
+                {filteredOrders.map((order) => {
+                  const effectiveStatus = getEffectiveStatus(order);
+                  return (
                   <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                       #{order.id.substring(0, 8)}
@@ -181,10 +204,10 @@ export const Orders = () => {
                       ৳{order.total_amount.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(order.status)}
+                      {getStatusBadge(effectiveStatus, order.created_at)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
-                      {order.status === 'pending' && (
+                      {effectiveStatus === 'pending' && (
                         <button
                           onClick={() => handlePayNow(order.id, order.total_amount)}
                           disabled={processingId === order.id}
@@ -200,7 +223,7 @@ export const Orders = () => {
                       )}
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>
