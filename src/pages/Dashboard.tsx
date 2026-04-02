@@ -6,10 +6,10 @@ import {
   DollarSign, 
   CreditCard, 
   Wallet,
+  LogOut,
   Info,
   Clock,
-  Plus,
-  Sparkles
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
@@ -32,62 +32,8 @@ interface Notice {
   created_at: string;
 }
 
-/** Turn blocks where every line is a bullet into a list; otherwise keep paragraphs */
-function NoticeContent({ content }: { content: string }) {
-  const paragraphs = content.trim().split(/\n\n+/);
-  return (
-    <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-      {paragraphs.map((block, pi) => {
-        const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
-        const firstBulletIdx = lines.findIndex((l) => /^[-•*]\s+/.test(l) || /^\d+\.\s+/.test(l));
-        if (firstBulletIdx > 0) {
-          const introLines = lines.slice(0, firstBulletIdx);
-          const bulletLines = lines.slice(firstBulletIdx);
-          const bulletsOk =
-            bulletLines.length > 0 &&
-            bulletLines.every((l) => /^[-•*]\s+/.test(l) || /^\d+\.\s+/.test(l));
-          if (bulletsOk) {
-            return (
-              <div key={pi} className="space-y-3">
-                <p>{introLines.join(' ')}</p>
-                <ul className="list-none space-y-2.5">
-                  {bulletLines.map((line, li) => (
-                    <li key={li} className="flex gap-2.5">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500 dark:bg-indigo-400" aria-hidden />
-                      <span>{line.replace(/^[-•*]\s+/, '').replace(/^\d+\.\s+/, '')}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          }
-        }
-        const isAllBullets =
-          lines.length > 0 && lines.every((l) => /^[-•*]\s+/.test(l) || /^\d+\.\s+/.test(l));
-        if (isAllBullets) {
-          return (
-            <ul key={pi} className="list-none space-y-2.5">
-              {lines.map((line, li) => (
-                <li key={li} className="flex gap-2.5">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500 dark:bg-indigo-400" aria-hidden />
-                  <span>{line.replace(/^[-•*]\s+/, '').replace(/^\d+\.\s+/, '')}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        }
-        return (
-          <p key={pi} className="whitespace-pre-wrap">
-            {block}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
 export const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats>({
     totalOrders: 0,
@@ -214,218 +160,222 @@ export const Dashboard = () => {
 
   const statCards = [
     {
-      key: 'orders',
-      title: 'Orders',
+      title: 'Total Orders',
       value: stats.totalOrders.toString(),
-      caption: 'Lifetime count',
+      caption: 'Your lifetime orders',
       icon: ShoppingBag,
-      iconWrap: 'bg-violet-100 dark:bg-violet-500/15',
-      iconClass: 'text-violet-600 dark:text-violet-400',
+      color: 'text-primary',
+      bgColor: 'bg-primary/10',
+      waveColor: '#8B5CF6',
     },
     {
-      key: 'spent',
-      title: 'Spent',
+      title: 'Total Spent',
       value: `৳${stats.totalSpent.toFixed(2)}`,
-      caption: 'Paid & completed',
+      caption: 'Total amount spent',
       icon: DollarSign,
-      iconWrap: 'bg-emerald-100 dark:bg-emerald-500/15',
-      iconClass: 'text-emerald-600 dark:text-emerald-400',
+      color: 'text-green-500',
+      bgColor: 'bg-green-100',
+      waveColor: '#22C55E',
     },
     {
-      key: 'subs',
-      title: 'Subscriptions',
+      title: 'Active Subscriptions',
       value: stats.activeSubscriptions.toString(),
-      caption: 'Active seats',
+      caption: 'Currently active plans',
       icon: CreditCard,
-      iconWrap: 'bg-amber-100 dark:bg-amber-500/15',
-      iconClass: 'text-amber-700 dark:text-amber-400',
+      color: 'text-orange-500',
+      bgColor: 'bg-orange-100',
+      waveColor: '#F97316',
     },
     {
-      key: 'wallet',
-      title: 'Wallet',
+      title: 'Wallet Balance',
       value: `৳${stats.walletBalance.toFixed(2)}`,
-      caption: 'Tap to add funds',
+      caption: 'Available balance',
       icon: Wallet,
-      iconWrap: 'bg-sky-100 dark:bg-sky-500/15',
-      iconClass: 'text-sky-600 dark:text-sky-400',
+      color: 'text-blue-500',
+      bgColor: 'bg-blue-100',
+      waveColor: '#3B82F6',
     },
   ];
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto">
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
         <div className="animate-pulse space-y-6">
-          <div className="h-16 bg-gray-200 dark:bg-white/10 rounded-2xl" />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-28 bg-gray-200 dark:bg-white/10 rounded-xl" />
+          <div className="h-24 bg-gray-200 rounded-xl"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
             ))}
           </div>
-          <div className="h-40 bg-gray-200 dark:bg-white/10 rounded-xl" />
-          <div className="h-48 bg-gray-200 dark:bg-white/10 rounded-xl" />
+          <div className="h-64 bg-gray-200 rounded-xl"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 pb-16 max-w-5xl mx-auto">
-      {/* Title + greeting (sign out stays in the app header only) */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 border border-white/10 flex items-center justify-center font-semibold text-violet-300 dark:text-violet-200 text-sm shrink-0">
-          {userInitials}
-        </div>
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-indigo-400 dark:text-indigo-400 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            Your dashboard
-          </p>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight mt-0.5">
-            Hi, {userName}
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Quick snapshot of orders, wallet, and announcements. Use the sidebar to open Store, Orders, or Adobe Email.
-          </p>
-        </div>
+    <div className="space-y-6 pb-12">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard Overview</h1>
       </div>
 
-      {/* Stats — compact, no decorative waves */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Welcome Card */}
+      <div className="bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center justify-between transition-colors duration-300">
+        <div className="flex items-center space-x-4">
+          <div className="w-12 h-12 rounded-full bg-primary/10 text-primary dark:bg-slate-800 dark:text-white flex items-center justify-center font-bold text-lg transition-colors duration-300">
+            {userInitials}
+          </div>
+          <div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Welcome</p>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{userName}</h2>
+          </div>
+        </div>
+        <button 
+          onClick={signOut}
+          className="flex items-center space-x-2 px-4 py-2 border border-gray-200 dark:border-[#26262d] rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign out</span>
+        </button>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statCards.map((stat, idx) => (
           <motion.div
-            key={stat.key}
-            initial={{ opacity: 0, y: 12 }}
+            key={idx}
+            initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.05 }}
-            role={stat.key === 'wallet' ? 'button' : undefined}
-            tabIndex={stat.key === 'wallet' ? 0 : undefined}
-            onClick={() => stat.key === 'wallet' && setShowRechargeModal(true)}
-            onKeyDown={(e) => stat.key === 'wallet' && e.key === 'Enter' && setShowRechargeModal(true)}
-            className={`rounded-xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] p-4 shadow-sm dark:shadow-none transition-colors ${
-              stat.key === 'wallet'
-                ? 'cursor-pointer hover:border-indigo-500/40 hover:bg-indigo-500/[0.03] ring-1 ring-transparent hover:ring-indigo-500/20'
-                : ''
-            }`}
+            transition={{ delay: idx * 0.1 }}
+            className={`bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300 relative overflow-hidden group ${stat.title === 'Wallet Balance' ? 'ring-1 ring-primary/20 cursor-pointer hover:shadow-md' : ''}`}
+            onClick={() => stat.title === 'Wallet Balance' && setShowRechargeModal(true)}
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className={`p-2 rounded-lg ${stat.iconWrap}`}>
-                <stat.icon className={`w-5 h-5 ${stat.iconClass}`} />
+            <div className="relative z-10">
+              <div className="flex items-center justify-between mb-4">
+                <div className={`p-3 rounded-xl ${stat.bgColor.split(' ')[0]} dark:${stat.bgColor.split(' ')[0].replace('100', '500/10').replace('10', '500/10')}`}>
+                  <stat.icon className={`w-6 h-6 ${stat.color} dark:${stat.color.replace('500', '400')}`} />
+                </div>
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{stat.title}</span>
+                  {stat.title === 'Wallet Balance' && (
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full mt-1 flex items-center">
+                      <Plus className="w-3 h-3 mr-0.5" /> ADD FUNDS
+                    </span>
+                  )}
+                </div>
               </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</h3>
             </div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-500 mt-3">
-              {stat.title}
-            </p>
-            <p className="text-xl font-semibold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{stat.value}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-500 mt-1 leading-snug">{stat.caption}</p>
-            {stat.key === 'wallet' && (
-              <span className="mt-2 inline-flex items-center gap-0.5 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                <Plus className="w-3.5 h-3.5" />
-                Add funds
-              </span>
-            )}
+            
+            {/* Decorative subtle wave animation */}
+            <div className="absolute bottom-0 left-0 right-0 h-12 opacity-10 transform translate-y-4 group-hover:translate-y-2 transition-transform duration-500">
+              <svg viewBox="0 0 1440 320" className="w-full h-full" preserveAspectRatio="none">
+                <path 
+                  fill={stat.waveColor} 
+                  fillOpacity="1" 
+                  d="M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,149,864,154.7C960,160,1056,139,1152,122.7C1248,107,1344,96,1392,90.7L1440,85.3L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+                ></path>
+              </svg>
+            </div>
           </motion.div>
         ))}
       </div>
 
-      {/* Service highlights — calmer cards, less visual noise */}
-      <section aria-label="Service highlights">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">What we offer</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-500 dark:text-gray-400">Authentic subscriptions</p>
-              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mt-0.5">
-                Vibe Access × Adobe Creative Cloud
-              </h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
-                Trusted access for Bangladesh — Illustrator, Photoshop, Premiere, After Effects, Lightroom, and more.
-              </p>
-            </div>
-            <div className="flex gap-1.5 shrink-0">
-              {['Ai', 'Ps', 'Pr', 'Ae', 'Lr'].map((abbr) => (
-                <div
-                  key={abbr}
-                  className="w-8 h-8 rounded-lg bg-violet-500/10 dark:bg-violet-500/15 border border-violet-500/20 flex items-center justify-center text-[10px] font-bold text-violet-700 dark:text-violet-300"
-                >
-                  {abbr}
+      {/* Promo Banners */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-48 relative bg-gradient-to-br from-primary to-secondary p-6 text-white flex flex-col justify-center">
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-white dark:bg-[#151518] opacity-10 rounded-full blur-2xl"></div>
+          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-white dark:bg-[#151518] opacity-10 rounded-full blur-xl"></div>
+          
+          <div className="relative z-10">
+            <p className="text-sm font-medium mb-2 opacity-90">Bangladesh's Trusted Source For Authentic Subscriptions</p>
+            <h3 className="text-2xl font-bold mb-4">Vibe Access x Adobe</h3>
+            <div className="flex space-x-2">
+              {['Ai', 'Ps', 'Pr', 'Ae', 'Lr'].map(icon => (
+                <div key={icon} className="w-8 h-8 rounded-md bg-white/20 flex items-center justify-center font-bold text-xs backdrop-blur-sm border border-white/30">
+                  {icon}
                 </div>
               ))}
             </div>
           </div>
+        </div>
 
-          <div className="rounded-xl border border-gray-200/90 dark:border-[#2a2a32] bg-gradient-to-br from-emerald-950/40 via-[#121214] to-[#121214] p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-emerald-400/90">Bundles</p>
-              <h3 className="text-base font-semibold text-gray-100 mt-0.5">Creative stock & tools in one place</h3>
-              <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                Storyblocks, Freepik, Envato Elements, Motion Array, plus Adobe — check the store for current plans.
-              </p>
+        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-48 relative bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-[#111113] dark:via-[#151518] dark:to-[#1c1c21] p-6 text-slate-900 dark:text-white border border-slate-200/80 dark:border-[#26262d] flex flex-col justify-center transition-colors duration-300">
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-500/20 dark:to-teal-500/20"></div>
+          
+          <div className="relative z-10 flex justify-between items-center h-full">
+            <div className="w-1/2">
+              <h3 className="text-xl font-bold mb-2">Everything in ONE Bundle!</h3>
+              <p className="text-xs text-slate-600 dark:text-gray-300">Storyblocks, Freepik, Envato Elements, Motion Array, Adobe Creative Cloud</p>
             </div>
-            <div className="shrink-0 w-14 h-14 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center">
-              <span className="text-sm font-bold text-emerald-300">ALL</span>
+            <div className="w-1/2 relative h-full flex items-center justify-center">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 to-red-500 animate-pulse opacity-80 blur-sm absolute"></div>
+              <div className="w-20 h-20 rounded-full bg-white border-2 border-slate-200 dark:bg-slate-800 dark:border-slate-700 z-10 flex items-center justify-center shadow-2xl transition-colors duration-300">
+                <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-500">ALL</span>
+              </div>
             </div>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Notices */}
-      <section className="rounded-2xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-3">
+      {/* Notices Panel */}
+      <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
+        <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
           <div>
-            <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
-                <Info className="w-4 h-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <span className="bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400 p-1.5 rounded-lg mr-2">
+                <Info className="w-5 h-5" />
               </span>
-              Notices
+              Important Notices
             </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 pl-10">
-              Official updates and how-tos from the team.
-            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Stay updated with the latest announcements</p>
           </div>
-          <span className="text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 px-2.5 py-1 rounded-full tabular-nums">
-            {notices.length} active
+          <span className="bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 text-xs font-medium px-2.5 py-1 rounded-full">
+            {notices.length} notice{notices.length !== 1 ? 's' : ''}
           </span>
         </div>
-
-        <div className="p-5 sm:p-6">
+        
+        <div className="p-6">
           {notices.length > 0 ? (
-            <ul className="space-y-4">
+            <div className="space-y-4">
               {notices.map((notice) => (
-                <li
-                  key={notice.id}
-                  className="rounded-xl border border-gray-100 dark:border-white/10 bg-gray-50/80 dark:bg-white/[0.03] p-4 sm:p-5"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
-                    <h4 className="font-semibold text-gray-900 dark:text-gray-100 pr-2">{notice.title}</h4>
-                    <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 px-2 py-0.5 rounded-md shrink-0">
-                      {notice.type || 'Info'}
+                <div key={notice.id} className="border border-blue-100 dark:border-blue-900/30 rounded-xl p-5 bg-blue-50/50 dark:bg-blue-500/5 transition-colors">
+                  <div className="flex justify-between items-start mb-3">
+                    <h4 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center">
+                      <Info className="w-4 h-4 mr-2 text-blue-500 dark:text-blue-400" />
+                      {notice.title}
+                    </h4>
+                    <span className="bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                      Info
                     </span>
                   </div>
-
-                  <NoticeContent content={notice.content} />
-
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-4 pt-3 border-t border-gray-200/80 dark:border-white/10 text-xs text-gray-500 dark:text-gray-500">
-                    <Clock className="w-3.5 h-3.5 shrink-0" />
-                    <span>{formatDistanceToNow(new Date(notice.created_at), { addSuffix: true })}</span>
-                    <span className="text-gray-300 dark:text-gray-600" aria-hidden>
-                      ·
-                    </span>
-                    <time dateTime={notice.created_at}>{new Date(notice.created_at).toLocaleDateString()}</time>
+                  
+                  <div className="text-sm text-blue-800 dark:text-blue-200/80 space-y-2 mb-4">
+                    {notice.content.split('\n').map((paragraph, i) => (
+                      <p key={i}>{paragraph}</p>
+                    ))}
                   </div>
-                </li>
+                  
+                  <div className="flex items-center text-xs text-blue-600/70 dark:text-blue-400/60">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {formatDistanceToNow(new Date(notice.created_at), { addSuffix: true })} • 
+                    {new Date(notice.created_at).toLocaleString()}
+                  </div>
+                </div>
               ))}
-            </ul>
+            </div>
           ) : (
-            <div className="text-center py-10 rounded-xl border border-dashed border-gray-200 dark:border-white/10">
-              <div className="mx-auto w-11 h-11 rounded-xl bg-gray-100 dark:bg-white/5 flex items-center justify-center mb-3">
-                <Info className="w-5 h-5 text-gray-400" />
+            <div className="text-center py-8">
+              <div className="mx-auto w-12 h-12 bg-gray-100 dark:bg-white/5 rounded-full flex items-center justify-center mb-3">
+                <Info className="w-6 h-6 text-gray-400 dark:text-gray-500" />
               </div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">No notices right now</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">We will post notices here when there is something important.</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No new notices</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">You're all caught up!</p>
             </div>
           )}
         </div>
-      </section>
+      </div>
 
       {/* Wallet Recharge Modal */}
       <AnimatePresence>
