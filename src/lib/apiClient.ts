@@ -59,9 +59,17 @@ function buildCandidates() {
 
   // Legacy hardcoded fallback (in case backend is hosted here).
   candidates.push('https://vibeaccessbd.shop');
+  candidates.push('https://www.vibeaccessbd.shop');
 
-  // Local dev fallback.
-  candidates.push('http://localhost:3001');
+  // Local dev fallback only when running locally.
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      candidates.push('http://localhost:3001');
+    }
+  } else {
+    candidates.push('http://localhost:3001');
+  }
 
   // Unique only, preserve order.
   return [...new Set(candidates.filter(Boolean))];
@@ -78,7 +86,21 @@ async function healthCheck(base: string) {
 
 async function resolveBaseUrl() {
   const cached = typeof window !== 'undefined' ? window.localStorage.getItem('api_base_url') : null;
-  if (cached) return cached;
+  if (cached) {
+    // Guard against stale dev cache in production browsers.
+    if (typeof window !== 'undefined') {
+      const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      if (!isLocalRuntime && cached.includes('localhost:3001')) {
+        window.localStorage.removeItem('api_base_url');
+      } else {
+        const ok = await healthCheck(cached);
+        if (ok) return cached;
+        window.localStorage.removeItem('api_base_url');
+      }
+    } else {
+      return cached;
+    }
+  }
 
   const candidates = buildCandidates();
   for (const base of candidates) {
