@@ -248,6 +248,7 @@ $$;
 
 
 -- 9) get_email_by_phone (created outside migrations, recreate with pinned path)
+DROP FUNCTION IF EXISTS public.get_email_by_phone(text);
 CREATE OR REPLACE FUNCTION public.get_email_by_phone(p_phone TEXT)
 RETURNS TABLE(email TEXT)
 LANGUAGE plpgsql
