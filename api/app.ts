@@ -11,6 +11,7 @@ import cors from 'cors'
 import path from 'path'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
 import authRoutes from './routes/auth.js'
 import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
@@ -30,6 +31,15 @@ const app: express.Application = express()
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+// Request ID for tracing errors end-to-end
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const existing = req.header('x-request-id');
+  const requestId = existing || crypto.randomUUID();
+  (res.locals as any).requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+  next();
+});
 
 // Rate Limiting
 const globalLimiter = rateLimit({
@@ -76,9 +86,12 @@ app.use(
  * error handler middleware
  */
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  const requestId = (res.locals as any)?.requestId;
+  console.error(`[api] request_id=${requestId} unhandled_error=`, error);
   res.status(500).json({
     success: false,
     error: 'Server internal error',
+    request_id: requestId,
   })
 })
 
@@ -86,9 +99,11 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
  * 404 handler
  */
 app.use((req: Request, res: Response) => {
+  const requestId = (res.locals as any)?.requestId;
   res.status(404).json({
     success: false,
     error: 'API not found',
+    request_id: requestId,
   })
 })
 

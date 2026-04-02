@@ -2,8 +2,47 @@ import { getApiBaseUrl } from './apiBase';
 
 type Json = Record<string, any>;
 
+type ApiAttempt = {
+  at: string;
+  base: string;
+  path: string;
+  ok: boolean;
+  status?: number;
+  request_id?: string | null;
+  message?: string;
+};
+
+type ApiDebug = {
+  last_updated_at: string;
+  attempts: ApiAttempt[];
+};
+
 function stripTrailingSlashes(url: string) {
   return url.replace(/\/+$/, '');
+}
+
+function saveDebug(attempt: ApiAttempt) {
+  if (typeof window === 'undefined') return;
+  const key = 'api_debug_last';
+  const existingRaw = window.localStorage.getItem(key);
+  let existing: ApiDebug = { last_updated_at: new Date().toISOString(), attempts: [] };
+  try {
+    if (existingRaw) existing = JSON.parse(existingRaw);
+  } catch {}
+  existing.attempts = [attempt, ...(existing.attempts || [])].slice(0, 20);
+  existing.last_updated_at = new Date().toISOString();
+  window.localStorage.setItem(key, JSON.stringify(existing));
+}
+
+export function getLastApiDebug(): ApiDebug | null {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem('api_debug_last');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 function buildCandidates() {
@@ -83,13 +122,37 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
       if (!res.ok) {
         // If server responded, keep base cached (endpoint exists).
         if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
+        saveDebug({
+          at: new Date().toISOString(),
+          base,
+          path,
+          ok: false,
+          status: res.status,
+          request_id: res.headers.get('x-request-id'),
+          message: data?.message || data?.error || `Request failed (${res.status})`
+        });
         throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
       }
 
+      saveDebug({
+        at: new Date().toISOString(),
+        base,
+        path,
+        ok: true,
+        status: res.status,
+        request_id: res.headers.get('x-request-id'),
+      });
       if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
       return data as T;
     } catch (err: any) {
       lastErr = err;
+      saveDebug({
+        at: new Date().toISOString(),
+        base,
+        path,
+        ok: false,
+        message: err?.message || 'Unknown error'
+      });
       // Try next base on network errors / fetch failures.
       const msg = (err?.message || '').toLowerCase();
       const isNetwork =

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { postJsonWithFallback } from '../lib/apiClient';
+import { getLastApiDebug, postJsonWithFallback } from '../lib/apiClient';
 import { 
   CreditCard, 
   ShieldCheck, 
@@ -205,7 +205,12 @@ export const Checkout = () => {
       
     } catch (error: any) {
       console.error('Payment processing error:', error);
-      setPaymentError(error.message || 'Failed to process payment. Please try again.');
+      const debug = getLastApiDebug();
+      const lastAttempt = debug?.attempts?.[0];
+      const extra = lastAttempt
+        ? `\n\nDebug:\n- base: ${lastAttempt.base}\n- status: ${lastAttempt.status ?? 'n/a'}\n- request_id: ${lastAttempt.request_id ?? 'n/a'}\n- message: ${lastAttempt.message ?? 'n/a'}`
+        : '';
+      setPaymentError((error.message || 'Failed to process payment. Please try again.') + extra);
       
       // Cleanup the abandoned order from the database so it doesn't flood the UI
       if (createdOrderId) {
