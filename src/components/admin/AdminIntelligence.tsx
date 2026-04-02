@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import {
+import { 
   Loader2, RefreshCw, Download, Globe, Monitor, Cpu, Wifi,
   Battery, Eye, ChevronRight, ChevronDown, Search, X,
-  Activity, Users, MapPin, Fingerprint, Trash2, AlertTriangle
+  Activity, Users, MapPin, Fingerprint, Trash2, AlertTriangle,
+  ShieldAlert, Smartphone, Server, ShieldCheck,
+  Chrome, Compass, AppWindow, Apple, LayoutGrid, Bot, Terminal, Laptop, Check, X as XIcon, BatteryCharging
 } from 'lucide-react';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 
@@ -67,36 +69,38 @@ const COUNTRY_FLAGS: Record<string, string> = {
   'Australia': '🇦🇺', 'France': '🇫🇷', 'Japan': '🇯🇵', 'Pakistan': '🇵🇰',
 };
 
-const getBrowserIcon = (name: string) => {
-  const icons: Record<string, string> = {
-    Chrome: '🌐', Firefox: '🦊', Safari: '🧭', Edge: '🔷', Opera: '🅾'
-  };
-  return icons[name] || '🌍';
+const getBrowserIcon = (name: string, className = "w-4 h-4") => {
+  if (name?.includes('Chrome')) return <Chrome className={className} />;
+  if (name?.includes('Safari')) return <Compass className={className} />;
+  if (name?.includes('Edge')) return <AppWindow className={className} />;
+  if (name?.includes('Firefox')) return <Globe className={className} />;
+  if (name?.includes('Opera')) return <Globe className={className} />;
+  return <Globe className={className} />;
 };
 
-const getOSIcon = (os: string) => {
-  if (os?.includes('Windows')) return '🪟';
-  if (os?.includes('macOS') || os?.includes('Mac')) return '🍎';
-  if (os?.includes('Android')) return '🤖';
-  if (os?.includes('iOS')) return '📱';
-  if (os?.includes('Linux')) return '🐧';
-  return '💻';
+const getOSIcon = (os: string, className = "w-4 h-4") => {
+  if (os?.includes('Windows')) return <LayoutGrid className={className} />;
+  if (os?.includes('macOS') || os?.includes('Mac')) return <Apple className={className} />;
+  if (os?.includes('Android')) return <Bot className={className} />;
+  if (os?.includes('iOS')) return <Smartphone className={className} />;
+  if (os?.includes('Linux')) return <Terminal className={className} />;
+  return <Laptop className={className} />;
 };
 
-const StatBadge = ({ label, value, color }: { label: string; value: string | number; color: string }) => (
+const StatBadge = ({ label, value, color }: { label: string; value: React.ReactNode; color: string }) => (
   <div className={`flex flex-col items-center p-3 rounded-xl ${color} min-w-[80px]`}>
     <span className="text-lg font-bold">{value}</span>
     <span className="text-[10px] font-medium mt-0.5 opacity-80">{label}</span>
   </div>
 );
 
-const InfoRow = ({ label, value, mono = false }: { label: string; value: string | number | boolean | null | undefined; mono?: boolean }) => {
+const InfoRow = ({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) => {
   if (value === null || value === undefined || value === '') return null;
   return (
     <div className="flex items-start justify-between py-2 border-b border-gray-100 dark:border-white/5 last:border-0">
       <span className="text-xs font-medium text-gray-500 dark:text-gray-400 shrink-0 w-36">{label}</span>
-      <span className={`text-xs text-right break-all ${mono ? 'font-mono bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-200' : 'text-gray-800 dark:text-gray-200'}`}>
-        {typeof value === 'boolean' ? (value ? '✅ Yes' : '❌ No') : String(value)}
+      <span className={`text-xs text-right break-all flex items-center justify-end gap-1.5 ${mono ? 'font-mono bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-gray-700 dark:text-gray-200' : 'text-gray-800 dark:text-gray-200'}`}>
+        {typeof value === 'boolean' ? (value ? <><Check className="w-3.5 h-3.5 text-emerald-500" /> Yes</> : <><XIcon className="w-3.5 h-3.5 text-red-500" /> No</>) : value}
       </span>
     </div>
   );
@@ -276,7 +280,7 @@ export const AdminIntelligence = () => {
           { icon: Users, label: 'Total Sessions', value: sessions.length, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-500/10' },
           { icon: Users, label: 'Unique Users', value: uniqueUsers, color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-500/10' },
           { icon: Globe, label: 'Unique IPs', value: uniqueIPs, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
-          { icon: MapPin, label: 'Top Country', value: topCountry ? `${COUNTRY_FLAGS[topCountry[0]] || '🌍'} ${topCountry[0]}` : '-', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-500/10' },
+          { icon: MapPin, label: 'Top Country', value: topCountry ? <span className="flex items-center gap-1.5">{COUNTRY_FLAGS[topCountry[0]] ? <span>{COUNTRY_FLAGS[topCountry[0]]}</span> : <Globe className="w-4 h-4 text-gray-500" />} {topCountry[0]}</span> : '-', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-500/10' },
         ].map((stat, i) => (
           <div key={i} className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] p-5 flex items-center gap-4">
             <div className={`p-3 rounded-xl ${stat.bg}`}>
@@ -299,7 +303,9 @@ export const AdminIntelligence = () => {
           <div className="space-y-2">
             {Object.entries(countries).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([country, count]) => (
               <div key={country} className="flex items-center gap-3">
-                <span className="text-lg">{COUNTRY_FLAGS[country] || '🌍'}</span>
+                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-50 dark:bg-white/5 text-lg">
+                  {COUNTRY_FLAGS[country] ? <span>{COUNTRY_FLAGS[country]}</span> : <Globe className="w-4 h-4 text-gray-500" />}
+                </span>
                 <div className="flex-1">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-gray-700 dark:text-gray-200 font-medium">{country || 'Unknown'}</span>
@@ -325,7 +331,7 @@ export const AdminIntelligence = () => {
           <div className="space-y-2">
             {Object.entries(browsers).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([browser, count]) => (
               <div key={browser} className="flex items-center gap-3">
-                <span className="text-lg">{getBrowserIcon(browser)}</span>
+                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-gray-50 dark:bg-white/5">{getBrowserIcon(browser, "w-4 h-4 text-blue-500")}</span>
                 <div className="flex-1">
                   <div className="flex justify-between text-xs mb-1">
                     <span className="text-gray-700 dark:text-gray-200 font-medium">{browser}</span>
@@ -413,7 +419,9 @@ export const AdminIntelligence = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-base">{COUNTRY_FLAGS[session.country] || '🌍'}</span>
+                          <span className="flex items-center justify-center text-base w-6 h-6 shrink-0">
+                            {COUNTRY_FLAGS[session.country] ? <span>{COUNTRY_FLAGS[session.country]}</span> : <Globe className="w-4 h-4 text-gray-500" />}
+                          </span>
                           <div>
                             <p className="text-xs font-medium text-gray-800 dark:text-gray-200">{session.city || 'Unknown'}</p>
                             <p className="text-[10px] text-gray-400 dark:text-gray-500">{session.country}</p>
@@ -422,11 +430,11 @@ export const AdminIntelligence = () => {
                       </td>
                       <td className="px-4 py-3">
                         <div>
-                          <p className="text-xs font-medium text-gray-800 dark:text-gray-200">
-                            {getBrowserIcon(session.browser_name)} {session.browser_name} {session.browser_version?.split('.')[0]}
+                          <p className="text-xs font-medium text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                            {getBrowserIcon(session.browser_name, "w-3.5 h-3.5 text-blue-500")} <span>{session.browser_name} {session.browser_version?.split('.')[0]}</span>
                           </p>
-                          <p className="text-[10px] text-gray-400 dark:text-gray-500">
-                            {getOSIcon(session.os)} {session.os}
+                          <p className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1.5 mt-0.5">
+                            {getOSIcon(session.os, "w-3 h-3 text-gray-400")} <span>{session.os}</span>
                           </p>
                         </div>
                       </td>
@@ -483,7 +491,7 @@ export const AdminIntelligence = () => {
                                 </h4>
                                 <div className="space-y-0">
                                   <InfoRow label="IP Address" value={session.ip_address} mono />
-                                  <InfoRow label="Country" value={`${COUNTRY_FLAGS[session.country] || ''} ${session.country}`} />
+                                  <InfoRow label="Country" value={<span className="flex items-center gap-1.5 justify-end">{COUNTRY_FLAGS[session.country] ? <span>{COUNTRY_FLAGS[session.country]}</span> : <Globe className="w-4 h-4 text-gray-500" />} {session.country}</span>} />
                                   <InfoRow label="City" value={session.city} />
                                   <InfoRow label="Region" value={session.region} />
                                   <InfoRow label="ISP" value={session.isp} />
@@ -499,8 +507,8 @@ export const AdminIntelligence = () => {
                                   <Monitor className="w-3.5 h-3.5 text-purple-500" /> Browser & Device
                                 </h4>
                                 <div className="space-y-0">
-                                  <InfoRow label="Browser" value={`${getBrowserIcon(session.browser_name)} ${session.browser_name} ${session.browser_version}`} />
-                                  <InfoRow label="OS" value={`${getOSIcon(session.os)} ${session.os}`} />
+                                  <InfoRow label="Browser" value={<div className="flex items-center gap-1.5">{getBrowserIcon(session.browser_name, "w-4 h-4 text-blue-500")} <span>{session.browser_name} {session.browser_version}</span></div>} />
+                                  <InfoRow label="OS" value={<div className="flex items-center gap-1.5">{getOSIcon(session.os, "w-4 h-4 text-gray-500")} <span>{session.os}</span></div>} />
                                   <InfoRow label="Platform" value={session.platform} />
                                   <InfoRow label="Language" value={session.language} />
                                   <InfoRow label="Cookies" value={session.cookies_enabled} />
