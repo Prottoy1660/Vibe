@@ -17,16 +17,19 @@ interface TutorialContent {
 }
 
 const FALLBACK_CONTENT: TutorialContent = {
-  hero_title: 'Tutorial & Help',
-  intro_text: 'Important setup instructions and safety notes will appear here.',
-  alert_title: 'Important Warning',
-  alert_text: 'Please read all instructions carefully before using your account.',
-  steps_title: 'Step-by-step guide',
-  steps_text: '1) Open Adobe section\n2) Copy your email credentials\n3) Sign in and complete OTP verification',
-  note_title: 'Notes',
-  note_text: 'For any issue, contact support with your order details.',
-  video_title: 'Video Tutorial',
-  video_description: 'Admin can add a YouTube embed link from the panel.',
+  hero_title: 'টিউটোরিয়াল ও সাহায্য (Adobe সাবস্ক্রিপশন ব্যবহার গাইড)',
+  intro_text:
+    'Vibe Access থেকে নেওয়া আপনার Adobe সাবস্ক্রিপশন কীভাবে ব্যবহার করবেন—এই পেজে সম্পূর্ণ গাইড দেওয়া আছে।\n\nপ্রথমবার লগইন করার আগে পুরোটা একবার পড়ে নিন।',
+  alert_title: 'গুরুত্বপূর্ণ নিয়ম (অবশ্যই পড়ুন)',
+  alert_text:
+    '• Email/Password কারও সাথে শেয়ার করবেন না।\n• একই সময়ে একাধিক ডিভাইসে লগইন করবেন না।\n• অ্যাকাউন্টের Email/Password/Recovery/Security Setting পরিবর্তন করবেন না।\n• কোনো সমস্যা হলে সাপোর্টে যোগাযোগ করুন।',
+  steps_title: 'ধাপে ধাপে: লগইন + OTP + সেফ ব্যবহার',
+  steps_text:
+    '1) Adobe Email পেজে যান\n2) Email/Password কপি করুন\n3) Adobe-তে Sign in করুন\n4) OTP লাগলে Inbox থেকে কোড নিন',
+  note_title: 'নোটস ও সমস্যা সমাধান (Troubleshooting)',
+  note_text: 'OTP দেরি হলে কিছুক্ষণ অপেক্ষা করুন এবং স্প্যাম করবেন না। সমস্যায় Order ID সহ সাপোর্টে যোগাযোগ করুন।',
+  video_title: 'ভিডিও টিউটোরিয়াল',
+  video_description: 'Admin প্যানেল থেকে YouTube লিংক যোগ করলে এখানে ভিডিও দেখা যাবে।',
   video_embed_url: null
 };
 
