@@ -27,6 +27,7 @@ const __dirname = path.dirname(__filename)
 dotenv.config()
 
 const app: express.Application = express()
+app.set('trust proxy', 1)
 
 const allowedOrigins = new Set(
   [
@@ -47,8 +48,19 @@ app.use(cors({
   },
   credentials: true,
 }))
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+// Basic hardening headers (kept lightweight to avoid dependency overhead)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  if ((req.headers['x-forwarded-proto'] || '').toString().includes('https')) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  next()
+})
+app.use(express.json({ limit: '1mb' }))
+app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
 // Request ID for tracing errors end-to-end
 app.use((req: Request, res: Response, next: NextFunction) => {

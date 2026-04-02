@@ -48,6 +48,47 @@ async function computeOrderPricing(orderId: string) {
   return { order, productPrice };
 }
 
+async function getIdempotentResponse(userId: string, endpoint: string, idemKey: string) {
+  const { data } = await supabase
+    .from('payment_idempotency')
+    .select('response_payload')
+    .eq('user_id', userId)
+    .eq('endpoint', endpoint)
+    .eq('idem_key', idemKey)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as any)?.response_payload || null;
+}
+
+async function saveIdempotentResponse(userId: string, endpoint: string, idemKey: string, payload: any) {
+  await supabase.from('payment_idempotency').upsert({
+    user_id: userId,
+    endpoint,
+    idem_key: idemKey,
+    response_payload: payload,
+  }, { onConflict: 'user_id,endpoint,idem_key' });
+}
+
+async function postUddoktaCheckout(payload: any) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(`${UDDOKTAPAY_BASE_URL}/api/checkout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'RT-UDDOKTAPAY-API-KEY': UDDOKTAPAY_API_KEY
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 router.post('/create', requireUser, async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   // Silently destroy all pending/abandoned orders older than 30 minutes
@@ -86,6 +127,15 @@ router.post('/create', requireUser, async (req, res) => {
     const requestedWallet = Number(wallet_deduction) || 0;
     const walletDeduction = Math.max(0, Math.min(productPrice, requestedWallet));
     const gatewayAmount = Math.max(0, productPrice - walletDeduction);
+    const idempotencyKey = String(
+      req.body?.idempotency_key ||
+      `order:${order_id}:wallet:${walletDeduction}:due:${gatewayAmount}`
+    );
+    const cachedCreate = await getIdempotentResponse(user.id, 'payment_create', idempotencyKey);
+    if (cachedCreate) {
+      return res.json(cachedCreate);
+    }
+
     if (!Number.isFinite(gatewayAmount)) {
       return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
     }
@@ -150,10 +200,12 @@ router.post('/create', requireUser, async (req, res) => {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
-      return res.json({
+      const payload = {
         success: true,
         payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`
-      });
+      };
+      await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, payload);
+      return res.json(payload);
     }
 
     if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
@@ -195,10 +247,12 @@ router.post('/create', requireUser, async (req, res) => {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
-      return res.json({
+      const payload = {
         success: true,
         payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`
-      });
+      };
+      await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, payload);
+      return res.json(payload);
     }
 
     const payload = {
@@ -217,19 +271,14 @@ router.post('/create', requireUser, async (req, res) => {
       webhook_url: `${baseUrl}/api/payment/webhook`
     };
 
-    const response = await fetch(`${UDDOKTAPAY_BASE_URL}/api/checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'RT-UDDOKTAPAY-API-KEY': UDDOKTAPAY_API_KEY
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await postUddoktaCheckout(payload);
 
     const data = await response.json() as any;
 
     if (data.status) {
-      res.json({ success: true, payment_url: data.payment_url });
+      const successPayload = { success: true, payment_url: data.payment_url };
+      await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, successPayload);
+      res.json(successPayload);
     } else {
       // Clean up the abandoned order from the DB using Service Role to bypass RLS
       if (order_id) {
@@ -275,6 +324,12 @@ router.post('/recharge', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid email' });
     }
 
+    const idempotencyKey = String(req.body?.idempotency_key || `recharge:${user.id}:${normalizedAmount}`);
+    const cachedRecharge = await getIdempotentResponse(user.id, 'payment_recharge', idempotencyKey);
+    if (cachedRecharge) {
+      return res.json(cachedRecharge);
+    }
+
     if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
       console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
       
@@ -282,10 +337,12 @@ router.post('/recharge', requireUser, async (req, res) => {
       const currentBalance = Number(userData?.wallet_balance) || 0;
       await supabase.from('users').update({ wallet_balance: currentBalance + normalizedAmount }).eq('id', user.id);
 
-      return res.json({
+      const payload = {
         success: true,
         payment_url: `${baseUrl}/?recharge=success`
-      });
+      };
+      await saveIdempotentResponse(user.id, 'payment_recharge', idempotencyKey, payload);
+      return res.json(payload);
     }
 
     // Creating abstract random ID to uniquely identify this standalone transaction log if needed
@@ -306,19 +363,14 @@ router.post('/recharge', requireUser, async (req, res) => {
       webhook_url: `${baseUrl}/api/payment/webhook`
     };
 
-    const response = await fetch(`${UDDOKTAPAY_BASE_URL}/api/checkout`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'RT-UDDOKTAPAY-API-KEY': UDDOKTAPAY_API_KEY
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await postUddoktaCheckout(payload);
 
     const data = await response.json() as any;
 
     if (data.status) {
-      res.json({ success: true, payment_url: data.payment_url });
+      const successPayload = { success: true, payment_url: data.payment_url };
+      await saveIdempotentResponse(user.id, 'payment_recharge', idempotencyKey, successPayload);
+      res.json(successPayload);
     } else {
       res.status(400).json({ success: false, message: data.message || 'Failed to generate recharge URL' });
     }

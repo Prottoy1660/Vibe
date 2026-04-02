@@ -99,6 +99,8 @@ async function resolveBaseUrl() {
 
 export async function postJsonWithFallback<T = any>(path: string, body: Json): Promise<T> {
   const candidates = buildCandidates();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
 
   const preferred = await resolveBaseUrl();
   const ordered = [preferred, ...candidates.filter(c => c !== preferred)];
@@ -106,9 +108,6 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
   let lastErr: any = null;
   for (const base of ordered) {
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
         headers: {
