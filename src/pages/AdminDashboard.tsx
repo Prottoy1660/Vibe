@@ -22,6 +22,8 @@ import {
   LifeBuoy,
   Settings,
   Bell,
+  Megaphone,
+  Music2,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -43,6 +45,8 @@ import { AdminGrowthOps } from '../components/admin/AdminGrowthOps';
 import { AdminSupport } from '../components/admin/AdminSupport';
 import { AdminPlatformSettings } from '../components/admin/AdminPlatformSettings';
 import { AdminWaitlist } from '../components/admin/AdminWaitlist';
+import { AdminUserNotifications } from '../components/admin/AdminUserNotifications';
+import { AdminLobbyMusic } from '../components/admin/AdminLobbyMusic';
 export const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -282,6 +286,12 @@ export const AdminDashboard = () => {
             {activeTab === 'users' && 'User Management'}
             {activeTab === 'coupons' && 'Coupon Management'}
             {activeTab === 'notices' && 'Notice Management'}
+            {activeTab === 'user_notifications' && (
+              <span className="flex items-center gap-2">
+                <Megaphone className="w-6 h-6" />
+                User notifications
+              </span>
+            )}
             {activeTab === 'emails' && 'Email Inventory'}
             {activeTab === 'user_emails' && 'User Subscriptions'}
             {activeTab === 'intelligence' && (
@@ -303,6 +313,12 @@ export const AdminDashboard = () => {
               <span className="flex items-center gap-2">
                 <LifeBuoy className="w-6 h-6" />
                 Support tickets
+              </span>
+            )}
+            {activeTab === 'lobby_music' && (
+              <span className="flex items-center gap-2">
+                <Music2 className="w-6 h-6" />
+                Lobby music
               </span>
             )}
           </h1>
@@ -328,6 +344,8 @@ export const AdminDashboard = () => {
       {activeTab === 'growth_ops' && <AdminGrowthOps />}
       {activeTab === 'support' && <AdminSupport />}
       {activeTab === 'platform_settings' && <AdminPlatformSettings />}
+      {activeTab === 'lobby_music' && <AdminLobbyMusic />}
+      {activeTab === 'user_notifications' && <AdminUserNotifications />}
       {activeTab === 'waitlist' && <AdminWaitlist />}
 
       {activeTab === 'overview' && (
