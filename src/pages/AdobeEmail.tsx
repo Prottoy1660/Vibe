@@ -101,7 +101,10 @@ export const AdobeEmail = () => {
         .in('status', ['paid', 'completed', 'pending']);
         
       if (orders) {
-        const pOrders = orders.filter(o => o.products?.is_personal && o.personal_email).map(order => {
+        const pOrders = orders
+          .filter(o => o.products?.is_personal && o.personal_email)
+          .filter(o => !(o.status === 'pending' && Number(o.total_amount) === 0))
+          .map(order => {
           // Calculate days left for personal subscriptions
           let daysLeft = 0;
           let expiresAt = null;
