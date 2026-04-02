@@ -6,6 +6,7 @@ import {
   XCircle, Activity, Edit2, Save, Camera, Lock, AlertCircle, History, Sparkles
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
+import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 
 interface AdminUserDetailsProps {
   userId: string;
@@ -379,6 +380,18 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
                     {userProfile.phone}
                   </span>
                 )}
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <ShieldCheck className="w-4 h-4 shrink-0 text-gray-400" />
+                  <span className="truncate">
+                    Signup: <span className="font-medium text-gray-800 dark:text-gray-200">{formatAuthProviderLabel(userProfile.signup_auth_provider)}</span>
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Activity className="w-4 h-4 shrink-0 text-gray-400" />
+                  <span className="truncate">
+                    Last sign-in: <span className="font-medium text-gray-800 dark:text-gray-200">{formatAuthProviderLabel(userProfile.last_sign_in_provider)}</span>
+                  </span>
+                </span>
               </div>
             </div>
           </div>

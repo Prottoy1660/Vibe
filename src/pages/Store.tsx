@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Search, ShoppingBag, Loader2, Gift, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
+import { Search, ShoppingBag, Loader2, Gift, CheckCircle2, AlertCircle, Sparkles, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { getStoredLanguage, pickLocalized } from '../lib/language';
@@ -34,6 +34,8 @@ export const Store = () => {
   const [redeemError, setRedeemError] = useState('');
   const [redeemSuccess, setRedeemSuccess] = useState('');
   const [showRedeemPanel, setShowRedeemPanel] = useState(false);
+  const [waitlistedIds, setWaitlistedIds] = useState<Set<string>>(new Set());
+  const [notifyBusy, setNotifyBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -68,6 +70,52 @@ export const Store = () => {
     };
     logStoreView();
   }, [user]);
+
+  useEffect(() => {
+    const loadWaitlist = async () => {
+      if (!user) {
+        setWaitlistedIds(new Set());
+        return;
+      }
+      try {
+        const { data } = await supabase.from('product_waitlist').select('product_id').eq('user_id', user.id);
+        setWaitlistedIds(new Set((data || []).map((r: { product_id: string }) => r.product_id)));
+      } catch {
+        /* ignore */
+      }
+    };
+    loadWaitlist();
+  }, [user]);
+
+  const handleNotifyMe = async (productId: string) => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    setNotifyBusy(productId);
+    try {
+      const { error } = await supabase.from('product_waitlist').upsert(
+        { user_id: user.id, product_id: productId },
+        { onConflict: 'user_id,product_id' }
+      );
+      if (error) throw error;
+      setWaitlistedIds((prev) => new Set(prev).add(productId));
+      try {
+        await supabase.from('funnel_events').insert({
+          user_id: user.id,
+          event_type: 'waitlist_join',
+          meta: { product_id: productId },
+        });
+      } catch {
+        /* optional analytics */
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Could not save notification request. Try again.');
+    } finally {
+      setNotifyBusy(null);
+    }
+  };
 
   const filteredProducts = products.filter(product => {
     // Hide personal products from the main store
@@ -258,13 +306,28 @@ export const Store = () => {
                     </div>
                   </div>
                   
-                  <button
-                    onClick={() => handleBuyNow(product.id)}
-                    className="w-full py-3 px-4 bg-gradient-primary text-white rounded-xl font-medium shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all flex items-center justify-center"
-                  >
-                    <ShoppingBag className="w-4 h-4 mr-2" />
-                    Buy Now
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => handleBuyNow(product.id)}
+                      className="w-full py-3 px-4 bg-gradient-primary text-white rounded-xl font-medium shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all flex items-center justify-center"
+                    >
+                      <ShoppingBag className="w-4 h-4 mr-2" />
+                      Buy Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleNotifyMe(product.id)}
+                      disabled={notifyBusy === product.id || waitlistedIds.has(product.id)}
+                      className="w-full py-2.5 px-4 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {notifyBusy === product.id ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Bell className="w-4 h-4" />
+                      )}
+                      {waitlistedIds.has(product.id) ? 'On notify list' : 'Notify me (price & updates)'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>

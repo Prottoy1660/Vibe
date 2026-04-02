@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
 
 -- Insert default setting for Google Sign In
 INSERT INTO public.system_settings (key, value) 
-VALUES ('auth_settings', '{"enable_google_login": true}')
+VALUES ('auth_settings', '{"enable_google_login": true, "enable_facebook_login": true}')
 ON CONFLICT (key) DO NOTHING;
 
 -- Set up RLS for settings

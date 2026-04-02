@@ -17,6 +17,7 @@ import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
 import adminRoutes from './routes/admin.js'
 import redeemRoutes from './routes/redeem.js'
+import platformRoutes from './routes/platform.js'
 import rateLimit from 'express-rate-limit'
 
 // for esm mode
@@ -128,6 +129,7 @@ app.use(globalLimiter)
  * API Routes
  */
 app.use('/api/auth', authRoutes)
+app.use('/api/platform', platformRoutes)
 app.use('/api/payment', paymentLimiter, paymentRoutes)
 app.use('/api/cpanel', strictLimiter, cpanelRoutes)
 app.use('/api/admin', adminRoutes)

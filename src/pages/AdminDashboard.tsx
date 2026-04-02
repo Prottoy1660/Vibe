@@ -19,6 +19,9 @@ import {
   TrendingUp,
   ShieldAlert,
   LayoutDashboard,
+  LifeBuoy,
+  Settings,
+  Bell,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,6 +40,9 @@ import { AdminRedeemCodes } from '../components/admin/AdminRedeemCodes';
 import { AdminTutorialHelp } from '../components/admin/AdminTutorialHelp';
 import { AdminOpsCenter } from '../components/admin/AdminOpsCenter';
 import { AdminGrowthOps } from '../components/admin/AdminGrowthOps';
+import { AdminSupport } from '../components/admin/AdminSupport';
+import { AdminPlatformSettings } from '../components/admin/AdminPlatformSettings';
+import { AdminWaitlist } from '../components/admin/AdminWaitlist';
 export const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -293,6 +299,12 @@ export const AdminDashboard = () => {
             {activeTab === 'tutorial_help' && 'Tutorial & Help Page'}
             {activeTab === 'ops' && 'Ops Center'}
             {activeTab === 'growth_ops' && 'Growth Ops'}
+            {activeTab === 'support' && (
+              <span className="flex items-center gap-2">
+                <LifeBuoy className="w-6 h-6" />
+                Support tickets
+              </span>
+            )}
           </h1>
           <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
             <ShieldAlert className="w-5 h-5 text-indigo-500" />
@@ -314,6 +326,9 @@ export const AdminDashboard = () => {
       {activeTab === 'tutorial_help' && <AdminTutorialHelp />}
       {activeTab === 'ops' && <AdminOpsCenter />}
       {activeTab === 'growth_ops' && <AdminGrowthOps />}
+      {activeTab === 'support' && <AdminSupport />}
+      {activeTab === 'platform_settings' && <AdminPlatformSettings />}
+      {activeTab === 'waitlist' && <AdminWaitlist />}
 
       {activeTab === 'overview' && (
         <div className="space-y-6">

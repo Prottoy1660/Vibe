@@ -20,7 +20,9 @@ import {
   Moon,
   Fingerprint,
   Gift,
-  CircleHelp
+  CircleHelp,
+  LifeBuoy,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -28,6 +30,7 @@ import { supabase } from '../lib/supabase';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
+import { PlatformBanner } from './PlatformBanner';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -99,6 +102,9 @@ export const Layout = () => {
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
         { name: 'Tutorial & Help Page', href: '/admin?tab=tutorial_help', icon: CircleHelp },
+        { name: 'Support tickets', href: '/admin?tab=support', icon: LifeBuoy },
+        { name: 'Platform status', href: '/admin?tab=platform_settings', icon: Settings },
+        { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
         { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
         { name: 'Growth Ops', href: '/admin?tab=growth_ops', icon: TrendingUp },
       ]
@@ -123,6 +129,7 @@ export const Layout = () => {
       items: [
         { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
         { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
+        { name: 'Support', href: '/support', icon: LifeBuoy },
       ],
     },
     {
@@ -267,6 +274,8 @@ export const Layout = () => {
           </div>
         </header>
 
+        <PlatformBanner />
+
         {/* Page Content */}
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
@@ -276,7 +285,13 @@ export const Layout = () => {
         
         {/* Footer */}
         <footer className="py-4 text-center text-sm text-gray-500 dark:text-gray-400 border-t border-gray-200 dark:border-[#26262d] bg-white/80 dark:bg-[#111113] transition-colors duration-300">
-          <p>© 2026 - VibeAccess</p>
+          <p>
+            © 2026 – VibeAccess
+            <span className="mx-2 opacity-40">·</span>
+            <Link to="/status" className="underline hover:text-indigo-600 dark:hover:text-indigo-400 font-medium">
+              Status
+            </Link>
+          </p>
         </footer>
       </div>
 

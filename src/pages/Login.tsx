@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Lock, AlertCircle, Loader2, User, ArrowRight, Sparkles, Sun, Moon } from 'lucide-react';
+import { Lock, AlertCircle, Loader2, User, ArrowRight, Sparkles, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../contexts/ThemeContext';
+import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
 
 export const Login = () => {
   const [identifier, setIdentifier] = useState('');
@@ -11,17 +12,21 @@ export const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [focusedInput, setFocusedInput] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
 
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
+  const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const isDark = theme === 'dark';
 
   useEffect(() => {
     const fetchSettings = async () => {
       const { data } = await supabase.from('system_settings').select('value').eq('key', 'auth_settings').single();
       if (data && data.value) {
-        setGoogleLoginEnabled(data.value.enable_google_login !== false);
+        const v = data.value as { enable_google_login?: boolean; enable_facebook_login?: boolean };
+        setGoogleLoginEnabled(v.enable_google_login !== false);
+        setFacebookLoginEnabled(v.enable_facebook_login !== false);
       }
     };
     fetchSettings();
@@ -91,10 +96,25 @@ export const Login = () => {
     }
   };
 
+  const oauthRedirect = `${window.location.origin}/`;
+
   const handleGoogleLogin = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
+        options: { redirectTo: oauthRedirect },
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      setError(error.message);
+    }
+  };
+
+  const handleFacebookLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'facebook',
+        options: { redirectTo: oauthRedirect },
       });
       if (error) throw error;
     } catch (error: any) {
@@ -202,17 +222,31 @@ export const Login = () => {
                   <Lock className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'password' ? 'text-purple-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onFocus={() => setFocusedInput('password')}
                   onBlur={() => setFocusedInput(null)}
-                  className={`block w-full pl-12 pr-4 py-4 bg-transparent focus:outline-none font-medium ${isDark ? 'text-white placeholder-gray-500' : 'text-slate-900 placeholder-slate-400'}`}
+                  autoComplete="current-password"
+                  className={`block w-full pl-12 pr-[8.25rem] sm:pr-[8.75rem] py-4 bg-transparent focus:outline-none font-medium ${isDark ? 'text-white placeholder-gray-500' : 'text-slate-900 placeholder-slate-400'}`}
                   placeholder="Password"
                 />
-                <div className="absolute inset-y-0 right-0 pr-4 flex items-center">
-                  <button type="button" onClick={handleResetPassword} className={`text-xs font-semibold transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}>
+                <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 pr-2 sm:pr-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className={`shrink-0 rounded-xl p-2.5 transition-colors ${isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" aria-hidden /> : <Eye className="h-5 w-5" aria-hidden />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    className={`shrink-0 text-xs font-semibold tracking-wide px-1 py-2 transition-colors ${isDark ? 'text-gray-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                  >
                     FORGOT?
                   </button>
                 </div>
@@ -220,27 +254,24 @@ export const Login = () => {
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               type="submit"
               disabled={loading}
-              className={`w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-bold text-white transition-all disabled:opacity-50 group overflow-hidden relative ${isDark ? 'bg-white/10 hover:bg-white/20 border border-white/10' : 'bg-slate-900 hover:bg-slate-800 border border-slate-900 shadow-lg shadow-slate-900/10'}`}
+              className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:pointer-events-none group bg-gradient-primary shadow-lg shadow-primary/30 ring-1 ring-white/15 hover:opacity-[0.98] hover:shadow-xl hover:shadow-primary/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0A0A0A] focus-visible:ring-offset-slate-50"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative z-10 flex items-center gap-2">
-                {loading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    Sign In Securely
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </>
-                )}
-              </span>
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  Sign In Securely
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
             </motion.button>
           </form>
 
-          {googleLoginEnabled && (
+          {(googleLoginEnabled || facebookLoginEnabled) && (
             <div className="mt-6">
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center">
@@ -250,32 +281,54 @@ export const Login = () => {
                   <span className={`px-4 ${isDark ? 'bg-[#0A0A0A] text-gray-500' : 'bg-slate-50 text-slate-500'}`}>Or continue with</span>
                 </div>
               </div>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleGoogleLogin}
-                className={`w-full flex items-center justify-center gap-3 py-4 px-4 rounded-2xl text-sm font-bold transition-all group ${isDark ? 'text-white bg-white/5 hover:bg-white/10 border border-white/10' : 'text-slate-800 bg-white/80 hover:bg-white border border-slate-200 shadow-sm'}`}
-              >
-                <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    fill="#4285F4"
-                  />
-                  <path
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    fill="#34A853"
-                  />
-                  <path
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                    fill="#FBBC05"
-                  />
-                  <path
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                    fill="#EA4335"
-                  />
-                </svg>
-                Sign in with Google
-              </motion.button>
+              <div className="space-y-3">
+                {googleLoginEnabled && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleGoogleLogin}
+                    className={`w-full flex items-center justify-center gap-3 py-4 px-4 rounded-2xl text-sm font-bold transition-all group ${isDark ? 'text-white bg-white/5 hover:bg-white/10 border border-white/10' : 'text-slate-800 bg-white/80 hover:bg-white border border-slate-200 shadow-sm'}`}
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden>
+                      <path
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        fill="#4285F4"
+                      />
+                      <path
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        fill="#34A853"
+                      />
+                      <path
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        fill="#FBBC05"
+                      />
+                      <path
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        fill="#EA4335"
+                      />
+                    </svg>
+                    Sign in with Google
+                  </motion.button>
+                )}
+                {facebookLoginEnabled && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleFacebookLogin}
+                    className={`w-full flex items-center justify-center gap-3 py-4 px-4 rounded-2xl text-sm font-bold transition-all group ${isDark ? 'text-white bg-[#1877F2]/15 hover:bg-[#1877F2]/25 border border-[#1877F2]/30' : 'text-slate-900 bg-white/80 hover:bg-white border border-slate-200 shadow-sm'}`}
+                  >
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden>
+                      <path
+                        fill="#1877F2"
+                        d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"
+                      />
+                    </svg>
+                    Sign in with Facebook
+                  </motion.button>
+                )}
+              </div>
             </div>
           )}
 
@@ -294,31 +347,14 @@ export const Login = () => {
         <div className={`absolute inset-0 bg-[url('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-b from-[#050505] via-transparent to-[#050505]' : 'bg-gradient-to-b from-white via-white/60 to-slate-100'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-r from-[#0A0A0A] to-transparent' : 'bg-gradient-to-r from-slate-50 via-slate-50/85 to-transparent'}`}></div>
-        
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1, delay: 0.2, ease: "easeOut" }}
-          className="relative z-10 p-12 max-w-lg"
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.9, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-10 w-full max-w-md px-8 py-10 sm:px-12 lg:py-12"
         >
-          <div className={`backdrop-blur-xl p-8 rounded-3xl shadow-2xl transition-colors duration-300 ${isDark ? 'bg-white/5 border border-white/10' : 'bg-white/80 border border-slate-200 shadow-slate-200/80'}`}>
-            <div className="flex items-center gap-4 mb-6">
-              <div className="flex -space-x-4">
-                <img className={`w-10 h-10 rounded-full border-2 ${isDark ? 'border-[#121212]' : 'border-white'}`} src="https://i.pravatar.cc/100?img=1" alt="User" />
-                <img className={`w-10 h-10 rounded-full border-2 ${isDark ? 'border-[#121212]' : 'border-white'}`} src="https://i.pravatar.cc/100?img=2" alt="User" />
-                <img className={`w-10 h-10 rounded-full border-2 ${isDark ? 'border-[#121212]' : 'border-white'}`} src="https://i.pravatar.cc/100?img=3" alt="User" />
-              </div>
-              <div className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-slate-600'}`}>
-                <span className={isDark ? 'text-white font-bold' : 'text-slate-900 font-bold'}>5,000+</span> users<br/>trust our platform
-              </div>
-            </div>
-            <h3 className="text-2xl font-bold mb-4 leading-snug">
-              Unlock your potential with instant access to premium tools.
-            </h3>
-            <p className={`leading-relaxed ${isDark ? 'text-gray-400' : 'text-slate-600'}`}>
-              Experience seamless delivery of Adobe subscriptions directly to your dashboard. No waiting, no complex setups. Just pure creativity.
-            </p>
-          </div>
+          <AuthCalmSidePanel variant="login" isDark={isDark} />
         </motion.div>
       </div>
     </div>

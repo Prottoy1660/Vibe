@@ -16,6 +16,8 @@ const RedeemCoupon = React.lazy(() => import('./pages/RedeemCoupon').then(module
 const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 const Profile = React.lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module => ({ default: module.TutorialHelp })));
+const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
+const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -47,6 +49,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+        <Route path="/status" element={<Status />} />
         
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/" element={<Dashboard />} />
@@ -56,6 +59,7 @@ function AppRoutes() {
           <Route path="/redeem" element={<RedeemCoupon />} />
           <Route path="/adobe-email" element={<AdobeEmail />} />
           <Route path="/tutorial-help" element={<TutorialHelp />} />
+          <Route path="/support" element={<Support />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Route>

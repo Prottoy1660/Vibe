@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw } from 'lucide-react';
+import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound } from 'lucide-react';
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
+import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 
 interface User {
   id: string;
@@ -12,6 +13,8 @@ interface User {
   role: string;
   is_banned: boolean;
   created_at: string;
+  signup_auth_provider?: string | null;
+  last_sign_in_provider?: string | null;
 }
 
 export const AdminUsers = () => {
@@ -21,6 +24,7 @@ export const AdminUsers = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
+  const [signupFilter, setSignupFilter] = useState<'all' | 'email' | 'google' | 'facebook'>('all');
 
   const fetchUsers = async () => {
     try {
@@ -124,6 +128,12 @@ export const AdminUsers = () => {
     banned: users.filter((u) => u.is_banned).length,
   };
 
+  const signupBreakdown = {
+    email: users.filter((u) => (u.signup_auth_provider || 'email') === 'email').length,
+    google: users.filter((u) => u.signup_auth_provider === 'google').length,
+    facebook: users.filter((u) => u.signup_auth_provider === 'facebook').length,
+  };
+
   const filteredUsers = users.filter((u) => {
     const q = searchQuery.trim().toLowerCase();
     const matchesSearch =
@@ -135,8 +145,12 @@ export const AdminUsers = () => {
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     const matchesStatus =
       statusFilter === 'all' || (statusFilter === 'banned' ? u.is_banned : !u.is_banned);
+    const sp = (u.signup_auth_provider || 'email').toLowerCase();
+    const matchesSignup =
+      signupFilter === 'all' ||
+      (signupFilter === 'email' ? sp === 'email' : sp === signupFilter);
 
-    return matchesSearch && matchesRole && matchesStatus;
+    return matchesSearch && matchesRole && matchesStatus && matchesSignup;
   });
 
   return (
@@ -199,6 +213,39 @@ export const AdminUsers = () => {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Signup: email</p>
+            <div className="p-2 rounded-xl bg-slate-50 dark:bg-white/5 text-slate-600 dark:text-gray-300">
+              <KeyRound className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{signupBreakdown.email}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Manual registration</p>
+        </div>
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Signup: Google</p>
+            <div className="p-2 rounded-xl bg-blue-50 dark:bg-white/5 text-blue-600 dark:text-blue-400">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{signupBreakdown.google}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">OAuth at account creation</p>
+        </div>
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Signup: Facebook</p>
+            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-white/5 text-indigo-600 dark:text-indigo-400">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{signupBreakdown.facebook}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">OAuth at account creation</p>
+        </div>
+      </div>
+
       <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] p-4 sm:p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="relative w-full lg:w-80">
@@ -234,12 +281,25 @@ export const AdminUsers = () => {
               <option value="banned">Banned</option>
             </select>
 
+            <select
+              value={signupFilter}
+              onChange={(e) => setSignupFilter(e.target.value as typeof signupFilter)}
+              className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              title="Filter by how the user first signed up"
+            >
+              <option value="all">All signup methods</option>
+              <option value="email">Email / password</option>
+              <option value="google">Google</option>
+              <option value="facebook">Facebook</option>
+            </select>
+
             <button
               type="button"
               onClick={() => {
                 setSearchQuery('');
                 setRoleFilter('all');
                 setStatusFilter('all');
+                setSignupFilter('all');
               }}
               className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
               title="Reset filters"
@@ -263,6 +323,12 @@ export const AdminUsers = () => {
               </th>
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Status
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Signup
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Last sign-in
               </th>
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Joined
@@ -308,6 +374,14 @@ export const AdminUsers = () => {
                       Active
                     </span>
                   )}
+                </td>
+
+                <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                  {formatAuthProviderLabel(u.signup_auth_provider)}
+                </td>
+
+                <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                  {formatAuthProviderLabel(u.last_sign_in_provider)}
                 </td>
 
                 <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
@@ -367,7 +441,7 @@ export const AdminUsers = () => {
 
             {filteredUsers.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-14 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={7} className="py-14 text-center text-gray-500 dark:text-gray-400">
                   No users match your filters.
                 </td>
               </tr>
