@@ -255,7 +255,41 @@ router.post('/webhook', async (req, res) => {
     }
 
     if (status === 'COMPLETED') {
-      const orderId = metadata.order_id;
+      // Standalone wallet recharge has no order_id, so handle it first.
+      // Otherwise, the order update path below can fail and skip wallet credit.
+      if (metadata?.is_standalone_recharge && metadata?.user_id && Number(metadata?.recharge_amount) > 0) {
+        try {
+          const rechargeAmount = Number(metadata.recharge_amount);
+          const { data: userData } = await supabase
+            .from('users')
+            .select('wallet_balance')
+            .eq('id', metadata.user_id)
+            .single();
+
+          const currentBalance = Number(userData?.wallet_balance) || 0;
+          const newBalance = currentBalance + rechargeAmount;
+
+          const { error: walletUpdateError } = await supabase
+            .from('users')
+            .update({ wallet_balance: newBalance })
+            .eq('id', metadata.user_id);
+
+          if (walletUpdateError) throw walletUpdateError;
+
+          console.log(
+            `Successfully standalone recharged wallet for user ${metadata.user_id} with amount ${rechargeAmount}`
+          );
+          return res.status(200).json({ received: true });
+        } catch (walletErr) {
+          console.error('Error standalone recharging user wallet via webhook:', walletErr);
+          return res.status(500).json({ error: 'Failed to process standalone recharge' });
+        }
+      }
+
+      const orderId = metadata?.order_id;
+      if (!orderId) {
+        return res.status(400).json({ error: 'Missing order_id for order payment webhook' });
+      }
       
       const { error: updateError } = await supabase
         .from('orders')
@@ -313,29 +347,8 @@ router.post('/webhook', async (req, res) => {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
       
-      // Process Wallet Recharge if applicable
-      if (metadata.is_standalone_recharge && metadata.user_id && metadata.recharge_amount > 0) {
-        try {
-          // Fetch current balance
-          const { data: userData } = await supabase
-            .from('users')
-            .select('wallet_balance')
-            .eq('id', metadata.user_id)
-            .single();
-            
-          const currentBalance = Number(userData?.wallet_balance) || 0;
-          const newBalance = currentBalance + Number(metadata.recharge_amount);
-          
-          await supabase
-            .from('users')
-            .update({ wallet_balance: newBalance })
-            .eq('id', metadata.user_id);
-            
-          console.log(`Successfully standalone recharged wallet for user ${metadata.user_id} with amount ${metadata.recharge_amount}`);
-        } catch (walletErr) {
-          console.error('Error standalone recharging user wallet via webhook:', walletErr);
-        }
-      } else if (metadata.is_recharge && metadata.recharge_amount > 0 && order?.user_id) {
+      // Legacy fallback for order metadata recharge fields.
+      if (metadata.is_recharge && metadata.recharge_amount > 0 && order?.user_id) {
         // Legacy fallback for old orders that might still be processing
         try {
           const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', order.user_id).single();
