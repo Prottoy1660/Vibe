@@ -64,6 +64,8 @@ export const AdminOrders = () => {
   const [rawOrders, setRawOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [assigningBulk, setAssigningBulk] = useState(false);
+  const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -179,6 +181,58 @@ export const AdminOrders = () => {
     }
   };
 
+  const handleBulkAssign = async () => {
+    if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
+    setAssigningBulk(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchOrders();
+      } else {
+        alert(data.message || 'Failed to bulk assign emails.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Server error during bulk assign.');
+    } finally {
+      setAssigningBulk(false);
+    }
+  };
+
+  const handleSingleAssign = async (orderId: string) => {
+    setAssigningSingle(orderId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/payment/assign-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ order_id: orderId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', orderId);
+        fetchOrders();
+      } else {
+        alert(data.message || 'Failed to assign email.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Server error during assign.');
+    } finally {
+      setAssigningSingle(null);
+    }
+  };
+
   const handleRefund = async (orderId: string) => {
     if (!window.confirm("Refund this order? This will revoke the user's email access where applicable.")) {
       return;
@@ -281,9 +335,18 @@ export const AdminOrders = () => {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={handleBulkAssign}
+              disabled={loading || assigningBulk}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold border border-transparent shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)] disabled:opacity-50 transition-all active:scale-95"
+            >
+              {assigningBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Fulfill Missing Emails
+            </button>
+            <button
+              type="button"
               onClick={() => fetchOrders()}
               disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#303038] text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-white/60 dark:hover:bg-white/5 disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#303038] text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-white/60 dark:hover:bg-white/5 disabled:opacity-50 transition-all"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Refresh
@@ -481,6 +544,18 @@ export const AdminOrders = () => {
                             </div>
                           )}
                           <div className="flex flex-wrap justify-end gap-1">
+                            {order.status === 'paid' && !order.products?.is_personal && (
+                              <button
+                                type="button"
+                                onClick={() => handleSingleAssign(order.id)}
+                                disabled={assigningSingle === order.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-all active:scale-95"
+                                title="Attempt to assign an email to this user"
+                              >
+                                {assigningSingle === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                                Assign
+                              </button>
+                            )}
                             {(order.status === 'completed' || order.status === 'paid') && (
                               <button
                                 type="button"

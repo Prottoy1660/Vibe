@@ -67,6 +67,7 @@ export const AdminEmails = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
   const [collapsedDates, setCollapsedDates] = useState<Record<string, boolean>>({});
+  const [assigningBulk, setAssigningBulk] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
@@ -172,6 +173,32 @@ export const AdminEmails = () => {
     let pass = '';
     for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
     return pass;
+  };
+
+  const handleBulkAssign = async () => {
+    if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
+    setAssigningBulk(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchEmails();
+      } else {
+        alert(data.message || 'Failed to bulk assign emails.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Server error during bulk assign.');
+    } finally {
+      setAssigningBulk(false);
+    }
   };
 
   const handleAutoGenerate = async () => {
@@ -349,7 +376,7 @@ export const AdminEmails = () => {
             <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wide mb-4">
               Quick actions
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <ActionExplain
                 title="Refresh data"
                 description="Reload the latest 500 rows from the pool. Use this after changes elsewhere."
@@ -392,6 +419,21 @@ export const AdminEmails = () => {
                   >
                     {deletingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     Delete all
+                  </button>
+                }
+              />
+              <ActionExplain
+                title="Fulfill Orders"
+                description="Assign emails to paid orders that missed out because inventory was empty."
+                button={
+                  <button
+                    type="button"
+                    onClick={handleBulkAssign}
+                    disabled={assigningBulk || loading}
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                  >
+                    {assigningBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Fulfill Missing
                   </button>
                 }
               />

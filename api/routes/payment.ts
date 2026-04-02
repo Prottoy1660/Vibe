@@ -737,4 +737,63 @@ router.post('/assign-email', async (req, res) => {
   }
 });
 
+router.post('/bulk-assign-emails', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    
+    // Check admin permissions
+    const { data: userProfile } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userProfile?.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Forbidden: Admins only' });
+    }
+
+    // Fetch all orders that are paid but stuck/not completed, filtering out personal ones.
+    const { data: paidOrders, error: fetchErr } = await supabase
+      .from('orders')
+      .select('*, products!inner(id, is_personal)')
+      .eq('status', 'paid')
+      .eq('payment_status', 'paid')
+      .eq('products.is_personal', false);
+      
+    if (fetchErr) throw fetchErr;
+    
+    if (!paidOrders || paidOrders.length === 0) {
+      return res.json({ success: true, message: 'No missing/unfulfilled orders found.', results: [] });
+    }
+    
+    const results = [];
+    let successCount = 0;
+    
+    for (const order of paidOrders) {
+      const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+      if (assignment.success) {
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+        results.push({ order_id: order.id, success: true });
+        successCount++;
+        
+        try {
+          await supabase.from('order_events').insert({
+            order_id: order.id,
+            user_id: user.id, // The admin doing the action
+            event_type: 'bulk_provisioning_completed',
+            message: 'Assigned product email successfully via bulk action'
+          });
+        } catch {}
+      } else {
+        results.push({ order_id: order.id, success: false, error: assignment.error });
+      }
+    }
+    
+    return res.json({ 
+      success: true, 
+      message: `Successfully fulfilled ${successCount} out of ${paidOrders.length} pending emails.`,
+      results 
+    });
+
+  } catch (error: any) {
+    console.error('Bulk assign emails error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Internal server error' });
+  }
+});
+
 export default router;
