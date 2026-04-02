@@ -16,6 +16,7 @@ interface EmailPool {
   assigned_at: string | null;
   current_users?: number;
   product_id?: string | null;
+  cloud_access_type?: 'none' | 'api' | 'manual';
   products?: {
     title: string;
     max_users_per_email: number;
@@ -50,6 +51,8 @@ export const AdminEmails = () => {
   const [genCount, setGenCount] = useState(5);
   const [genDomain, setGenDomain] = useState('vibeaccess.space');
   const [genPrefix, setGenPrefix] = useState('adobe');
+  const [genCloudAccess, setGenCloudAccess] = useState<'none' | 'api'>('none');
+  const [genDuration, setGenDuration] = useState(1);
 
   useEffect(() => { fetchEmails(); }, []);
 
@@ -151,7 +154,8 @@ export const AdminEmails = () => {
       const newAccounts = Array.from({ length: genCount }, () => ({
         email: `${genPrefix}.${Math.random().toString(36).substring(2, 6)}@${genDomain}`,
         password: generateRandomPassword(),
-        status: 'available'
+        status: 'available',
+        cloud_access_type: genCloudAccess
       }));
 
       const API_URL = import.meta.env.VITE_API_URL || '';
@@ -159,7 +163,7 @@ export const AdminEmails = () => {
       const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ accounts: newAccounts })
+        body: JSON.stringify({ accounts: newAccounts, cloudAccess: genCloudAccess, durationMonths: genDuration })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'cPanel creation failed');
@@ -185,6 +189,22 @@ export const AdminEmails = () => {
   const todayCount = emails.filter(e => isToday(parseISO(e.created_at))).length;
 
   const grouped = groupByDate(emails);
+
+  const handleUpdateCloudAccess = async (id: string, currentStatus: string) => {
+    const newStatus = prompt('Update Cloud Access Status (none, api, manual):', currentStatus || 'none');
+    if (!newStatus || !['none', 'api', 'manual'].includes(newStatus)) {
+      if (newStatus) alert('Invalid status. Use none, api, or manual.');
+      return;
+    }
+    
+    try {
+      const { error } = await supabase.from('emails_pool').update({ cloud_access_type: newStatus }).eq('id', id);
+      if (error) throw error;
+      setEmails(prev => prev.map(e => e.id === id ? { ...e, cloud_access_type: newStatus as any } : e));
+    } catch (err: any) {
+      alert(`Failed to update: ${err.message}`);
+    }
+  };
 
   const statusStyles: Record<string, string> = {
     available: 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300',
@@ -250,7 +270,7 @@ export const AdminEmails = () => {
           <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2 text-sm">
             <Server className="w-4 h-4 text-indigo-500" /> cPanel Auto Generator
           </h4>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end bg-indigo-50/60 dark:bg-[#111113] p-4 rounded-xl border border-indigo-100 dark:border-[#303038]">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end bg-indigo-50/60 dark:bg-[#111113] p-4 rounded-xl border border-indigo-100 dark:border-[#303038]">
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Prefix</label>
               <input type="text" value={genPrefix} onChange={e => setGenPrefix(e.target.value)}
@@ -266,9 +286,22 @@ export const AdminEmails = () => {
               <input type="number" min="1" max="50" value={genCount} onChange={e => setGenCount(parseInt(e.target.value) || 1)}
                 className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100" />
             </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Cloud Access</label>
+              <select value={genCloudAccess} onChange={e => setGenCloudAccess(e.target.value as 'none' | 'api')}
+                className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100">
+                <option value="none">No Access</option>
+                <option value="api">Auto API Access</option>
+              </select>
+            </div>
+            <div>
+              <label className={`block text-xs font-medium mb-1 ${genCloudAccess === 'api' ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}`}>Duration (Mos)</label>
+              <input type="number" min="1" max="12" value={genDuration} onChange={e => setGenDuration(parseInt(e.target.value) || 1)} disabled={genCloudAccess !== 'api'}
+                className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 disabled:opacity-50" />
+            </div>
             <button onClick={handleAutoGenerate} disabled={generating}
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50">
-              {generating ? <><Loader2 className="w-4 h-4 animate-spin" />Generating...</> : <><RefreshCw className="w-4 h-4" />Auto Generate</>}
+              {generating ? <><Loader2 className="w-4 h-4 animate-spin" />Gen...</> : <><RefreshCw className="w-4 h-4" />Generate</>}
             </button>
           </div>
         </div>
@@ -329,6 +362,7 @@ export const AdminEmails = () => {
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email Address</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Password</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                        <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cloud Access</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacity</th>
                         <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Time</th>
                         <th className="py-2.5 px-4 text-right text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
@@ -365,6 +399,19 @@ export const AdminEmails = () => {
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${statusStyles[email.status] || statusStyles.used}`}>
                               {email.status}
                             </span>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <button
+                              onClick={() => handleUpdateCloudAccess(email.id, email.cloud_access_type || 'none')}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize cursor-pointer hover:opacity-80 transition-opacity ${
+                                email.cloud_access_type === 'api' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20' :
+                                email.cloud_access_type === 'manual' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300 border border-purple-200 dark:border-purple-500/20' :
+                                'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400 border border-gray-200 dark:border-[#303038]'
+                              }`}
+                              title="Click to update cloud access"
+                            >
+                              {email.cloud_access_type || 'none'}
+                            </button>
                           </td>
                           <td className="py-2.5 px-4">
                             {email.status === 'available' && !email.product_id ? (

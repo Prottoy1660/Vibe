@@ -15,6 +15,7 @@ interface Product {
   email_slots: number;
   max_users_per_email: number;
   single_device_warning: boolean;
+  with_cloud_access: boolean;
 }
 
 export const AdminProducts = () => {
@@ -36,6 +37,7 @@ export const AdminProducts = () => {
     email_slots: 3,
     max_users_per_email: 1,
     single_device_warning: false,
+    with_cloud_access: false,
   });
 
   useEffect(() => {
@@ -157,6 +159,7 @@ export const AdminProducts = () => {
       email_slots: 3,
       max_users_per_email: 1,
       single_device_warning: false,
+      with_cloud_access: false,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -317,9 +320,9 @@ export const AdminProducts = () => {
                 </div>
               </div>
 
-              {/* ── Single Device Warning — standalone prominent row ── */}
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3">
+              {/* ── Single Device Warning & Cloud Access Warning ── */}
+              <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3 h-full">
                   <div>
                     <p className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
                       <AlertTriangle className="w-4 h-4" /> Single Device Warning
@@ -335,6 +338,25 @@ export const AdminProducts = () => {
                   >
                     <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
                       formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl px-4 py-3 h-full">
+                  <div>
+                    <p className="text-sm font-bold text-blue-800 dark:text-blue-200 flex items-center gap-1.5">
+                      <Package className="w-4 h-4" /> With Cloud Access
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">When enabled, only emails with Adobe Creative Cloud Access (Auto API or Manual) will be assigned.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({...formData, with_cloud_access: !formData.with_cloud_access})}
+                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
+                      formData.with_cloud_access ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      formData.with_cloud_access ? 'translate-x-6' : 'translate-x-1'
                     }`} />
                   </button>
                 </div>
@@ -390,6 +412,7 @@ export const AdminProducts = () => {
                         ) : (
                           <><Users className="w-3 h-3 text-indigo-500" /> {product.max_users_per_email} shared</>
                         )}
+                        {product.with_cloud_access && <span className="ml-1 px-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">+ Cloud</span>}
                       </span>
                     </div>
                   </td>

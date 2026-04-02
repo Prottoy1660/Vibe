@@ -21,34 +21,45 @@ export async function assignEmailForOrder(
     // Fetch product config
     const { data: product } = await supabase
       .from('products')
-      .select('email_slots, max_users_per_email')
+      .select('email_slots, max_users_per_email, with_cloud_access')
       .eq('id', productId)
       .single();
 
     const maxUsersPerEmail = product?.max_users_per_email ?? 1;
+    const withCloudAccess = product?.with_cloud_access ?? false;
 
     let emailId: string | null = null;
 
     if (maxUsersPerEmail <= 1) {
       // ── EXCLUSIVE MODE ──────────────────────────────────────────────────
       // Pick any fresh available email (no product_id set, current_users = 0)
-      const { data: available } = await supabase
+      let query = supabase
         .from('emails_pool')
         .select('id')
         .eq('status', 'available')
-        .is('product_id', null)     // truly unoccupied
-        .limit(1)
-        .single();
+        .is('product_id', null);
+
+      if (withCloudAccess) {
+        query = query.in('cloud_access_type', ['api', 'manual']);
+      } else {
+        query = query.eq('cloud_access_type', 'none');
+      }
+
+      const { data: available } = await query.limit(1).single();
 
       if (!available) {
-        // Fallback: any 'available' email even if product_id was set (legacy rows)
-        const { data: fallback } = await supabase
+        // Fallback: any 'available' email even if product_id was set (legacy rows), but respecting cloud access if required
+        let fallbackQuery = supabase
           .from('emails_pool')
           .select('id')
-          .eq('status', 'available')
-          .limit(1)
-          .single();
-        if (!fallback) return { success: false, error: 'No available emails in the pool.' };
+          .eq('status', 'available');
+          
+        if (withCloudAccess) {
+           fallbackQuery = fallbackQuery.in('cloud_access_type', ['api', 'manual']);
+        }
+        
+        const { data: fallback } = await fallbackQuery.limit(1).single();
+        if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
         emailId = fallback.id;
       } else {
         emailId = available.id;
@@ -65,16 +76,22 @@ export async function assignEmailForOrder(
     } else {
       // ── SHARED SLOT MODE ────────────────────────────────────────────────
       // 1. Try to find an existing partially-filled slot for this product
-      const { data: partialEmail } = await supabase
+      let partialQuery = supabase
         .from('emails_pool')
         .select('id, current_users')
         .eq('status', 'available')      // still open (not 'assigned' yet)
         .eq('product_id', productId)    // belongs to this product's shared pool
         .gt('current_users', 0)         // already has someone in it
         .lt('current_users', maxUsersPerEmail) // still has room
-        .order('current_users', { ascending: false }) // fill most-used first
-        .limit(1)
-        .single();
+        .order('current_users', { ascending: false });
+
+      if (withCloudAccess) {
+        partialQuery = partialQuery.in('cloud_access_type', ['api', 'manual']);
+      } else {
+        partialQuery = partialQuery.eq('cloud_access_type', 'none');
+      }
+
+      const { data: partialEmail } = await partialQuery.limit(1).single();
 
       if (partialEmail) {
         // ✅ Found a slot — join it
@@ -90,18 +107,28 @@ export async function assignEmailForOrder(
 
       } else {
         // No existing partial slot — take a fresh email and open a new shared slot
-        const { data: freshEmail } = await supabase
+        let freshQuery = supabase
           .from('emails_pool')
           .select('id')
           .eq('status', 'available')
-          .is('product_id', null) // completely unoccupied
-          .limit(1)
-          .single();
+          .is('product_id', null);
+
+        if (withCloudAccess) {
+          freshQuery = freshQuery.in('cloud_access_type', ['api', 'manual']);
+        } else {
+          freshQuery = freshQuery.eq('cloud_access_type', 'none');
+        }
+
+        const { data: freshEmail } = await freshQuery.limit(1).single();
 
         if (!freshEmail) {
-          // Fallback: any available email
-          const { data: fallback } = await supabase.from('emails_pool').select('id').eq('status', 'available').limit(1).single();
-          if (!fallback) return { success: false, error: 'No available emails in the pool.' };
+          // Fallback: any available email matching requirements
+          let fallbackQuery = supabase.from('emails_pool').select('id').eq('status', 'available');
+          if (withCloudAccess) {
+            fallbackQuery = fallbackQuery.in('cloud_access_type', ['api', 'manual']);
+          }
+          const { data: fallback } = await fallbackQuery.limit(1).single();
+          if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
           emailId = fallback.id;
         } else {
           emailId = freshEmail.id;

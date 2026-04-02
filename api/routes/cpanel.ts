@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
+import { grantAdobeCloudAccess } from '../lib/adobeApi';
 
 dotenv.config();
 
@@ -59,7 +60,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 // Endpoint to create email accounts via cPanel API
 router.post('/create-emails', verifyAdmin, async (req, res) => {
   try {
-    const { accounts } = req.body; // Array of { email, password }
+    const { accounts, cloudAccess, durationMonths } = req.body; // Array of { email, password }
     
     if (!CPANEL_HOST || !CPANEL_USERNAME || !CPANEL_API_TOKEN) {
       return res.status(500).json({ error: 'cPanel credentials not configured' });
@@ -91,7 +92,18 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
         const data = await response.json() as any;
         
         if (data.status === 1) {
-          results.push({ email: acc.email, success: true });
+          // If cPanel creation succeeded, and admin selected 'api' for cloud access
+          if (cloudAccess === 'api') {
+            const adobeResult = await grantAdobeCloudAccess(acc.email, durationMonths || 1);
+            if (!adobeResult.success) {
+              console.error(`Adobe API error for ${acc.email}:`, adobeResult.error);
+              results.push({ email: acc.email, success: true, adobeError: adobeResult.error });
+            } else {
+              results.push({ email: acc.email, success: true, adobeSuccess: true });
+            }
+          } else {
+            results.push({ email: acc.email, success: true });
+          }
         } else {
           console.error(`cPanel error for ${acc.email}:`, data.errors);
           results.push({ email: acc.email, success: false, error: data.errors?.[0] || 'Unknown error' });
