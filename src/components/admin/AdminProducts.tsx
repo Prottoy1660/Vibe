@@ -24,6 +24,7 @@ export const AdminProducts = () => {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
 
   // Form state
   const [formData, setFormData] = useState<Partial<Product>>({
@@ -148,26 +149,6 @@ export const AdminProducts = () => {
     setIsAdding(false);
   };
 
-  const startAdd = () => {
-    setFormData({
-      title: '',
-      title_bn: '',
-      price: 0,
-      duration: '1 month',
-      icons: [],
-      description: '',
-      image_url: '',
-      is_active: true,
-      email_slots: 3,
-      max_users_per_email: 1,
-      single_device_warning: false,
-      with_cloud_access: false,
-      is_personal: false,
-    });
-    setIsAdding(true);
-    setEditingId(null);
-  };
-
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
   }
@@ -180,29 +161,98 @@ export const AdminProducts = () => {
           Product Management
         </h3>
         <div className="flex space-x-2">
-          {products.length > 0 && (
+          {products.filter(p => activeTab === 'personal' ? p.is_personal : !p.is_personal).length > 0 && (
             <button 
               onClick={handleDeleteAll}
               className="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors flex items-center"
             >
               <Trash2 className="w-4 h-4 mr-1" />
-              Delete All
+              Delete All {activeTab === 'personal' ? 'Personal' : 'Regular'}
             </button>
           )}
-          <button 
-            onClick={startAdd}
-            className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add Product
-          </button>
+          {activeTab === 'regular' ? (
+            <button 
+              onClick={() => {
+                setFormData({
+                  title: '', title_bn: '', price: 0, duration: '1 month', icons: [],
+                  description: '', image_url: '', is_active: true, email_slots: 3,
+                  max_users_per_email: 1, single_device_warning: false, with_cloud_access: false,
+                  is_personal: false,
+                });
+                setIsAdding(true);
+                setEditingId(null);
+              }}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Product
+            </button>
+          ) : (
+            <button 
+              onClick={() => {
+                setFormData({
+                  title: '', title_bn: '', price: 0, duration: '1 month', icons: [],
+                  description: '', image_url: '', is_active: true, email_slots: 1,
+                  max_users_per_email: 1, single_device_warning: false, with_cloud_access: false,
+                  is_personal: true,
+                });
+                setIsAdding(true);
+                setEditingId(null);
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 transition-colors flex items-center"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Add Personal Product
+            </button>
+          )}
         </div>
+      </div>
+      
+      {/* ── Sub Navigation Tabs ── */}
+      <div className="border-b border-gray-100 dark:border-[#26262d] px-6 flex gap-6">
+        <button
+          onClick={() => {
+            setActiveTab('regular');
+            setIsAdding(false);
+            setEditingId(null);
+          }}
+          className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'regular' 
+              ? 'border-primary text-primary' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          Regular Products
+        </button>
+        <button
+          onClick={() => {
+            setActiveTab('personal');
+            setIsAdding(false);
+            setEditingId(null);
+          }}
+          className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'personal' 
+              ? 'border-purple-600 text-purple-600' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          Personal Subscriptions
+        </button>
       </div>
 
       <div className="p-6">
         {(isAdding || editingId) && (
           <div className="mb-8 p-6 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-[#26262d]">
-            <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">{editingId ? 'Edit Product' : 'New Product'}</h4>
+            <div className="flex justify-between items-center mb-4">
+              <h4 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                {editingId ? 'Edit Product' : 'New Product'}
+                {formData.is_personal && (
+                  <span className="px-2 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-[10px] rounded uppercase font-bold tracking-wider">
+                    Personal Subscription
+                  </span>
+                )}
+              </h4>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Title (English)</label>
@@ -280,111 +330,94 @@ export const AdminProducts = () => {
                 <p className="text-xs text-gray-500 mt-1">If provided, this image will be displayed instead of the default gradient banner and icons.</p>
               </div>
 
-              {/* ── Email Slot Configuration ── */}
-              <div className="md:col-span-2">
-                <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl p-4">
-                  <h5 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                    <Mail className="w-4 h-4" /> Email Slot Configuration
-                  </h5>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        Email Slots
-                      </label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={10}
-                        value={formData.email_slots ?? 3}
-                        onChange={e => setFormData({...formData, email_slots: Number(e.target.value)})}
-                        className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">How many emails the user can generate for this subscription (e.g. 3)</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        Max Users Per Email
-                      </label>
-                      <select
-                        value={formData.max_users_per_email ?? 1}
-                        onChange={e => setFormData({...formData, max_users_per_email: Number(e.target.value)})}
-                        className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
-                      >
-                        <option value={1}>1 — Exclusive (private, one user only)</option>
-                        <option value={2}>2 — Shared (2 users share one email)</option>
-                      </select>
-                      <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        {(formData.max_users_per_email ?? 1) === 1
-                          ? <><Check className="w-3 h-3 text-emerald-500" /> Exclusive — each email is assigned to one user only</>
-                          : <><Users className="w-3 h-3 text-indigo-400" /> Shared — {formData.max_users_per_email} users will receive the same email &amp; password</>}
-                      </p>
+              {/* ── Email Slot Configuration (Hidden for Personal) ── */}
+              {!formData.is_personal && (
+                <div className="md:col-span-2">
+                  <div className="bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 rounded-xl p-4">
+                    <h5 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2">
+                      <Mail className="w-4 h-4" /> Email Slot Configuration
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                          Email Slots
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={formData.email_slots ?? 3}
+                          onChange={e => setFormData({...formData, email_slots: Number(e.target.value)})}
+                          className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">How many emails the user can generate for this subscription (e.g. 3)</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                          Max Users Per Email
+                        </label>
+                        <select
+                          value={formData.max_users_per_email ?? 1}
+                          onChange={e => setFormData({...formData, max_users_per_email: Number(e.target.value)})}
+                          className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg"
+                        >
+                          <option value={1}>1 — Exclusive (private, one user only)</option>
+                          <option value={2}>2 — Shared (2 users share one email)</option>
+                        </select>
+                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                          {(formData.max_users_per_email ?? 1) === 1
+                            ? <><Check className="w-3 h-3 text-emerald-500" /> Exclusive — each email is assigned to one user only</>
+                            : <><Users className="w-3 h-3 text-indigo-400" /> Shared — {formData.max_users_per_email} users will receive the same email &amp; password</>}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* ── Single Device Warning & Cloud Access Warning ── */}
-              <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3 h-full">
-                  <div>
-                    <p className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4" /> Single Device Warning
-                    </p>
-                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">When enabled, users will see a warning that this account can only be used on one device at a time.</p>
+              {/* ── Single Device Warning & Cloud Access Warning (Hidden for Personal) ── */}
+              {!formData.is_personal && (
+                <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-xl px-4 py-3 h-full">
+                    <div>
+                      <p className="text-sm font-bold text-amber-800 dark:text-amber-200 flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4" /> Single Device Warning
+                      </p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">When enabled, users will see a warning that this account can only be used on one device at a time.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, single_device_warning: !formData.single_device_warning})}
+                      className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
+                        formData.single_device_warning ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                        formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({...formData, single_device_warning: !formData.single_device_warning})}
-                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
-                      formData.single_device_warning ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
-                      formData.single_device_warning ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl px-4 py-3 h-full">
-                  <div>
-                    <p className="text-sm font-bold text-blue-800 dark:text-blue-200 flex items-center gap-1.5">
-                      <Package className="w-4 h-4" /> With Cloud Access
-                    </p>
-                    <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">When enabled, only emails with Adobe Creative Cloud Access (Auto API or Manual) will be assigned.</p>
+                  <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-xl px-4 py-3 h-full">
+                    <div>
+                      <p className="text-sm font-bold text-blue-800 dark:text-blue-200 flex items-center gap-1.5">
+                        <Package className="w-4 h-4" /> With Cloud Access
+                      </p>
+                      <p className="text-xs text-blue-700 dark:text-blue-400 mt-0.5">When enabled, only emails with Adobe Creative Cloud Access (Auto API or Manual) will be assigned.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({...formData, with_cloud_access: !formData.with_cloud_access})}
+                      className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
+                        formData.with_cloud_access ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}
+                    >
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                        formData.with_cloud_access ? 'translate-x-6' : 'translate-x-1'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({...formData, with_cloud_access: !formData.with_cloud_access})}
-                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
-                      formData.with_cloud_access ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
-                      formData.with_cloud_access ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
                 </div>
-              </div>
-              <div className="md:col-span-2">
-                <div className="flex items-center justify-between bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 rounded-xl px-4 py-3">
-                  <div>
-                    <p className="text-sm font-bold text-purple-800 dark:text-purple-200 flex items-center gap-1.5">
-                      <Users className="w-4 h-4" /> Personal Subscription
-                    </p>
-                    <p className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">If enabled, this product is treated as a personal subscription request, applying access directly to the user's provided email instead of generating from the pool.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setFormData({...formData, is_personal: !formData.is_personal})}
-                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
-                      formData.is_personal ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'
-                    }`}
-                  >
-                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
-                      formData.is_personal ? 'translate-x-6' : 'translate-x-1'
-                    }`} />
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
             <div className="mt-4 flex justify-end space-x-3">
               <button 
@@ -411,13 +444,15 @@ export const AdminProducts = () => {
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Product</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Price</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Duration</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email Config</th>
+                {activeTab === 'regular' && (
+                  <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Email Config</th>
+                )}
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {products.map(product => (
+              {products.filter(p => activeTab === 'personal' ? p.is_personal : !p.is_personal).map(product => (
                 <tr key={product.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
                   <td className="py-3 px-4">
                     <div className="font-medium text-gray-900 dark:text-gray-100">{product.title}</div>
@@ -425,22 +460,23 @@ export const AdminProducts = () => {
                   </td>
                   <td className="py-3 px-4 font-semibold text-emerald-500">৳{product.price}</td>
                   <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{product.duration}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                        <Mail className="w-3.5 h-3.5" /> {product.email_slots ?? 3} slots
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
-                        {(product.max_users_per_email ?? 1) === 1 ? (
-                          <><Lock className="w-3 h-3 text-amber-500" /> Exclusive</>
-                        ) : (
-                          <><Users className="w-3 h-3 text-indigo-500" /> {product.max_users_per_email} shared</>
-                        )}
-                        {product.with_cloud_access && <span className="ml-1 px-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">+ Cloud</span>}
-                        {product.is_personal && <span className="ml-1 px-1 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 rounded">Personal</span>}
-                      </span>
-                    </div>
-                  </td>
+                  {activeTab === 'regular' && (
+                    <td className="py-3 px-4">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                          <Mail className="w-3.5 h-3.5" /> {product.email_slots ?? 3} slots
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          {(product.max_users_per_email ?? 1) === 1 ? (
+                            <><Lock className="w-3 h-3 text-amber-500" /> Exclusive</>
+                          ) : (
+                            <><Users className="w-3 h-3 text-indigo-500" /> {product.max_users_per_email} shared</>
+                          )}
+                          {product.with_cloud_access && <span className="ml-1 px-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">+ Cloud</span>}
+                        </span>
+                      </div>
+                    </td>
+                  )}
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
                       product.is_active ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
@@ -466,10 +502,10 @@ export const AdminProducts = () => {
                   </td>
                 </tr>
               ))}
-              {products.length === 0 && (
+              {products.filter(p => activeTab === 'personal' ? p.is_personal : !p.is_personal).length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No products found. Add one to get started.
+                  <td colSpan={activeTab === 'regular' ? 6 : 5} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                    No {activeTab === 'personal' ? 'personal' : 'regular'} products found. Add one to get started.
                   </td>
                 </tr>
               )}
