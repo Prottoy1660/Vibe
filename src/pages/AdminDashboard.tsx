@@ -13,7 +13,9 @@ import {
   Package,
   ArrowLeft,
   Info,
-  XCircle
+  XCircle,
+  Fingerprint,
+  Gift
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -264,8 +266,18 @@ export const AdminDashboard = () => {
           {activeTab === 'emails' && 'Email Inventory'}
           {activeTab === 'analytics' && 'Financial Analytics'}
           {activeTab === 'user_emails' && 'User Subscriptions'}
-          {activeTab === 'intelligence' && '🔍 User Intelligence'}
-          {activeTab === 'redeem' && '🎁 Redeem Codes'}
+          {activeTab === 'intelligence' && (
+            <span className="flex items-center gap-2">
+              <Fingerprint className="w-6 h-6" />
+              User Intelligence
+            </span>
+          )}
+          {activeTab === 'redeem' && (
+            <span className="flex items-center gap-2">
+              <Gift className="w-6 h-6" />
+              Redeem Codes
+            </span>
+          )}
         </h1>
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
           <ShieldAlert className="w-5 h-5 text-indigo-500" />
