@@ -165,7 +165,15 @@ export const AdminEmails = () => {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ accounts: newAccounts, cloudAccess: genCloudAccess, durationMonths: genDuration })
       });
-      const data = await response.json();
+      
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error(text || 'cPanel creation failed with a non-JSON response');
+      }
+
       if (!response.ok) throw new Error(data.error || 'cPanel creation failed');
 
       const { error } = await supabase.from('emails_pool').insert(newAccounts);

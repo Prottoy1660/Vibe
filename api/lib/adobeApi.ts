@@ -29,7 +29,14 @@ export async function grantAdobeCloudAccess(email: string, durationMonths: numbe
       body: JSON.stringify(body)
     });
     
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error('Adobe API non-JSON response:', text);
+      return { success: false, error: `Invalid response from Adobe API: ${res.status}` };
+    }
     
     if (!res.ok || data.error) {
       return { success: false, error: data.error || `HTTP ${res.status}` };

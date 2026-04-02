@@ -89,7 +89,15 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
           }
         });
         
-        const data = await response.json() as any;
+        const responseText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          console.error(`cPanel non-JSON response for ${acc.email}:`, responseText);
+          results.push({ email: acc.email, success: false, error: 'Invalid response from cPanel' });
+          continue;
+        }
         
         if (data.status === 1) {
           // If cPanel creation succeeded, and admin selected 'api' for cloud access
