@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { 
-  Users, 
-  ShoppingBag, 
-  Mail, 
+import {
+  Users,
+  ShoppingBag,
+  Mail,
   Upload,
   AlertCircle,
   Loader2,
@@ -15,7 +15,10 @@ import {
   Info,
   XCircle,
   Fingerprint,
-  Gift
+  Gift,
+  TrendingUp,
+  ShieldAlert,
+  LayoutDashboard,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,8 +37,6 @@ import { AdminRedeemCodes } from '../components/admin/AdminRedeemCodes';
 import { AdminTutorialHelp } from '../components/admin/AdminTutorialHelp';
 import { AdminOpsCenter } from '../components/admin/AdminOpsCenter';
 import { AdminGrowthOps } from '../components/admin/AdminGrowthOps';
-import { TrendingUp, ShieldAlert } from 'lucide-react';
-
 export const AdminDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -254,42 +255,51 @@ export const AdminDashboard = () => {
     <div className="space-y-6 pb-12">
       {/* Mobile Menu Button & Title */}
       <div className="flex items-center justify-between md:hidden bg-white dark:bg-[#151518] p-4 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] mb-4">
-        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Admin Panel</h1>
+        <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+          {activeTab === 'analytics' ? 'Financial Analytics' : 'Admin Panel'}
+        </h1>
+        {activeTab === 'analytics' && (
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <ShieldAlert className="w-4 h-4 text-indigo-500" />
+            Admin
+          </div>
+        )}
       </div>
 
-      {/* Header section for desktop */}
-      <div className="hidden md:flex justify-between items-center bg-white dark:bg-[#151518] p-6 rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {activeTab === 'overview' && 'Admin Dashboard'}
-          {activeTab === 'products' && 'Product Management'}
-          {activeTab === 'orders' && 'Order Management'}
-          {activeTab === 'users' && 'User Management'}
-          {activeTab === 'coupons' && 'Coupon Management'}
-          {activeTab === 'notices' && 'Notice Management'}
-          {activeTab === 'emails' && 'Email Inventory'}
-          {activeTab === 'analytics' && 'Financial Analytics'}
-          {activeTab === 'user_emails' && 'User Subscriptions'}
-          {activeTab === 'intelligence' && (
-            <span className="flex items-center gap-2">
-              <Fingerprint className="w-6 h-6" />
-              User Intelligence
-            </span>
-          )}
-          {activeTab === 'redeem' && (
-            <span className="flex items-center gap-2">
-              <Gift className="w-6 h-6" />
-              Redeem Codes
-            </span>
-          )}
-          {activeTab === 'tutorial_help' && 'Tutorial & Help Page'}
-          {activeTab === 'ops' && 'Ops Center'}
-          {activeTab === 'growth_ops' && 'Growth Ops'}
-        </h1>
-        <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-          <ShieldAlert className="w-5 h-5 text-indigo-500" />
-          Administrator Access
+      {/* Header section for desktop — Financial Analytics uses its own hero inside AdminAnalytics */}
+      {activeTab !== 'analytics' && (
+        <div className="hidden md:flex justify-between items-center bg-white dark:bg-[#151518] p-6 rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            {activeTab === 'overview' && 'Admin Dashboard'}
+            {activeTab === 'products' && 'Product Management'}
+            {activeTab === 'orders' && 'Order Management'}
+            {activeTab === 'users' && 'User Management'}
+            {activeTab === 'coupons' && 'Coupon Management'}
+            {activeTab === 'notices' && 'Notice Management'}
+            {activeTab === 'emails' && 'Email Inventory'}
+            {activeTab === 'user_emails' && 'User Subscriptions'}
+            {activeTab === 'intelligence' && (
+              <span className="flex items-center gap-2">
+                <Fingerprint className="w-6 h-6" />
+                User Intelligence
+              </span>
+            )}
+            {activeTab === 'redeem' && (
+              <span className="flex items-center gap-2">
+                <Gift className="w-6 h-6" />
+                Redeem Codes
+              </span>
+            )}
+            {activeTab === 'tutorial_help' && 'Tutorial & Help Page'}
+            {activeTab === 'ops' && 'Ops Center'}
+            {activeTab === 'growth_ops' && 'Growth Ops'}
+          </h1>
+          <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
+            <ShieldAlert className="w-5 h-5 text-indigo-500" />
+            Administrator Access
+          </div>
         </div>
-      </div>
+      )}
 
       {activeTab === 'products' && <AdminProducts />}
       {activeTab === 'orders' && <AdminOrders />}
@@ -307,73 +317,119 @@ export const AdminDashboard = () => {
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Active Users</p>
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                  <Users className="w-5 h-5" />
+          <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+            <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+            <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 shrink-0">
+                  <LayoutDashboard className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Admin overview</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                    Quick read on users, the shared email pool, and subscription health. Revenue charts are below — open{' '}
+                    <span className="font-medium text-gray-800 dark:text-gray-200">Financial Analytics</span> in the sidebar for the same view on its own page.
+                  </p>
                 </div>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.activeUsers}</h3>
+              <button
+                type="button"
+                onClick={() => navigate('/admin?tab=analytics')}
+                className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/25 transition-colors"
+              >
+                <TrendingUp className="w-4 h-4" />
+                Full financial analytics
+              </button>
             </div>
-            
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Emails Used</p>
-                <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
-                  <Mail className="w-5 h-5" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.emailsUsed}</h3>
-            </div>
-            
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Emails Remaining</p>
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <Mail className="w-5 h-5" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.emailsRemaining}</h3>
-            </div>
-
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Expiring Soon</p>
-                <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.expiringSoon}</h3>
-            </div>
-
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Expired Accounts</p>
-                <div className="p-2 bg-red-50 text-red-600 rounded-lg">
-                  <XCircle className="w-5 h-5" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.expired}</h3>
-            </div>
-
-            <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Replaced Emails</p>
-                <div className="p-2 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-lg">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.replaced}</h3>
-            </div>
-
           </div>
 
-          <div className="mt-8">
-            <AdminAnalytics />
+          <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-indigo-50/40 dark:bg-indigo-500/5 px-4 py-3 flex items-start gap-2">
+            <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              <span className="font-medium text-gray-800 dark:text-gray-200">Pool</span> counts come from the inventory you upload.{' '}
+              <span className="font-medium text-gray-800 dark:text-gray-200">Health</span> counts apply to Adobe emails already assigned from orders (excludes refunded/cancelled).
+            </p>
           </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 md:p-6 shadow-sm dark:shadow-none">
+              <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
+                Platform &amp; email pool
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Active users</span>
+                    <div className="p-1.5 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                      <Users className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.activeUsers}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Registered accounts</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Emails used</span>
+                    <div className="p-1.5 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-lg">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.emailsUsed}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Assigned or used from pool</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Remaining</span>
+                    <div className="p-1.5 bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-lg">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.emailsRemaining}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Available in pool</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 md:p-6 shadow-sm dark:shadow-none">
+              <h3 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
+                Assigned email health
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Expiring soon</span>
+                    <div className="p-1.5 bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-400 rounded-lg">
+                      <AlertCircle className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.expiringSoon}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Within 7 days</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Expired</span>
+                    <div className="p-1.5 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg">
+                      <XCircle className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.expired}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Past renewal window</p>
+                </div>
+                <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Replaced</span>
+                    <div className="p-1.5 bg-gray-200 dark:bg-white/10 text-gray-700 dark:text-gray-300 rounded-lg">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{stats.replaced}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1">Superseded by a new assign</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <AdminAnalytics embedded />
         </div>
       )}
     </div>

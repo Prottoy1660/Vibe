@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, TrendingUp, DollarSign, CreditCard, ShoppingCart, Calendar } from 'lucide-react';
+import { Loader2, TrendingUp, DollarSign, ShoppingCart } from 'lucide-react';
 import { 
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, PieChart, Pie, Cell
@@ -15,7 +15,7 @@ interface Order {
   payment_method: string;
 }
 
-export const AdminAnalytics = () => {
+export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
@@ -112,42 +112,37 @@ export const AdminAnalytics = () => {
   };
 
   if (loading && orders.length === 0) {
-    return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
+    return (
+      <div className="flex justify-center py-16 rounded-2xl border border-dashed border-gray-200 dark:border-[#303038] bg-white dark:bg-[#151518]">
+        <Loader2 className="animate-spin w-8 h-8 text-indigo-500" />
+      </div>
+    );
   }
 
   const dailyRevenueData = processDailyRevenue();
   const paymentMethodData = processPaymentMethods();
 
-  return (
-    <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <TrendingUp className="w-6 h-6 mr-2 text-primary" />
-            Financial Analytics
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">Deep insights into revenue and sales performance.</p>
-        </div>
-        
-        <div className="flex bg-gray-100 dark:bg-white/10 p-1 rounded-lg">
-          {(['7d', '30d', '90d', 'all'] as const).map(range => (
-            <button
-              key={range}
-              onClick={() => setTimeRange(range)}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                timeRange === range 
-                  ? 'bg-white dark:bg-[#151518] text-primary shadow-sm' 
-                  : 'text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-200'
-              }`}
-            >
-              {range === '7d' ? '7 Days' : range === '30d' ? '30 Days' : range === '90d' ? '3 Months' : 'All Time'}
-            </button>
-          ))}
-        </div>
-      </div>
+  const timeRangeControl = (
+    <div className="flex flex-wrap bg-gray-100 dark:bg-black/20 p-1 rounded-xl border border-gray-200/80 dark:border-[#303038]">
+      {(['7d', '30d', '90d', 'all'] as const).map((range) => (
+        <button
+          key={range}
+          type="button"
+          onClick={() => setTimeRange(range)}
+          className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            timeRange === range
+              ? 'bg-white dark:bg-[#151518] text-indigo-600 dark:text-indigo-400 shadow-sm'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+          }`}
+        >
+          {range === '7d' ? '7 days' : range === '30d' ? '30 days' : range === '90d' ? '3 months' : 'All time'}
+        </button>
+      ))}
+    </div>
+  );
 
-      {/* KPI Cards */}
+  const kpiAndCharts = (
+    <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] relative overflow-hidden">
           <div className="absolute right-0 top-0 w-24 h-24 bg-gradient-to-br from-green-400/20 to-emerald-600/5 rounded-bl-full -mr-4 -mt-4"></div>
@@ -297,6 +292,49 @@ export const AdminAnalytics = () => {
         </div>
 
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] overflow-hidden shadow-sm dark:shadow-none">
+        <div className="px-4 py-4 sm:px-6 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/60 dark:bg-white/[0.02] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-indigo-500" />
+              Revenue &amp; payments
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 max-w-md">
+              Completed and paid orders only. Change the range to refresh the chart.
+            </p>
+          </div>
+          {timeRangeControl}
+        </div>
+        <div className="p-4 sm:p-6 space-y-6">{kpiAndCharts}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Financial Analytics</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-xl">
+                Revenue, order volume, and how customers paid — pick a time window below.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="relative mt-6">{timeRangeControl}</div>
+      </div>
+      {kpiAndCharts}
     </div>
   );
 };
