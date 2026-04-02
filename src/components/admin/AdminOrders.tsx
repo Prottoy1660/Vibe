@@ -1,6 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, ShoppingBag, CheckCircle, XCircle, RotateCcw, Trash2, Zap, ZapOff } from 'lucide-react';
+import {
+  Loader2,
+  ShoppingBag,
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  Trash2,
+  Zap,
+  ZapOff,
+  Sparkles,
+  RefreshCw,
+  Info,
+  User,
+  CreditCard,
+  Package,
+} from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Order {
@@ -25,28 +40,52 @@ interface Order {
   };
 }
 
+type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled';
+
+function paymentLabel(method: string, paymentStatus: string) {
+  const m = (method || '').toLowerCase().replace(/_/g, ' ');
+  const pretty =
+    m === 'uddoktapay' || m === 'gateway'
+      ? 'Gateway'
+      : m === 'wallet+gateway' || m === 'wallet + gateway'
+        ? 'Wallet + gateway'
+        : m === 'wallet'
+          ? 'Wallet'
+          : m === 'coupon'
+            ? 'Coupon'
+            : m === 'redeem code' || m === 'redeem_code'
+              ? 'Redeem'
+              : m || 'Unknown';
+  const ps = (paymentStatus || '').replace(/_/g, ' ');
+  return { pretty, status: ps };
+}
+
 export const AdminOrders = () => {
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [rawOrders, setRawOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<FilterKey>('all');
 
   useEffect(() => {
     fetchOrders();
   }, []);
 
   const fetchOrders = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select(`
+        .select(
+          `
           *,
           users (email, name, phone),
           products (title, is_personal)
-        `)
+        `
+        )
         .order('created_at', { ascending: false })
         .limit(200);
 
       if (error) throw error;
-      setOrders(data as unknown as Order[] || []);
+      setRawOrders((data as unknown as Order[]) || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
     } finally {
@@ -54,23 +93,35 @@ export const AdminOrders = () => {
     }
   };
 
+  const stats = useMemo(() => {
+    const o = rawOrders;
+    return {
+      total: o.length,
+      pending: o.filter((x) => x.status === 'pending').length,
+      paid: o.filter((x) => x.status === 'paid').length,
+      completed: o.filter((x) => x.status === 'completed').length,
+      refunded: o.filter((x) => x.status === 'refunded').length,
+      cancelled: o.filter((x) => x.status === 'cancelled').length,
+    };
+  }, [rawOrders]);
+
+  const orders = useMemo(() => {
+    if (filter === 'all') return rawOrders;
+    return rawOrders.filter((o) => o.status === filter);
+  }, [rawOrders, filter]);
+
   const updateOrderStatus = async (id: string, newStatus: string, userId?: string, isPersonal?: boolean) => {
     try {
       const updates: any = { status: newStatus };
-      
-      // If approving a pending order, also mark payment as paid
+
       if (newStatus === 'completed') {
         updates.payment_status = 'paid';
       }
 
-      const { error } = await supabase
-        .from('orders')
-        .update(updates)
-        .eq('id', id);
+      const { error } = await supabase.from('orders').update(updates).eq('id', id);
 
       if (error) throw error;
 
-      // If approving, handle email assignment or personal subscription
       if (newStatus === 'completed' && userId && !isPersonal) {
         try {
           const { data: availableEmail } = await supabase
@@ -86,14 +137,12 @@ export const AdminOrders = () => {
               .update({ status: 'assigned', assigned_at: new Date().toISOString() })
               .eq('id', availableEmail.id);
 
-            await supabase
-              .from('user_emails')
-              .insert({
-                user_id: userId,
-                email_id: availableEmail.id,
-                order_id: id,
-                is_active: true
-              });
+            await supabase.from('user_emails').insert({
+              user_id: userId,
+              email_id: availableEmail.id,
+              order_id: id,
+              is_active: true,
+            });
 
             const currentMonth = new Date().toISOString().substring(0, 7);
             const { data: existingLog } = await supabase
@@ -109,16 +158,14 @@ export const AdminOrders = () => {
                 .update({ count: existingLog.count + 1 })
                 .eq('id', existingLog.id);
             } else {
-              await supabase
-                .from('email_generation_logs')
-                .insert({
-                  user_id: userId,
-                  count: 1,
-                  month: currentMonth
-                });
+              await supabase.from('email_generation_logs').insert({
+                user_id: userId,
+                count: 1,
+                month: currentMonth,
+              });
             }
           } else {
-            alert('Order approved, but no available emails in the pool to assign automatically!');
+            alert('Order approved, but no available emails in the pool to assign automatically.');
           }
         } catch (emailError) {
           console.error('Failed to auto-assign email during manual approval:', emailError);
@@ -133,44 +180,33 @@ export const AdminOrders = () => {
   };
 
   const handleRefund = async (orderId: string) => {
-    if (!window.confirm('Are you sure you want to refund this order? This will revoke the user\'s email access.')) {
+    if (!window.confirm("Refund this order? This will revoke the user's email access where applicable.")) {
       return;
     }
 
     try {
-      // 1. Get ALL assigned emails for this order
-      const { data: userEmails } = await supabase
-        .from('user_emails')
-        .select('email_id')
-        .eq('order_id', orderId);
+      const { data: userEmails } = await supabase.from('user_emails').select('email_id').eq('order_id', orderId);
 
-      // 2. If emails were assigned, release them back to the pool
       if (userEmails && userEmails.length > 0) {
-        const emailIds = userEmails.map(ue => ue.email_id);
-        
+        const emailIds = userEmails.map((ue) => ue.email_id);
+
         await supabase
           .from('emails_pool')
           .update({ status: 'available', assigned_at: null })
           .in('id', emailIds);
 
-        // Delete the user_email linkage
-        await supabase
-          .from('user_emails')
-          .delete()
-          .eq('order_id', orderId);
+        await supabase.from('user_emails').delete().eq('order_id', orderId);
       }
 
-      // 3. Update order status
       const { error } = await supabase
         .from('orders')
         .update({ status: 'refunded', payment_status: 'refunded' })
         .eq('id', orderId);
 
       if (error) throw error;
-      
-      alert('Order refunded and email access revoked successfully.');
+
+      alert('Order refunded and email access released where linked.');
       fetchOrders();
-      
     } catch (error) {
       console.error('Error processing refund:', error);
       alert('Failed to process refund');
@@ -178,20 +214,17 @@ export const AdminOrders = () => {
   };
 
   const handleDeleteAllPending = async () => {
-    if (!window.confirm('Are you absolutely sure you want to delete ALL pending/failed orders? This will clear the clutter.')) {
+    if (!window.confirm('Delete every pending order? This cannot be undone.')) {
       return;
     }
 
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from('orders')
-        .delete()
-        .eq('status', 'pending');
+      const { error } = await supabase.from('orders').delete().eq('status', 'pending');
 
       if (error) throw error;
-      
-      alert('All pending orders have been successfully deleted.');
+
+      alert('All pending orders removed.');
       fetchOrders();
     } catch (error) {
       console.error('Error deleting pending orders:', error);
@@ -201,18 +234,15 @@ export const AdminOrders = () => {
   };
 
   const handleDeleteOrder = async (orderId: string) => {
-    if (!window.confirm('Are you sure you want to permanently delete this order?')) {
+    if (!window.confirm('Permanently delete this order?')) {
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('orders')
-        .delete()
-        .eq('id', orderId);
+      const { error } = await supabase.from('orders').delete().eq('id', orderId);
 
       if (error) throw error;
-      
+
       fetchOrders();
     } catch (error) {
       console.error('Error deleting order:', error);
@@ -220,143 +250,275 @@ export const AdminOrders = () => {
     }
   };
 
-  if (loading) {
-    return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
-  }
+  const filters: { key: FilterKey; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: stats.total },
+    { key: 'pending', label: 'Pending', count: stats.pending },
+    { key: 'paid', label: 'Paid', count: stats.paid },
+    { key: 'completed', label: 'Completed', count: stats.completed },
+    { key: 'refunded', label: 'Refunded', count: stats.refunded },
+    { key: 'cancelled', label: 'Cancelled', count: stats.cancelled },
+  ];
+
+  const money = (n: number) => `BDT ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   return (
-    <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-      <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-          <ShoppingBag className="w-5 h-5 mr-2 text-blue-600" />
-          Order Management
-        </h3>
-        
-        {orders.some(o => o.status === 'pending') && (
-          <button 
-            onClick={handleDeleteAllPending}
-            className="px-4 py-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete All Pending
-          </button>
-        )}
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Order management</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                Review recent orders (last 200). Use filters to focus on pending approvals or refunds. Amounts are shown
+                in <strong className="font-medium text-gray-800 dark:text-gray-200">BDT</strong>.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchOrders()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#303038] text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-white/60 dark:hover:bg-white/5 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+            {stats.pending > 0 && (
+              <button
+                type="button"
+                onClick={handleDeleteAllPending}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 text-sm font-semibold border border-red-100 dark:border-red-500/25 hover:bg-red-100/80 dark:hover:bg-red-500/20 disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Clear all pending
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="relative mt-6 flex flex-wrap gap-2">
+          {filters.map((f) => {
+            const active = filter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  active
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                    : 'bg-white/70 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200/80 dark:border-[#303038] hover:border-indigo-300 dark:hover:border-indigo-500/30'
+                }`}
+              >
+                {f.label}
+                <span
+                  className={`text-[11px] tabular-nums px-1.5 py-0.5 rounded-md ${
+                    active ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-400'
+                  }`}
+                >
+                  {f.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="p-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-[#26262d]">
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Order Details</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Customer</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount & Payment</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Auto Renew</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {orders.map(order => (
-                <tr key={order.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
-                  <td className="py-3 px-4">
-                    <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                      {order.products?.title || 'Unknown Product'}
-                      {order.products?.is_personal && (
-                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-[10px] rounded uppercase font-bold">Personal</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">ID: {order.id.slice(0, 8)}...</div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(order.created_at), 'MMM dd, yyyy HH:mm')}</div>
-                    {order.personal_email && (
-                      <div className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
-                        Requested Email: {order.personal_email}
-                      </div>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown User'}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">{order.users?.email}</div>
-                    {order.users?.phone && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{order.users?.phone}</div>}
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="font-semibold text-gray-900 dark:text-gray-100">৳{order.total_amount}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">{order.payment_method} - {order.payment_status}</div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${
-                      order.auto_renew 
-                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400' 
-                        : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-500'
-                    }`}>
-                      {order.auto_renew ? <Zap className="w-3 h-3" /> : <ZapOff className="w-3 h-3" />}
-                      {order.auto_renew ? 'ON' : 'OFF'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
-                      order.status === 'completed' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300' : 
-                      order.status === 'paid' ? 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300' : 
-                      order.status === 'pending' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-700 dark:text-amber-300' : 
-                      order.status === 'cancelled' ? 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300' :
-                      order.status === 'refunded' ? 'bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-gray-200' :
-                      'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
-                    }`}>
-                      {order.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      {order.status === 'pending' && (
-                        <>
-                          <button 
-                            onClick={() => updateOrderStatus(order.id, 'completed', order.user_id, order.products?.is_personal)}
-                            className="p-1.5 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-500/10 rounded flex items-center text-xs font-medium transition-colors duration-300"
-                            title="Complete Order"
-                          >
-                            <CheckCircle className="w-4 h-4 mr-1" /> Approve
-                          </button>
-                          <button 
-                            onClick={() => updateOrderStatus(order.id, 'cancelled')}
-                            className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded flex items-center text-xs font-medium transition-colors duration-300"
-                            title="Cancel Order"
-                          >
-                            <XCircle className="w-4 h-4 mr-1" /> Reject
-                          </button>
-                        </>
-                      )}
-                      
-                      <button 
-                        onClick={() => handleDeleteOrder(order.id)}
-                        className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-600 outline outline-1 outline-gray-200 dark:outline-[#303038] hover:bg-red-50 dark:hover:bg-red-500/10 rounded flex items-center text-xs transition-colors duration-300 ml-1"
-                        title="Delete Order Permanently"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      
-                      {(order.status === 'completed' || order.status === 'paid') && (
-                        <button 
-                          onClick={() => handleRefund(order.id)}
-                          className="p-1.5 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 rounded flex items-center text-xs font-medium transition-colors duration-300"
-                          title="Refund Order & Revoke Access"
-                        >
-                          <RotateCcw className="w-4 h-4 mr-1" /> Refund
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {orders.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No orders found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] overflow-hidden shadow-sm dark:shadow-none">
+        <div className="px-4 py-3 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5 flex items-center gap-2">
+          <Info className="w-4 h-4 text-indigo-500 shrink-0" />
+          <p className="text-xs text-gray-600 dark:text-gray-400">
+            <strong className="font-medium text-gray-800 dark:text-gray-200">Pending:</strong> approve assigns a pool
+            email when possible. <strong className="font-medium text-gray-800 dark:text-gray-200">Refund:</strong>{' '}
+            releases linked pool emails.
+          </p>
         </div>
+
+        {loading && rawOrders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-3" />
+            <p className="text-sm text-gray-500">Loading orders…</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[900px]">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/[0.03]">
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Order</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Customer</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Payment</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Renew</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => {
+                  const pay = paymentLabel(order.payment_method, order.payment_status);
+                  return (
+                    <tr
+                      key={order.id}
+                      className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] align-top"
+                    >
+                      <td className="py-4 px-4 max-w-[220px]">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Package className="w-4 h-4 text-gray-400 shrink-0" />
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                            {order.products?.title || 'Unknown product'}
+                          </span>
+                          {order.products?.is_personal && (
+                            <span className="px-1.5 py-0.5 bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-300 text-[10px] rounded-md font-bold uppercase tracking-wide">
+                              Personal
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono text-gray-500 dark:text-gray-400 mt-1 truncate" title={order.id}>
+                          {order.id}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
+                          {format(new Date(order.created_at), 'MMM d, yyyy · HH:mm')}
+                        </p>
+                        {order.personal_email ? (
+                          <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 leading-snug">
+                            <span className="font-medium text-gray-600 dark:text-gray-400">Requested email: </span>
+                            {order.personal_email}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-start gap-2">
+                          <User className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-[180px]">
+                              {order.users?.name || 'Unknown'}
+                            </p>
+                            <p className="text-xs text-gray-500 truncate max-w-[200px]" title={order.users?.email}>
+                              {order.users?.email}
+                            </p>
+                            {order.users?.phone ? (
+                              <p className="text-xs text-gray-500 mt-0.5">{order.users.phone}</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-start gap-2">
+                          <CreditCard className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                              {money(Number(order.total_amount))}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                              {pay.pretty} · {pay.status}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] uppercase font-bold tracking-wide ${
+                            order.auto_renew
+                              ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-300'
+                              : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400'
+                          }`}
+                        >
+                          {order.auto_renew ? <Zap className="w-3 h-3" /> : <ZapOff className="w-3 h-3" />}
+                          {order.auto_renew ? 'Auto on' : 'Auto off'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
+                            order.status === 'completed'
+                              ? 'bg-green-100 dark:bg-emerald-500/15 text-green-800 dark:text-emerald-300'
+                              : order.status === 'paid'
+                                ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300'
+                                : order.status === 'pending'
+                                  ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200'
+                                  : order.status === 'cancelled'
+                                    ? 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300'
+                                    : order.status === 'refunded'
+                                      ? 'bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-gray-200'
+                                      : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
+                          }`}
+                        >
+                          {order.status}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex flex-col items-end gap-1.5">
+                          {order.status === 'pending' && (
+                            <div className="flex flex-wrap justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateOrderStatus(
+                                    order.id,
+                                    'completed',
+                                    order.user_id,
+                                    order.products?.is_personal
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" /> Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => updateOrderStatus(order.id, 'cancelled')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20"
+                              >
+                                <XCircle className="w-3.5 h-3.5" /> Reject
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {(order.status === 'completed' || order.status === 'paid') && (
+                              <button
+                                type="button"
+                                onClick={() => handleRefund(order.id)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" /> Refund
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteOrder(order.id)}
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 border border-gray-200 dark:border-[#303038]"
+                              title="Delete order"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {orders.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
+                      <ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                      <p className="font-medium text-gray-700 dark:text-gray-300">
+                        {filter === 'all' ? 'No orders in the last 200 rows.' : `No orders with status “${filter}”.`}
+                      </p>
+                      <p className="text-sm mt-1">Try another filter or refresh.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
