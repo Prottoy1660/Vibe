@@ -33,9 +33,11 @@ interface UserEmailRecord {
 
 export const AdminUserEmails = () => {
   const [emails, setEmails] = useState<UserEmailRecord[]>([]);
+  const [personalSubs, setPersonalSubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'All' | 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked'>('All');
+  const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
 
   const fetchData = async () => {
     setLoading(true);
@@ -140,6 +142,77 @@ export const AdminUserEmails = () => {
         processedData.sort((a, b) => new Date(b.assigned_at).getTime() - new Date(a.assigned_at).getTime());
         setEmails(processedData);
       }
+
+      // Fetch Personal Subscriptions from Orders table
+      const { data: pData, error: pError } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          created_at,
+          status,
+          personal_email,
+          users:user_id (name, email, phone),
+          products:product_id (title, duration, is_personal)
+        `)
+        .eq('products.is_personal', true)
+        .not('personal_email', 'is', null)
+        .order('created_at', { ascending: false });
+        
+      if (!pError && pData) {
+        // Handle array vs object correctly from Supabase join
+        const validPersonalSubs = pData.filter(o => {
+          const prod = Array.isArray(o.products) ? o.products[0] : o.products;
+          return prod && prod.is_personal;
+        });
+        
+        const processedPersonal = validPersonalSubs.map(item => {
+          const isRevoked = item.status === 'refunded' || item.status === 'cancelled';
+          let expiresAt = null;
+          let daysLeft = 0;
+          let computedStatus = 'Active';
+          const prod = Array.isArray(item.products) ? item.products[0] : item.products;
+          
+          if (prod) {
+            const durationStr = prod.duration.toLowerCase();
+            let monthsToAdd = 1;
+            
+            if (durationStr.includes('year') || durationStr.includes('yr')) {
+              const match = durationStr.match(/\d+/);
+              monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
+            } else {
+              const match = durationStr.match(/\d+/);
+              monthsToAdd = match ? parseInt(match[0]) : 1;
+            }
+
+            const orderDate = parseISO(item.created_at);
+            expiresAt = addMonths(orderDate, monthsToAdd);
+            const isExp = isPast(expiresAt);
+            daysLeft = isExp ? 0 : differenceInDays(expiresAt, new Date());
+
+            if (isRevoked) {
+              computedStatus = 'Revoked';
+            } else if (item.status === 'pending') {
+              computedStatus = 'Pending';
+            } else if (isExp) {
+              computedStatus = 'Expired';
+            } else if (daysLeft <= 7) {
+              computedStatus = 'Expiring Soon';
+            } else {
+              computedStatus = 'Active';
+            }
+          }
+          
+          return {
+            ...item,
+            computed_status: computedStatus,
+            days_left: daysLeft,
+            expires_at: expiresAt
+          };
+        });
+        
+        setPersonalSubs(processedPersonal);
+      }
+
     } catch (err) {
       console.error('Error fetching user emails:', err);
     } finally {
@@ -152,11 +225,11 @@ export const AdminUserEmails = () => {
   }, []);
 
   const stats = {
-    total: emails.length,
-    active: emails.filter(e => e.computed_status === 'Active').length,
-    expiringSoon: emails.filter(e => e.computed_status === 'Expiring Soon').length,
-    expired: emails.filter(e => e.computed_status === 'Expired').length,
-    replaced: emails.filter(e => e.computed_status === 'Replaced').length,
+    total: activeTab === 'regular' ? emails.length : personalSubs.length,
+    active: activeTab === 'regular' ? emails.filter(e => e.computed_status === 'Active').length : personalSubs.filter(s => s.computed_status === 'Active').length,
+    expiringSoon: activeTab === 'regular' ? emails.filter(e => e.computed_status === 'Expiring Soon').length : personalSubs.filter(s => s.computed_status === 'Expiring Soon').length,
+    expired: activeTab === 'regular' ? emails.filter(e => e.computed_status === 'Expired').length : personalSubs.filter(s => s.computed_status === 'Expired').length,
+    replaced: activeTab === 'regular' ? emails.filter(e => e.computed_status === 'Replaced').length : personalSubs.filter(s => s.computed_status === 'Replaced').length,
   };
 
   const filteredEmails = emails.filter(email => {
@@ -166,6 +239,21 @@ export const AdminUserEmails = () => {
       email.emails_pool.email.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesFilter = filter === 'All' || email.computed_status === filter;
+    
+    return matchesSearch && matchesFilter;
+  });
+
+  const filteredPersonalSubs = personalSubs.filter(sub => {
+    const userEmail = sub.users?.email || '';
+    const userName = sub.users?.name || '';
+    const personalEmail = sub.personal_email || '';
+    
+    const matchesSearch = 
+      userEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      personalEmail.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesFilter = filter === 'All' || sub.computed_status === filter;
     
     return matchesSearch && matchesFilter;
   });
@@ -220,6 +308,30 @@ export const AdminUserEmails = () => {
       </div>
 
       <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
+        {/* ── Sub Navigation Tabs ── */}
+        <div className="border-b border-gray-100 dark:border-[#26262d] px-6 flex gap-6">
+          <button
+            onClick={() => setActiveTab('regular')}
+            className={`py-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'regular' 
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            Regular Subscriptions
+          </button>
+          <button
+            onClick={() => setActiveTab('personal')}
+            className={`py-4 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'personal' 
+                ? 'border-purple-600 text-purple-600' 
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            Personal Subscriptions
+          </button>
+        </div>
+
         <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
             <ShieldAlert className="w-5 h-5 mr-2 text-primary" />
@@ -248,86 +360,163 @@ export const AdminUserEmails = () => {
               <option value="Active">Active Only</option>
               <option value="Expiring Soon">Expiring Soon</option>
               <option value="Expired">Expired</option>
-              <option value="Replaced">Replaced (Lost)</option>
-              <option value="Revoked">Revoked / Refunded</option>
+              {activeTab === 'regular' && <option value="Replaced">Replaced</option>}
+              <option value="Revoked">Revoked</option>
+              {activeTab === 'personal' && <option value="Pending">Pending</option>}
             </select>
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Adobe Email</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Date</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiration</th>
-                <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-              {filteredEmails.map((email) => {
-                const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
-                
-                return (
-                  <tr key={email.id} className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${isFaded ? 'bg-gray-50 dark:bg-white/[0.02]' : ''}`}>
-                    <td className="py-3 px-4">
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{email.users.name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{email.users.email}</div>
-                      {email.users.phone && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{email.users.phone}</div>}
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className={`font-medium ${isFaded ? 'text-gray-500 dark:text-gray-400 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
-                        {email.emails_pool.email}
-                      </div>
-                      <div className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-0.5 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
-                        {email.emails_pool.password}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
-                      {format(new Date(email.assigned_at), 'MMM dd, yyyy')}
-                    </td>
-                    <td className="py-3 px-4">
-                      {email.expires_at ? (
-                        <div>
-                          <div className={`text-sm font-bold ${
-                            email.computed_status === 'Expired' ? 'text-red-600 dark:text-red-400' :
-                            email.computed_status === 'Expiring Soon' ? 'text-yellow-600 dark:text-amber-300' :
-                            isFaded ? 'text-gray-500 dark:text-gray-400' : 'text-green-600 dark:text-emerald-400'
-                          }`}>
-                            {email.days_left} Days Left
-                          </div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {format(email.expires_at, 'MMM dd, yyyy')}
-                          </div>
+          {activeTab === 'regular' ? (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Adobe Email</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Date</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiration</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                {filteredEmails.map((email) => {
+                  const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
+                  
+                  return (
+                    <tr key={email.id} className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${isFaded ? 'bg-gray-50 dark:bg-white/[0.02]' : ''}`}>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{email.users.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{email.users.email}</div>
+                        {email.users.phone && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{email.users.phone}</div>}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className={`font-medium ${isFaded ? 'text-gray-500 dark:text-gray-400 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
+                          {email.emails_pool.email}
                         </div>
-                      ) : (
-                        <span className="text-sm text-gray-400 dark:text-gray-500">Unknown</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                        email.computed_status === 'Active' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-800 dark:text-emerald-300' :
-                        email.computed_status === 'Expiring Soon' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-800 dark:text-amber-300' :
-                        email.computed_status === 'Expired' ? 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-300' :
-                        email.computed_status === 'Replaced' ? 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300' :
-                        'bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-300'
-                      }`}>
-                        {email.computed_status}
-                      </span>
+                        <div className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-0.5 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
+                          {email.emails_pool.password}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                        {format(new Date(email.assigned_at), 'MMM dd, yyyy')}
+                      </td>
+                      <td className="py-3 px-4">
+                        {email.expires_at ? (
+                          <div>
+                            <div className={`text-sm font-bold ${
+                              email.computed_status === 'Expired' ? 'text-red-600 dark:text-red-400' :
+                              email.computed_status === 'Expiring Soon' ? 'text-yellow-600 dark:text-amber-300' :
+                              isFaded ? 'text-gray-500 dark:text-gray-400' : 'text-green-600 dark:text-emerald-400'
+                            }`}>
+                              {email.days_left} Days Left
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {format(email.expires_at, 'MMM dd, yyyy')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-gray-500">Unknown</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                          email.computed_status === 'Active' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-800 dark:text-emerald-300' :
+                          email.computed_status === 'Expiring Soon' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-800 dark:text-amber-300' :
+                          email.computed_status === 'Expired' ? 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-300' :
+                          email.computed_status === 'Replaced' ? 'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300' :
+                          'bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-300'
+                        }`}>
+                          {email.computed_status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredEmails.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
+                      No records found matching your filters.
                     </td>
                   </tr>
-                );
-              })}
-              {filteredEmails.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
-                    No records found matching your filters.
-                  </td>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Customer</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Requested Email</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ordered Date</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiration</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                {filteredPersonalSubs.map((sub) => {
+                  const isFaded = sub.computed_status === 'Revoked';
+                  
+                  return (
+                    <tr key={sub.id} className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${isFaded ? 'bg-gray-50 dark:bg-white/[0.02]' : ''}`}>
+                      <td className="py-3 px-4">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{sub.users?.name || 'Unknown'}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{sub.users?.email}</div>
+                        {sub.users?.phone && <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sub.users.phone}</div>}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className={`font-medium ${isFaded ? 'text-gray-500 dark:text-gray-400 line-through' : 'text-purple-600 dark:text-purple-400'}`}>
+                          {sub.personal_email}
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                          Plan: {Array.isArray(sub.products) ? sub.products[0]?.duration : sub.products?.duration}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
+                        {format(new Date(sub.created_at), 'MMM dd, yyyy')}
+                      </td>
+                      <td className="py-3 px-4">
+                        {sub.expires_at ? (
+                          <div>
+                            <div className={`text-sm font-bold ${
+                              sub.computed_status === 'Expired' ? 'text-red-600 dark:text-red-400' :
+                              sub.computed_status === 'Expiring Soon' ? 'text-yellow-600 dark:text-amber-300' :
+                              isFaded ? 'text-gray-500 dark:text-gray-400' : 'text-green-600 dark:text-emerald-400'
+                            }`}>
+                              {sub.days_left} Days Left
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {format(sub.expires_at, 'MMM dd, yyyy')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400 dark:text-gray-500">Unknown</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                          sub.computed_status === 'Active' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-800 dark:text-emerald-300' :
+                          sub.computed_status === 'Expiring Soon' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-800 dark:text-amber-300' :
+                          sub.computed_status === 'Expired' ? 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-300' :
+                          sub.computed_status === 'Pending' ? 'bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-300' :
+                          'bg-gray-200 dark:bg-white/10 text-gray-600 dark:text-gray-300'
+                        }`}>
+                          {sub.computed_status}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredPersonalSubs.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
+                      No personal subscriptions found matching your filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
