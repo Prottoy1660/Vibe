@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Info, Plus, Edit2, Trash2, Save, AlertCircle } from 'lucide-react';
+import { Loader2, Info, Plus, Edit2, Trash2, Save, AlertCircle, Search, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Notice {
@@ -17,6 +17,9 @@ export const AdminNotices = () => {
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'info' | 'warning' | 'error'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Form state
   const [formData, setFormData] = useState<Partial<Notice>>({
@@ -138,20 +141,55 @@ export const AdminNotices = () => {
     }
   };
 
+  const stats = {
+    total: notices.length,
+    active: notices.filter((n) => n.is_active).length,
+    inactive: notices.filter((n) => !n.is_active).length,
+  };
+
+  const filteredNotices = notices.filter((n) => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch = !q || n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+    const matchesType = typeFilter === 'all' || n.type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'active' ? n.is_active : !n.is_active);
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setTypeFilter('all');
+    setStatusFilter('all');
+  };
+
+  const getTypePill = (type: string) => {
+    if (type === 'error') return 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300';
+    if (type === 'warning') return 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-700 dark:text-amber-300';
+    return 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300';
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
   }
 
   return (
     <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-      <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-          <Info className="w-5 h-5 mr-2 text-yellow-500" />
-          Important Notices
-        </h3>
-        <button 
+      <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-start gap-4">
+        <div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Info className="w-5 h-5 mr-2 text-yellow-500" />
+            Important Notices
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-2xl">
+            <span className="inline-flex items-center gap-1">
+              <AlertCircle className="w-4 h-4 text-yellow-500" />
+              Only <span className="font-semibold text-gray-700 dark:text-gray-200">Active</span> notices are visible to users.
+            </span>
+          </p>
+        </div>
+        <button
           onClick={startAdd}
-          className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center"
+          className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center whitespace-nowrap"
+          type="button"
         >
           <Plus className="w-4 h-4 mr-1" />
           Add Notice
@@ -159,6 +197,74 @@ export const AdminNotices = () => {
       </div>
 
       <div className="p-6">
+        {/* Filters */}
+        <div className="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="text-sm text-gray-600 dark:text-gray-300">
+            Showing{' '}
+            <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{filteredNotices.length}</span> of{' '}
+            <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{notices.length}</span>
+          </div>
+
+          <div className="flex flex-col md:flex-row md:items-center gap-3 w-full lg:w-auto">
+            <div className="relative w-full md:w-80">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="w-4 h-4 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search title/content…"
+                className="w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100"
+              />
+            </div>
+
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as any)}
+              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="all">All types</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active only</option>
+              <option value="inactive">Inactive only</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetFilters();
+              }}
+              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-[#1c1c21] transition-colors inline-flex items-center gap-2 whitespace-nowrap"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+          <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-100 dark:border-[#26262d] bg-white/60 dark:bg-white/[0.02] text-gray-700 dark:text-gray-200">
+            Total: <span className="font-semibold tabular-nums">{stats.total}</span>
+          </span>
+          <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-100 dark:border-[#26262d] bg-white/60 dark:bg-white/[0.02] text-emerald-700 dark:text-emerald-300">
+            Active: <span className="font-semibold tabular-nums">{stats.active}</span>
+          </span>
+          <span className="text-xs inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-100 dark:border-[#26262d] bg-white/60 dark:bg-white/[0.02] text-red-700 dark:text-red-300">
+            Inactive: <span className="font-semibold tabular-nums">{stats.inactive}</span>
+          </span>
+        </div>
+
         {(isAdding || editingId) && (
           <div className="mb-8 p-6 bg-gray-50 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-[#26262d] transition-colors duration-300">
             <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">{editingId ? 'Edit Notice' : 'New Notice'}</h4>
@@ -242,18 +348,14 @@ export const AdminNotices = () => {
               </tr>
             </thead>
             <tbody>
-              {notices.map(notice => (
+              {filteredNotices.map(notice => (
                 <tr key={notice.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
                   <td className="py-3 px-4">
                     <div className="font-bold text-gray-900 dark:text-gray-100">{notice.title}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-md">{notice.content}</div>
                   </td>
                   <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
-                      notice.type === 'error' ? 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300' :
-                      notice.type === 'warning' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-700 dark:text-amber-300' :
-                      'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300'
-                    }`}>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getTypePill(notice.type)}`}>
                       {notice.type}
                     </span>
                   </td>
@@ -292,10 +394,10 @@ export const AdminNotices = () => {
                   </td>
                 </tr>
               ))}
-              {notices.length === 0 && (
+              {filteredNotices.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No notices found. Create one to inform your users.
+                    No notices found for your current filters.
                   </td>
                 </tr>
               )}

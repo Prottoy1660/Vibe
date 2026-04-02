@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
-  RefreshCw, ShieldCheck, Hash, Package, Users
+  RefreshCw, ShieldCheck, Hash, Package, Users, X
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -42,6 +42,8 @@ export const AdminRedeemCodes = () => {
   const [showForm, setShowForm] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'exhausted' | 'disabled'>('all');
 
   const [form, setForm] = useState({
     code: generateCode(),
@@ -125,45 +127,81 @@ export const AdminRedeemCodes = () => {
     return { label: 'Active', cls: 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400' };
   };
 
+  const filteredCodes = codes.filter((c) => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      c.code.toLowerCase().includes(q) ||
+      c.products?.title?.toLowerCase().includes(q) ||
+      (c.note || '').toLowerCase().includes(q);
+
+    const badge = getStatusBadge(c).label.toLowerCase();
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'active' && badge === 'active') ||
+      (statusFilter === 'exhausted' && badge === 'exhausted') ||
+      (statusFilter === 'disabled' && badge === 'disabled');
+
+    return matchesSearch && matchesStatus;
+  });
+
   if (loading) return <div className="flex justify-center p-12"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
 
   return (
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
-        <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold flex items-center gap-2">
-              <Gift className="w-6 h-6" /> Redeem Code Manager
-            </h2>
-            <p className="text-emerald-100 text-sm mt-1">Generate single-use or multi-use product gift codes for your users.</p>
+      <div className="relative overflow-hidden rounded-2xl border border-emerald-200/40 dark:border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+        <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
+        <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
+              <Gift className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Redeem code manager</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                Generate gift codes, track usage, and enable/disable codes without opening complicated menus.
+              </p>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={fetchAll} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-semibold transition-all">
-              <RefreshCw className="w-3.5 h-3.5" /> Refresh
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={fetchAll}
+              type="button"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
             </button>
             <button
-              onClick={() => { setShowForm(true); setForm(f => ({ ...f, code: generateCode() })); }}
-              className="flex items-center gap-1.5 px-4 py-2 bg-white text-emerald-700 rounded-lg text-sm font-bold hover:bg-emerald-50 transition-all shadow"
+              onClick={() => {
+                setShowForm(true);
+                setForm((f) => ({ ...f, code: generateCode() }));
+              }}
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-colors"
             >
-              <Plus className="w-4 h-4" /> Generate Code
+              <Plus className="w-4 h-4" />
+              Generate code
             </button>
           </div>
         </div>
 
-        {/* Stats row */}
-        <div className="relative z-10 flex flex-wrap gap-4 mt-5">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
           {[
-            { label: 'Total Codes', value: codes.length },
-            { label: 'Active', value: codes.filter(c => c.is_active && !c.is_used && c.used_count < c.max_uses).length },
-            { label: 'Exhausted', value: codes.filter(c => c.is_used || c.used_count >= c.max_uses).length },
-            { label: 'Disabled', value: codes.filter(c => !c.is_active).length },
-          ].map((s, i) => (
-            <div key={i} className="bg-white/15 backdrop-blur-sm rounded-xl px-4 py-2 text-center min-w-[80px]">
-              <div className="text-xl font-bold">{s.value}</div>
-              <div className="text-[10px] font-medium text-emerald-100">{s.label}</div>
+            { label: 'Total', value: codes.length },
+            { label: 'Active', value: codes.filter((c) => c.is_active && !c.is_used && c.used_count < c.max_uses).length, accent: 'bg-emerald-600' },
+            { label: 'Exhausted', value: codes.filter((c) => c.is_used || c.used_count >= c.max_uses).length, accent: 'bg-red-600' },
+            { label: 'Disabled', value: codes.filter((c) => !c.is_active).length, accent: 'bg-gray-700' },
+          ].map((s) => (
+            <div
+              key={s.label}
+              className="rounded-2xl border border-gray-100/60 dark:border-[#26262d] bg-white/70 dark:bg-white/[0.02] p-4 backdrop-blur"
+            >
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">{s.value}</div>
+              <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">{s.label} codes</div>
             </div>
           ))}
         </div>
@@ -270,7 +308,55 @@ export const AdminRedeemCodes = () => {
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Click "Generate Code" to create your first gift code.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="p-4 sm:p-6 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Codes</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Showing <span className="font-semibold text-gray-900 dark:text-gray-100">{filteredCodes.length}</span> of{' '}
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">{codes.length}</span>
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative w-full sm:w-72">
+                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                    <Hash className="w-4 h-4 text-gray-400" />
+                  </div>
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search code or product…"
+                    className="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  />
+                </div>
+
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="active">Active</option>
+                  <option value="exhausted">Exhausted</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('all');
+                  }}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead className="bg-gray-50 dark:bg-white/5">
                 <tr>
@@ -278,14 +364,14 @@ export const AdminRedeemCodes = () => {
                   <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Product</th>
                   <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Usage</th>
                   <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Note</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
-                  <th className="px-5 py-3"></th>
+                  <th className="px-5 py-3 text-left text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {codes.map(code => {
+                {filteredCodes.map(code => {
                   const badge = getStatusBadge(code);
+                  const max = Math.max(1, code.max_uses || 1);
+                  const pct = Math.min(100, Math.round((code.used_count / max) * 100));
                   return (
                     <tr key={code.id} className="hover:bg-gray-50/80 dark:hover:bg-white/5 transition-colors">
                       <td className="px-5 py-3.5">
@@ -318,39 +404,52 @@ export const AdminRedeemCodes = () => {
                         <div className="mt-1.5 h-1.5 w-20 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-gradient-to-r from-emerald-400 to-teal-500 rounded-full transition-all"
-                            style={{ width: `${Math.min(100, (code.used_count / code.max_uses) * 100)}%` }}
+                            style={{ width: `${pct}%` }}
                           />
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <button
-                          onClick={() => toggleActive(code.id, code.is_active)}
-                          className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${badge.cls}`}
-                        >
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all ${badge.cls}`}>
                           <Hash className="w-2.5 h-2.5" />
                           {badge.label}
-                        </button>
+                        </span>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 max-w-[160px] truncate">{code.note || '—'}</p>
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{format(new Date(code.created_at), 'MMM d, yyyy')}</p>
-                      </td>
+
                       <td className="px-5 py-3.5 text-right">
-                        <button
-                          onClick={() => handleDelete(code.id)}
-                          className="p-1.5 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                          title="Delete code"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => toggleActive(code.id, code.is_active)}
+                            className={`inline-flex items-center justify-center px-3 py-2 rounded-xl text-[11px] font-semibold transition-colors ${
+                              code.is_active
+                                ? 'bg-red-50/60 text-red-600 hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400'
+                                : 'bg-emerald-50/60 text-emerald-600 hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400'
+                            }`}
+                            type="button"
+                          >
+                            {code.is_active ? 'Disable' : 'Enable'}
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(code.id)}
+                            className="p-2 rounded-xl text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10 transition-colors"
+                            title="Delete code"
+                            type="button"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            {filteredCodes.length === 0 && (
+              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm">
+                No codes match your search/filter.
+              </div>
+            )}
+            </div>
           </div>
         )}
       </div>

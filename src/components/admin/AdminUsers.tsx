@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye } from 'lucide-react';
+import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
 
@@ -18,6 +18,9 @@ export const AdminUsers = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
 
   const fetchUsers = async () => {
     try {
@@ -115,117 +118,262 @@ export const AdminUsers = () => {
     return <AdminUserDetails userId={selectedUserId} onBack={() => setSelectedUserId(null)} />;
   }
 
+  const stats = {
+    total: users.length,
+    active: users.filter((u) => !u.is_banned).length,
+    banned: users.filter((u) => u.is_banned).length,
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const q = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      (u.phone || '').toLowerCase().includes(q);
+
+    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+    const matchesStatus =
+      statusFilter === 'all' || (statusFilter === 'banned' ? u.is_banned : !u.is_banned);
+
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
   return (
-    <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-      <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-          <Users className="w-5 h-5 mr-2 text-purple-600" />
-          User Management
-        </h3>
+    <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+        <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 shrink-0">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">User management</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                Search users quickly, filter by role/status, and manage access with clear actions.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              Showing <span className="font-semibold text-gray-900 dark:text-gray-100">{filteredUsers.length}</span> /{' '}
+              {stats.total}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="p-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-[#26262d]">
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">User</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Contact</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Role</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Joined</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id} className={`border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${u.is_banned ? 'bg-red-50/30 dark:bg-red-500/[0.04]' : ''}`}>
-                  <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100">{u.name}</td>
-                  <td className="py-3 px-4">
-                    <div className="text-gray-600 dark:text-gray-300 text-sm">{u.email}</div>
-                    {u.phone && <div className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">{u.phone}</div>}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      u.role === 'admin' ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300' : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
-                    }`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4">
-                    {u.is_banned ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300">
-                        Banned
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300">
-                        Active
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
-                    {format(new Date(u.created_at), 'MMM dd, yyyy')}
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end space-x-2">
-                      <button 
-                        onClick={() => setSelectedUserId(u.id)}
-                        className="p-1.5 rounded flex items-center text-xs font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors duration-300"
-                        title="View Details"
-                      >
-                        <Eye className="w-4 h-4 mr-1" /> View
-                      </button>
-                      <button 
-                        onClick={() => toggleBanStatus(u.id, u.is_banned)}
-                        className={`p-1.5 rounded flex items-center text-xs font-medium ${
-                          u.is_banned 
-                            ? 'text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-500/10' 
-                            : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
-                        }`}
-                        title={u.is_banned ? 'Unban User' : 'Ban User'}
-                      >
-                        {u.is_banned ? (
-                          <><UserCheck className="w-4 h-4 mr-1" /> Unban</>
-                        ) : (
-                          <><UserX className="w-4 h-4 mr-1" /> Ban</>
-                        )}
-                      </button>
-                      <button 
-                        onClick={() => toggleUserRole(u.id, u.role)}
-                        className={`p-1.5 rounded flex items-center text-xs font-medium ${
-                          u.role === 'admin' 
-                            ? 'text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10' 
-                            : 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10'
-                        }`}
-                        title={u.role === 'admin' ? 'Remove Admin' : 'Make Admin'}
-                      >
-                        {u.role === 'admin' ? (
-                          <><ShieldAlert className="w-4 h-4 mr-1" /> Demote</>
-                        ) : (
-                          <><Shield className="w-4 h-4 mr-1" /> Promote</>
-                        )}
-                      </button>
-                      <button 
-                        onClick={() => deleteUser(u.id)}
-                        className="p-1.5 rounded flex items-center text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors duration-300"
-                        title="Delete User"
-                      >
-                        <Trash2 className="w-4 h-4 mr-1" /> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
-                    No users found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Total users</p>
+            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-white/5 text-indigo-600 dark:text-indigo-400">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{stats.total}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">In this admin view</p>
         </div>
+
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active</p>
+            <div className="p-2 rounded-xl bg-emerald-50 dark:bg-white/5 text-emerald-600 dark:text-emerald-400">
+              <UserCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{stats.active}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Not banned</p>
+        </div>
+
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Banned</p>
+            <div className="p-2 rounded-xl bg-red-50 dark:bg-white/5 text-red-600 dark:text-red-400">
+              <UserX className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{stats.banned}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Currently blocked</p>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] p-4 sm:p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div className="relative w-full lg:w-80">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+              <Search className="w-4 h-4 text-gray-400" />
+            </div>
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, email, phone…"
+              className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as any)}
+              className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">All roles</option>
+              <option value="admin">Admin</option>
+              <option value="user">User</option>
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="banned">Banned</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setRoleFilter('all');
+                setStatusFilter('all');
+              }}
+              className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              title="Reset filters"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d]">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Customer
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Role
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Joined
+              </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
+                Actions
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+            {filteredUsers.map((u) => (
+              <tr
+                key={u.id}
+                className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${
+                  u.is_banned ? 'bg-red-50/30 dark:bg-red-500/[0.04]' : ''
+                }`}
+              >
+                <td className="py-3 px-4">
+                  <div className="font-semibold text-gray-900 dark:text-gray-100">{u.name}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{u.email}</div>
+                  {u.phone ? <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{u.phone}</div> : null}
+                </td>
+
+                <td className="py-3 px-4">
+                  <span
+                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                      u.role === 'admin'
+                        ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                        : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
+                    }`}
+                  >
+                    {u.role}
+                  </span>
+                </td>
+
+                <td className="py-3 px-4">
+                  {u.is_banned ? (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300">
+                      Banned
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300">
+                      Active
+                    </span>
+                  )}
+                </td>
+
+                <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
+                  {format(new Date(u.created_at), 'MMM dd, yyyy')}
+                </td>
+
+                <td className="py-3 px-4 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setSelectedUserId(u.id)}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
+                      title="View details"
+                      type="button"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View
+                    </button>
+
+                    <button
+                      onClick={() => toggleBanStatus(u.id, u.is_banned)}
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold transition-colors ${
+                        u.is_banned
+                          ? 'text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-500/10'
+                          : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10'
+                      }`}
+                      title={u.is_banned ? 'Unban user' : 'Ban user'}
+                      type="button"
+                    >
+                      {u.is_banned ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
+                    </button>
+
+                    <button
+                      onClick={() => toggleUserRole(u.id, u.role)}
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold transition-colors ${
+                        u.role === 'admin'
+                          ? 'text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10'
+                          : 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-500/10'
+                      }`}
+                      title={u.role === 'admin' ? 'Demote admin' : 'Promote to admin'}
+                      type="button"
+                    >
+                      {u.role === 'admin' ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                    </button>
+
+                    <button
+                      onClick={() => deleteUser(u.id)}
+                      className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                      title="Delete user"
+                      type="button"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan={5} className="py-14 text-center text-gray-500 dark:text-gray-400">
+                  No users match your filters.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

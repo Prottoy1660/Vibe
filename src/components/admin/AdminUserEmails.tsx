@@ -39,6 +39,7 @@ export const AdminUserEmails = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'All' | 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked'>('All');
   const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
+  const [showCredentials, setShowCredentials] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -267,6 +268,28 @@ export const AdminUserEmails = () => {
 
   return (
     <div className="space-y-6">
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
+        <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 shrink-0">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">User subscriptions</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
+                Choose <span className="font-medium text-gray-800 dark:text-gray-200">Regular</span> or{' '}
+                <span className="font-medium text-gray-800 dark:text-gray-200">Personal</span>, then search by customer/email and filter by status.
+                Passwords are hidden by default to keep the table clean.
+              </p>
+            </div>
+          </div>
+
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 md:mt-0">
+            {activeTab === 'regular' ? `${emails.length} regular records` : `${personalSubs.length} personal records`}
+          </div>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none p-5 border border-gray-100 dark:border-[#26262d] flex items-center">
@@ -312,26 +335,40 @@ export const AdminUserEmails = () => {
 
       <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
         {/* ── Sub Navigation Tabs ── */}
-        <div className="border-b border-gray-100 dark:border-[#26262d] px-6 flex gap-6">
+        <div className="border-b border-gray-100 dark:border-[#26262d] px-4 sm:px-6 py-4 flex flex-wrap gap-2 items-center">
           <button
             onClick={() => setActiveTab('regular')}
-            className={`py-4 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'regular' 
-                ? 'border-primary text-primary' 
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            className={`px-4 py-2 text-sm font-semibold rounded-xl border transition-all ${
+              activeTab === 'regular'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/25'
+                : 'bg-white dark:bg-[#151518] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-[#26262d] hover:bg-gray-50 dark:hover:bg-white/5'
             }`}
           >
-            Regular Subscriptions
+            Regular Subscriptions{' '}
+            <span className={`ml-2 text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+              activeTab === 'regular'
+                ? 'bg-white/15 text-white'
+                : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300'
+            }`}>
+              {emails.length}
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('personal')}
-            className={`py-4 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'personal' 
-                ? 'border-purple-600 text-purple-600' 
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            className={`px-4 py-2 text-sm font-semibold rounded-xl border transition-all ${
+              activeTab === 'personal'
+                ? 'bg-purple-600 text-white border-purple-600 shadow-sm shadow-purple-500/25'
+                : 'bg-white dark:bg-[#151518] text-gray-600 dark:text-gray-400 border-gray-200 dark:border-[#26262d] hover:bg-gray-50 dark:hover:bg-white/5'
             }`}
           >
-            Personal Subscriptions
+            Personal Subscriptions{' '}
+            <span className={`ml-2 text-[11px] font-bold px-2 py-0.5 rounded-lg ${
+              activeTab === 'personal'
+                ? 'bg-white/15 text-white'
+                : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300'
+            }`}>
+              {personalSubs.length}
+            </span>
           </button>
         </div>
 
@@ -367,6 +404,16 @@ export const AdminUserEmails = () => {
               <option value="Revoked">Revoked</option>
               {activeTab === 'personal' && <option value="Pending">Pending</option>}
             </select>
+
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer select-none mt-1 sm:mt-0">
+              <input
+                type="checkbox"
+                checked={showCredentials}
+                onChange={(e) => setShowCredentials(e.target.checked)}
+                className="h-4 w-4 accent-indigo-600"
+              />
+              Show credentials
+            </label>
           </div>
         </div>
 
@@ -399,9 +446,15 @@ export const AdminUserEmails = () => {
                         <div className={`font-medium ${isFaded ? 'text-gray-500 dark:text-gray-400 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
                           {email.emails_pool.email}
                         </div>
-                        <div className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-0.5 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
-                          {email.emails_pool.password}
-                        </div>
+                        {showCredentials ? (
+                          <div className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-0.5 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
+                            {email.emails_pool.password || 'Unknown'}
+                          </div>
+                        ) : (
+                          <div className="text-xs font-mono text-gray-400 dark:text-gray-500 mt-0.5 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
+                            Hidden
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
                         {format(new Date(email.assigned_at), 'MMM dd, yyyy')}
