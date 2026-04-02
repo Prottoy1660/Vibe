@@ -800,4 +800,38 @@ router.post('/bulk-assign-emails', requireUser, async (req, res) => {
   }
 });
 
+router.post('/toggle-auto-renew', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { order_id, auto_renew } = req.body;
+    
+    if (!order_id) return res.status(400).json({ success: false, message: 'Missing order_id' });
+    
+    // Ensure the order belongs to this user
+    const { data: order, error: verifyErr } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('id', order_id)
+      .eq('user_id', user.id)
+      .single();
+      
+    if (verifyErr || !order) {
+      return res.status(403).json({ success: false, message: 'Forbidden or order not found' });
+    }
+    
+    // Update it securely from backend (bypassing RLS which restricts user edits)
+    const { error: updateErr } = await supabase
+      .from('orders')
+      .update({ auto_renew: Boolean(auto_renew) })
+      .eq('id', order.id);
+      
+    if (updateErr) throw updateErr;
+    
+    res.json({ success: true, message: 'Auto-renew updated successfully' });
+  } catch (err: any) {
+    console.error('Toggle auto-renew error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Internal server error' });
+  }
+});
+
 export default router;

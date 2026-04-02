@@ -483,13 +483,22 @@ export const AdobeEmail = () => {
       setTogglingAutoRenewOrderId(orderId);
       const nextValue = !currentValue;
 
-      const { error } = await supabase
-        .from('orders')
-        .update({ auto_renew: nextValue })
-        .eq('id', orderId)
-        .eq('user_id', user?.id);
-
-      if (error) throw error;
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const res = await fetch(`${API_URL}/api/payment/toggle-auto-renew`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ order_id: orderId, auto_renew: nextValue })
+      });
+      
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to toggle auto renew');
+      }
 
       setPersonalOrders(prev => prev.map(order => (
         order.id === orderId ? { ...order, auto_renew: nextValue } : order
@@ -627,9 +636,9 @@ export const AdobeEmail = () => {
               key={orderId}
               className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden"
             >
-              <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 gap-y-2">
+              <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-zinc-100">
                       Plan {isUnassigned ? '(unknown order)' : `#${index + 1}`}
                     </h3>
@@ -637,79 +646,84 @@ export const AdobeEmail = () => {
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
                           isActive
-                            ? 'border-emerald-700 bg-emerald-950 text-emerald-100'
+                            ? 'border-emerald-700/50 bg-emerald-500/10 text-emerald-400'
                             : 'border-red-800 bg-red-950 text-red-100'
                         }`}
                       >
                         {isActive ? 'Active' : 'Expired'}
                       </span>
                     )}
+
+                    {!isUnassigned && isActive && (
+                      <div className="flex items-center gap-2.5 ml-1 pl-3 pr-1 py-1 rounded-full bg-zinc-100 dark:bg-[#151518] border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest hidden sm:inline-block">Auto-renew</span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={orderAutoRenew}
+                          disabled={togglingAutoRenewOrderId === orderId}
+                          onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
+                          className={`relative inline-flex h-[24px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50 disabled:cursor-not-allowed border ${
+                            orderAutoRenew 
+                              ? 'bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_8px_rgba(99,102,241,0.4)] border-indigo-400/50 dark:border-indigo-500/30' 
+                              : 'bg-zinc-200 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-700/80 shadow-inner'
+                          }`}
+                          title={orderAutoRenew ? "Auto-renew is ON: Uses wallet when term ends" : "Auto-renew is OFF"}
+                        >
+                          <span className="sr-only">Use setting</span>
+                          <span
+                            className={`pointer-events-none relative flex h-[18px] w-[18px] items-center justify-center transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-300 ease-in-out ${
+                              orderAutoRenew ? 'translate-x-[9px]' : '-translate-x-[9px]'
+                            }`}
+                          >
+                            {togglingAutoRenewOrderId === orderId ? (
+                              <Loader2 className="absolute h-3 w-3 animate-spin text-indigo-500" />
+                            ) : (
+                              <span 
+                                className={`transition-opacity duration-200 ${orderAutoRenew ? 'opacity-100' : 'opacity-0'}`}
+                              >
+                                <svg className="h-[10px] w-[10px] text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1.5 leading-relaxed">
+                  <p className="text-sm text-gray-500 dark:text-zinc-400 leading-relaxed max-w-2xl">
                     {canGenerate
                       ? `${emailsGenerated} of ${slotLimit} Adobe addresses used for this plan.`
                       : 'One address is assigned automatically for this plan.'}
                   </p>
                 </div>
 
-                <div className="flex flex-col sm:flex-row flex-wrap gap-3 w-full lg:w-auto lg:max-w-xl">
-                  {!isUnassigned && isActive && (
-                    <div className="flex items-center justify-between sm:justify-start gap-3 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/40 px-3 py-2">
-                      <div className="text-left">
-                        <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Auto-renew</p>
-                        <p className="text-xs text-gray-600 dark:text-zinc-400">
-                          {orderAutoRenew ? 'Uses wallet when term ends' : 'Off — renew manually'}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={orderAutoRenew}
-                        disabled={togglingAutoRenewOrderId === orderId}
-                        onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
-                        className={`relative h-7 w-12 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 ${
-                          orderAutoRenew ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                        }`}
-                      >
-                        {togglingAutoRenewOrderId === orderId ? (
-                          <Loader2 className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
-                        ) : (
-                          <span
-                            className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                              orderAutoRenew ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
-                            }`}
-                          />
-                        )}
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => navigate('/tutorial-help')} className={btnOutline}>
-                      <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      How to sign in
-                    </button>
-                    <a
-                      href="https://account.adobe.com/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={btnOutline}
+                <div className="flex flex-wrap items-center gap-2 pt-1 lg:pt-0 shrink-0">
+                  <button type="button" onClick={() => navigate('/tutorial-help')} className={btnOutline}>
+                    <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    How to sign in
+                  </button>
+                  <a
+                    href="https://account.adobe.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={btnOutline}
+                  >
+                    <ExternalLink className="w-4 h-4 text-zinc-400" />
+                    Adobe account site
+                  </a>
+                  {canGenerate && !isUnassigned && isActive && (
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateEmail(orderId)}
+                      disabled={emailsGenerated >= slotLimit || generating}
+                      className={`${btnPrimary} py-2`}
                     >
-                      <ExternalLink className="w-4 h-4" />
-                      Adobe account site
-                    </a>
-                    {canGenerate && !isUnassigned && isActive && (
-                      <button
-                        type="button"
-                        onClick={() => handleGenerateEmail(orderId)}
-                        disabled={emailsGenerated >= slotLimit || generating}
-                        className={`${btnOutline} disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                        Add email ({slotLimit - emailsGenerated} left)
-                      </button>
-                    )}
-                  </div>
+                      {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      Add email ({slotLimit - emailsGenerated} left)
+                    </button>
+                  )}
                 </div>
               </div>
 
