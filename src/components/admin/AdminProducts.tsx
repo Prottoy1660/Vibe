@@ -16,6 +16,7 @@ interface Product {
   max_users_per_email: number;
   single_device_warning: boolean;
   with_cloud_access: boolean;
+  is_personal: boolean;
 }
 
 export const AdminProducts = () => {
@@ -38,6 +39,7 @@ export const AdminProducts = () => {
     max_users_per_email: 1,
     single_device_warning: false,
     with_cloud_access: false,
+    is_personal: false,
   });
 
   useEffect(() => {
@@ -160,6 +162,7 @@ export const AdminProducts = () => {
       max_users_per_email: 1,
       single_device_warning: false,
       with_cloud_access: false,
+      is_personal: false,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -361,6 +364,27 @@ export const AdminProducts = () => {
                   </button>
                 </div>
               </div>
+              <div className="md:col-span-2">
+                <div className="flex items-center justify-between bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30 rounded-xl px-4 py-3">
+                  <div>
+                    <p className="text-sm font-bold text-purple-800 dark:text-purple-200 flex items-center gap-1.5">
+                      <Users className="w-4 h-4" /> Personal Subscription
+                    </p>
+                    <p className="text-xs text-purple-700 dark:text-purple-400 mt-0.5">If enabled, this product is treated as a personal subscription request, applying access directly to the user's provided email instead of generating from the pool.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({...formData, is_personal: !formData.is_personal})}
+                    className={`relative inline-flex h-7 w-12 shrink-0 ml-4 items-center rounded-full transition-colors ${
+                      formData.is_personal ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600'
+                    }`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform ${
+                      formData.is_personal ? 'translate-x-6' : 'translate-x-1'
+                    }`} />
+                  </button>
+                </div>
+              </div>
             </div>
             <div className="mt-4 flex justify-end space-x-3">
               <button 
@@ -413,6 +437,7 @@ export const AdminProducts = () => {
                           <><Users className="w-3 h-3 text-indigo-500" /> {product.max_users_per_email} shared</>
                         )}
                         {product.with_cloud_access && <span className="ml-1 px-1 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 rounded">+ Cloud</span>}
+                        {product.is_personal && <span className="ml-1 px-1 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 rounded">Personal</span>}
                       </span>
                     </div>
                   </td>

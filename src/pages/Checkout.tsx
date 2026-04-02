@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { 
@@ -25,6 +25,9 @@ interface Product {
 
 export const Checkout = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const personalEmail = searchParams.get('personal_email');
+  
   const { user } = useAuth();
   const navigate = useNavigate();
   
@@ -157,7 +160,8 @@ export const Checkout = () => {
           total_amount: totalAmount,
           status: totalAmount === 0 ? 'paid' : 'pending',
           payment_status: totalAmount === 0 ? 'paid' : 'pending',
-          auto_renew: isAutoRenew
+          auto_renew: isAutoRenew,
+          personal_email: personalEmail || null
         })
         .select()
         .single();

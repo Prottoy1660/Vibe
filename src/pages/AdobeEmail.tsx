@@ -74,6 +74,14 @@ export const AdobeEmail = () => {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<{id: number, subject: string, snippet: string, date: string, code: string | null}[]>([]);
 
+  // Personal Subscriptions state
+  const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
+  const [personalOrders, setPersonalOrders] = useState<any[]>([]);
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [personalProducts, setPersonalProducts] = useState<any[]>([]);
+  const [requestForm, setRequestForm] = useState({ email: '', productId: '' });
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+
   const fetchEmailData = async () => {
     if (!user) return;
     setLoading(true);
@@ -82,9 +90,25 @@ export const AdobeEmail = () => {
       // Check active subscription
       const { data: orders } = await supabase
         .from('orders')
-        .select('id, status')
+        .select('*, products(*)')
         .eq('user_id', user.id)
         .in('status', ['paid', 'completed']);
+        
+      if (orders) {
+        setPersonalOrders(orders.filter(o => o.products?.is_personal && o.personal_email));
+      }
+
+      // Fetch personal products for modal
+      const { data: pProducts } = await supabase
+        .from('products')
+        .select('*')
+        .eq('is_personal', true)
+        .eq('is_active', true)
+        .order('price', { ascending: true });
+        
+      if (pProducts) {
+        setPersonalProducts(pProducts);
+      }
         
       // Fetch assigned emails with order and product details
       const { data: userEmails, error: emailsError } = await supabase
@@ -388,6 +412,16 @@ export const AdobeEmail = () => {
     email.email_details.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const handleRequestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!requestForm.email || !requestForm.productId) {
+      alert('Please fill in all fields');
+      return;
+    }
+    setIsRequestModalOpen(false);
+    navigate(`/checkout/${requestForm.productId}?personal_email=${encodeURIComponent(requestForm.email)}`);
+  };
+
   // Group emails by order_id
   const emailsByOrder = filteredEmails.reduce((acc, email) => {
     const orderId = email.order_id || 'unassigned';
@@ -429,22 +463,46 @@ export const AdobeEmail = () => {
       )}
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 dark:border-[#26262d]">
+      <div className="border-b border-gray-200 dark:border-[#26262d] flex justify-between items-end">
         <nav className="flex space-x-8">
-          <button className="border-b-2 border-primary py-4 px-1 text-sm font-medium text-primary flex items-center">
+          <button 
+            onClick={() => setActiveTab('emails')}
+            className={`border-b-2 py-4 px-1 text-sm font-medium flex items-center transition-colors ${
+              activeTab === 'emails' 
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
             <Mail className="w-4 h-4 mr-2" />
             Adobe Emails
           </button>
-          <button className="border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-200 flex items-center">
+          <button 
+            onClick={() => setActiveTab('personal')}
+            className={`border-b-2 py-4 px-1 text-sm font-medium flex items-center transition-colors ${
+              activeTab === 'personal' 
+                ? 'border-primary text-primary' 
+                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+            }`}
+          >
             <CreditCard className="w-4 h-4 mr-2" />
             Personal Subscriptions
           </button>
         </nav>
+        {activeTab === 'personal' && (
+          <button
+            onClick={() => setIsRequestModalOpen(true)}
+            className="mb-2 flex items-center px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            <CreditCard className="w-4 h-4 mr-2" />
+            Personal Adobe Subscription Request
+          </button>
+        )}
       </div>
 
       {/* Main Content Area */}
-      <div className="space-y-6">
-        {Object.entries(emailsByOrder).map(([orderId, orderEmails], index) => {
+      {activeTab === 'emails' ? (
+        <div className="space-y-6">
+          {Object.entries(emailsByOrder).map(([orderId, orderEmails], index) => {
           const firstEmail = orderEmails[0];
           const isUnassigned = orderId === 'unassigned';
           const isActive = firstEmail?.subscription_details && !firstEmail.subscription_details.is_expired;
@@ -665,6 +723,151 @@ export const AdobeEmail = () => {
           </div>
         )}
       </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
+            <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Personal Adobe Subscriptions</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Your personal Adobe Creative Cloud subscription requests
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              {loading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : personalOrders.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
+                    <thead className="bg-gray-50 dark:bg-white/5">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email Address</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
+                      {personalOrders.map((order) => (
+                        <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {order.personal_email}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {order.products?.title} ({order.products?.duration})
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {format(new Date(order.created_at), 'MMM dd, yyyy')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              order.status === 'completed' || order.status === 'paid' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {order.status === 'completed' || order.status === 'paid' ? 'Active' : 'Pending'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center mx-auto mb-4 border border-gray-100 dark:border-[#26262d]">
+                    <CreditCard className="w-8 h-8 text-gray-300" />
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">No Personal Subscriptions</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm max-w-md mx-auto">
+                    You haven't requested any personal Adobe subscriptions yet.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Personal Subscription Request Modal */}
+      {isRequestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                Personal Adobe Subscription
+              </h3>
+              <button 
+                onClick={() => setIsRequestModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleRequestSubmit} className="p-6 space-y-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Subscribe to get your personal Adobe account with your own email.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Your Adobe Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={requestForm.email}
+                  onChange={(e) => setRequestForm({ ...requestForm, email: e.target.value })}
+                  placeholder="your-email@example.com"
+                  className="w-full px-4 py-2 border border-gray-200 dark:border-[#303038] rounded-xl bg-gray-50 dark:bg-white/5 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                />
+                <p className="text-xs text-gray-500 mt-1">This will be your Adobe account email</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Subscription Duration *
+                </label>
+                <select
+                  required
+                  value={requestForm.productId}
+                  onChange={(e) => setRequestForm({ ...requestForm, productId: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-200 dark:border-[#303038] rounded-xl bg-gray-50 dark:bg-white/5 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
+                >
+                  <option value="">Select an option</option>
+                  {personalProducts.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.title} - ৳{product.price} ({product.duration})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  disabled={submittingRequest}
+                  className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-medium transition-colors flex justify-center items-center"
+                >
+                  {submittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsRequestModalOpen(false)}
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/10 dark:hover:bg-white/20 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Inbox Modal */}
       {isInboxOpen && (

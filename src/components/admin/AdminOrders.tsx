@@ -12,6 +12,7 @@ interface Order {
   payment_method: string;
   total_amount: number;
   created_at: string;
+  personal_email?: string;
   users?: {
     email: string;
     name: string;
@@ -19,6 +20,7 @@ interface Order {
   };
   products: {
     title: string;
+    is_personal?: boolean;
   };
 }
 
@@ -37,7 +39,7 @@ export const AdminOrders = () => {
         .select(`
           *,
           users (email, name, phone),
-          products (title)
+          products (title, is_personal)
         `)
         .order('created_at', { ascending: false })
         .limit(200);
@@ -51,7 +53,7 @@ export const AdminOrders = () => {
     }
   };
 
-  const updateOrderStatus = async (id: string, newStatus: string, userId?: string) => {
+  const updateOrderStatus = async (id: string, newStatus: string, userId?: string, isPersonal?: boolean) => {
     try {
       const updates: any = { status: newStatus };
       
@@ -67,8 +69,8 @@ export const AdminOrders = () => {
 
       if (error) throw error;
 
-      // If approving, assign an email automatically just like the payment webhook does
-      if (newStatus === 'completed' && userId) {
+      // If approving, handle email assignment or personal subscription
+      if (newStatus === 'completed' && userId && !isPersonal) {
         try {
           const { data: availableEmail } = await supabase
             .from('emails_pool')
@@ -256,9 +258,19 @@ export const AdminOrders = () => {
               {orders.map(order => (
                 <tr key={order.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
                   <td className="py-3 px-4">
-                    <div className="font-medium text-gray-900 dark:text-gray-100">{order.products?.title || 'Unknown Product'}</div>
+                    <div className="font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                      {order.products?.title || 'Unknown Product'}
+                      {order.products?.is_personal && (
+                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-[10px] rounded uppercase font-bold">Personal</span>
+                      )}
+                    </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400">ID: {order.id.slice(0, 8)}...</div>
                     <div className="text-xs text-gray-400 dark:text-gray-500">{format(new Date(order.created_at), 'MMM dd, yyyy HH:mm')}</div>
+                    {order.personal_email && (
+                      <div className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                        Requested Email: {order.personal_email}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown User'}</div>
@@ -286,7 +298,7 @@ export const AdminOrders = () => {
                       {order.status === 'pending' && (
                         <>
                           <button 
-                            onClick={() => updateOrderStatus(order.id, 'completed', order.user_id)}
+                            onClick={() => updateOrderStatus(order.id, 'completed', order.user_id, order.products?.is_personal)}
                             className="p-1.5 text-green-600 dark:text-emerald-400 hover:bg-green-50 dark:hover:bg-emerald-500/10 rounded flex items-center text-xs font-medium transition-colors duration-300"
                             title="Complete Order"
                           >

@@ -39,10 +39,30 @@ router.post('/create', async (req, res) => {
     if (amount === 0 || amount === '0') {
       console.log(`Processing free order: ${order_id}`);
       
-      const { data: order } = await supabase.from('orders').select('*').eq('id', order_id).single();
+      const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
       if (order) {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        
+        if (order.products?.is_personal && order.personal_email) {
+          try {
+            const durationStr = order.products.duration.toLowerCase();
+            let months = 1;
+            if (durationStr.includes('year') || durationStr.includes('yr')) {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) * 12 : 12;
+            } else {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) : 1;
+            }
+            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
+            await grantAdobeCloudAccess(order.personal_email, months);
+          } catch (err) {
+            console.error('Error in personal subscription fulfillment (free):', err);
+          }
+        } else {
+          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        }
+        
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
@@ -57,10 +77,30 @@ router.post('/create', async (req, res) => {
       
       // Simulate webhook logic for local dev since we can't receive real webhooks easily
       // In production, remove this block and let the actual webhook handle it
-      const { data: order } = await supabase.from('orders').select('*').eq('id', order_id).single();
+      const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
       if (order) {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        
+        if (order.products?.is_personal && order.personal_email) {
+          try {
+            const durationStr = order.products.duration.toLowerCase();
+            let months = 1;
+            if (durationStr.includes('year') || durationStr.includes('yr')) {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) * 12 : 12;
+            } else {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) : 1;
+            }
+            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
+            await grantAdobeCloudAccess(order.personal_email, months);
+          } catch (err) {
+            console.error('Error in personal subscription fulfillment (dev):', err);
+          }
+        } else {
+          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        }
+        
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
       }
 
@@ -212,13 +252,41 @@ router.post('/webhook', async (req, res) => {
 
       const { data: order } = await supabase
         .from('orders')
-        .select('*')
+        .select('*, products(is_personal, duration)')
         .eq('id', orderId)
         .single();
 
       if (order) {
-        // Use product-aware email assignment (respects email_slots & max_users_per_email)
-        await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        if (order.products?.is_personal && order.personal_email) {
+          try {
+            // Calculate duration in months
+            const durationStr = order.products.duration.toLowerCase();
+            let months = 1;
+            if (durationStr.includes('year') || durationStr.includes('yr')) {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) * 12 : 12;
+            } else {
+              const match = durationStr.match(/\d+/);
+              months = match ? parseInt(match[0]) : 1;
+            }
+
+            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
+            const res = await grantAdobeCloudAccess(order.personal_email, months);
+            
+            if (res.success) {
+              console.log(`Successfully granted Adobe Cloud Access for personal email: ${order.personal_email}`);
+            } else {
+              console.error(`Failed to grant Adobe Cloud Access: ${res.error}`);
+              // Note: You could potentially mark order as 'failed' here, but keeping 'completed' 
+              // and letting admin handle retry might be safer depending on business logic.
+            }
+          } catch (err) {
+            console.error('Error in personal subscription fulfillment:', err);
+          }
+        } else {
+          // Use product-aware email assignment (respects email_slots & max_users_per_email)
+          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+        }
 
         // Mark order as completed
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
