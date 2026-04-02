@@ -19,7 +19,7 @@ import {
   Inbox,
   X
 } from 'lucide-react';
-import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
+import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
 
 interface UserEmail {
   id: string;
@@ -92,10 +92,41 @@ export const AdobeEmail = () => {
         .from('orders')
         .select('*, products(*)')
         .eq('user_id', user.id)
-        .in('status', ['paid', 'completed']);
+        .in('status', ['paid', 'completed', 'pending']);
         
       if (orders) {
-        setPersonalOrders(orders.filter(o => o.products?.is_personal && o.personal_email));
+        const pOrders = orders.filter(o => o.products?.is_personal && o.personal_email).map(order => {
+          // Calculate days left for personal subscriptions
+          let daysLeft = 0;
+          let expiresAt = null;
+          let isExpired = false;
+
+          if (order.status === 'completed' || order.status === 'paid') {
+            const durationStr = order.products?.duration?.toLowerCase() || '';
+            let monthsToAdd = 1;
+            
+            if (durationStr.includes('year') || durationStr.includes('yr')) {
+              const match = durationStr.match(/\d+/);
+              monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
+            } else {
+              const match = durationStr.match(/\d+/);
+              monthsToAdd = match ? parseInt(match[0]) : 1;
+            }
+
+            const orderDate = parseISO(order.created_at);
+            expiresAt = addMonths(orderDate, monthsToAdd);
+            isExpired = isPast(expiresAt);
+            daysLeft = isExpired ? 0 : differenceInDays(expiresAt, new Date());
+          }
+
+          return {
+            ...order,
+            daysLeft,
+            expiresAt,
+            isExpired
+          };
+        });
+        setPersonalOrders(pOrders);
       }
 
       // Fetch personal products for modal
@@ -747,27 +778,42 @@ export const AdobeEmail = () => {
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email Address</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Plan</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Expiration</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
                       {personalOrders.map((order) => (
-                        <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                        <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-[#1c1c21] transition-colors border-b border-gray-100 dark:border-white/10 last:border-0">
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                             {order.personal_email}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {order.products?.title} ({order.products?.duration})
+                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Ordered: {format(new Date(order.created_at), 'MMM dd, yyyy')}</div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            {format(new Date(order.created_at), 'MMM dd, yyyy')}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {(order.status === 'completed' || order.status === 'paid') && order.expiresAt ? (
+                              <div className="flex flex-col">
+                                <span className={`text-sm font-bold flex items-center ${
+                                  order.isExpired ? 'text-red-600' : 'text-green-600'
+                                }`}>
+                                  {order.daysLeft} Days Left
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center mt-1">
+                                  <Calendar className="w-3 h-3 mr-1" />
+                                  {format(order.expiresAt, 'MMM dd, yyyy')}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400 italic">Pending Setup</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                               order.status === 'completed' || order.status === 'paid' 
                                 ? 'bg-green-100 text-green-800' 
-                                : 'bg-yellow-100 text-yellow-800'
+                                : 'bg-orange-100 text-orange-800'
                             }`}>
                               {order.status === 'completed' || order.status === 'paid' ? 'Active' : 'Pending'}
                             </span>

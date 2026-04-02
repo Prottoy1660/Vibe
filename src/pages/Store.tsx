@@ -54,6 +54,9 @@ export const Store = () => {
   }, []);
 
   const filteredProducts = products.filter(product => {
+    // Hide personal products from the main store
+    if ((product as any).is_personal) return false;
+
     const matchesSearch = product.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           (product.title_bn && product.title_bn.includes(searchQuery));
     
