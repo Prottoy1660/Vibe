@@ -118,7 +118,7 @@ export const Orders = () => {
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;
       } else {
-        throw new Error(data.message || 'Failed to initialize payment');
+        throw new Error(data.message || data.error || 'Failed to initialize payment');
       }
     } catch (error) {
       console.error('Payment retry error:', error);

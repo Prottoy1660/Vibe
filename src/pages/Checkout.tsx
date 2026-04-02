@@ -208,7 +208,7 @@ export const Checkout = () => {
         // Redirect to UddoktaPay
         window.location.href = data.payment_url;
       } else {
-        throw new Error(data.message || 'Failed to initialize payment');
+        throw new Error(data.message || data.error || 'Failed to initialize payment');
       }
       
     } catch (error: any) {

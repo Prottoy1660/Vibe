@@ -172,7 +172,7 @@ router.post('/create', async (req, res) => {
       res.status(400).json({ success: false, message: data.message || 'Failed to generate payment URL' });
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating payment:', error);
     // Attempt cleanup if exception occurred
     if (req.body?.order_id) {
@@ -182,7 +182,11 @@ router.post('/create', async (req, res) => {
         console.error('Failed to cleanup on exception:', cleanupErr);
       }
     }
-    res.status(500).json({ success: false, error: 'Internal server error' });
+    res.status(500).json({
+      success: false,
+      message: error?.message || 'Internal server error',
+      error: error?.message || 'Internal server error'
+    });
   }
 });
 
