@@ -37,7 +37,7 @@ async function requireUser(req: any, res: any, next: any) {
 async function computeOrderPricing(orderId: string) {
   const { data: order, error: orderError } = await supabase
     .from('orders')
-    .select('id, user_id, product_id, status, payment_status, total_amount, products(price, is_personal, duration)')
+    .select('id, user_id, product_id, status, payment_status, total_amount, coupon_id, payment_method, products(price, is_personal, duration)')
     .eq('id', orderId)
     .single();
   if (orderError || !order) throw new Error('Order not found');
@@ -46,6 +46,72 @@ async function computeOrderPricing(orderId: string) {
   if (!Number.isFinite(productPrice) || productPrice < 0) throw new Error('Invalid product price');
 
   return { order, productPrice };
+}
+
+/** Server-side payable amount: trust order.total_amount only when it matches list price or verified coupon discount. */
+async function resolvePayableTotal(order: any, productPrice: number): Promise<{ ok: true; payableTotal: number } | { ok: false; message: string }> {
+  const stored = Math.round(Number(order.total_amount) * 100) / 100;
+  if (!Number.isFinite(stored) || stored < 0) {
+    return { ok: false, message: 'Invalid order total' };
+  }
+  if (stored > Math.round(productPrice * 100) / 100 + 0.01) {
+    return { ok: false, message: 'Order total exceeds product price' };
+  }
+
+  const fullPrice = Math.round(productPrice * 100) / 100;
+  const isFullPrice = Math.abs(stored - fullPrice) <= 0.02;
+
+  if (isFullPrice) {
+    if (order.coupon_id) {
+      return { ok: false, message: 'Order total does not match coupon' };
+    }
+    return { ok: true, payableTotal: fullPrice };
+  }
+
+  if (!order.coupon_id) {
+    return { ok: false, message: 'Discounted orders require a valid coupon on the order' };
+  }
+
+  const { data: couponRow, error: cErr } = await supabase
+    .from('coupons')
+    .select('id, discount_percentage, is_active, expires_at, usage_limit, used_count')
+    .eq('id', order.coupon_id)
+    .single();
+
+  if (cErr || !couponRow || !couponRow.is_active) {
+    return { ok: false, message: 'Invalid or inactive coupon' };
+  }
+  if (couponRow.expires_at && new Date(couponRow.expires_at) < new Date()) {
+    return { ok: false, message: 'Coupon has expired' };
+  }
+  if (couponRow.usage_limit > 0 && couponRow.used_count >= couponRow.usage_limit) {
+    return { ok: false, message: 'Coupon usage limit reached' };
+  }
+
+  const pct = Number(couponRow.discount_percentage);
+  if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+    return { ok: false, message: 'Invalid coupon discount' };
+  }
+
+  const expected = Math.round(productPrice * (1 - pct / 100) * 100) / 100;
+  if (Math.abs(expected - stored) > 0.02) {
+    return { ok: false, message: 'Order total does not match coupon discount' };
+  }
+
+  return { ok: true, payableTotal: expected };
+}
+
+async function incrementCouponUsedIfPresent(order: any) {
+  const couponId = order?.coupon_id;
+  if (!couponId) return;
+  try {
+    const { data: row } = await supabase.from('coupons').select('used_count, usage_limit').eq('id', couponId).single();
+    if (!row) return;
+    if (row.usage_limit > 0 && row.used_count >= row.usage_limit) return;
+    await supabase.from('coupons').update({ used_count: (row.used_count || 0) + 1 }).eq('id', couponId);
+  } catch (e) {
+    console.error('incrementCouponUsedIfPresent:', e);
+  }
 }
 
 async function getIdempotentResponse(userId: string, endpoint: string, idemKey: string) {
@@ -149,10 +215,24 @@ router.post('/create', requireUser, async (req, res) => {
     const origin = req.headers.origin;
     const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
 
-    // Server-side wallet deduction cap (never trust client)
+    if ((order as any).status === 'completed' && (order as any).payment_status === 'paid') {
+      const payload = {
+        success: true,
+        payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`,
+      };
+      return res.json(payload);
+    }
+
+    const payableResolved = await resolvePayableTotal(order, productPrice);
+    if (payableResolved.ok === false) {
+      return res.status(400).json({ success: false, message: payableResolved.message });
+    }
+    const payableTotal = payableResolved.payableTotal;
+
+    // Server-side wallet deduction cap (never trust client) — cap to payable line total, not full list price
     const requestedWallet = Number(wallet_deduction) || 0;
-    const walletDeduction = Math.max(0, Math.min(productPrice, requestedWallet));
-    const gatewayAmount = Math.max(0, productPrice - walletDeduction);
+    const walletDeduction = Math.max(0, Math.min(payableTotal, requestedWallet));
+    const gatewayAmount = Math.max(0, payableTotal - walletDeduction);
     const idempotencyKey = String(
       req.body?.idempotency_key ||
       `order:${order_id}:wallet:${walletDeduction}:due:${gatewayAmount}`
@@ -173,18 +253,30 @@ router.post('/create', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
     }
 
-    // Normalize stored totals (server-side truth)
+    // Persist normalized payable total (never replace a coupon line with full list price)
     try {
+      const paymentMethodResolved =
+        gatewayAmount > 0
+          ? walletDeduction > 0
+            ? 'wallet+gateway'
+            : 'gateway'
+          : walletDeduction > 0
+            ? 'wallet'
+            : (order as any).coupon_id
+              ? 'coupon'
+              : payableTotal <= 0
+                ? 'free'
+                : 'wallet';
       await supabase
         .from('orders')
         .update({
-          total_amount: productPrice,
-          payment_method: gatewayAmount === 0 ? 'wallet' : (walletDeduction > 0 ? 'wallet+gateway' : 'gateway'),
+          total_amount: payableTotal,
+          payment_method: paymentMethodResolved,
         })
         .eq('id', order_id);
     } catch {}
 
-    // Handle 100% wallet-paid orders
+    // Handle zero gateway due (100% coupon, wallet-only, or free list price)
     if (gatewayAmount === 0) {
       console.log(`Processing free order: ${order_id}`);
 
@@ -231,6 +323,7 @@ router.post('/create', requireUser, async (req, res) => {
         }
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+        await incrementCouponUsedIfPresent(order);
       }
 
       const payload = {
@@ -280,6 +373,7 @@ router.post('/create', requireUser, async (req, res) => {
         }
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+        await incrementCouponUsedIfPresent(order);
       }
 
       const payload = {
@@ -581,6 +675,7 @@ router.post('/webhook', async (req, res) => {
         // Mark order as completed
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
         await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
+        await incrementCouponUsedIfPresent(order);
       }
       
       // Legacy fallback for order metadata recharge fields.

@@ -38,6 +38,7 @@ export const Checkout = () => {
   const [processing, setProcessing] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [appliedCouponId, setAppliedCouponId] = useState<string | null>(null);
   const [couponError, setCouponError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentError, setPaymentError] = useState('');
@@ -103,6 +104,7 @@ export const Checkout = () => {
       if (error || !data) {
         setCouponError('Invalid or expired coupon');
         setDiscount(0);
+        setAppliedCouponId(null);
         return;
       }
 
@@ -110,6 +112,7 @@ export const Checkout = () => {
       if (data.usage_limit > 0 && data.used_count >= data.usage_limit) {
         setCouponError('Coupon usage limit reached');
         setDiscount(0);
+        setAppliedCouponId(null);
         return;
       }
 
@@ -117,23 +120,32 @@ export const Checkout = () => {
       if (data.expires_at && new Date(data.expires_at) < new Date()) {
         setCouponError('Coupon has expired');
         setDiscount(0);
+        setAppliedCouponId(null);
         return;
       }
 
-      setDiscount(data.discount_percentage);
+      setDiscount(Number(data.discount_percentage) || 0);
+      setAppliedCouponId(data.id);
       setCouponError('');
     } catch (error) {
       console.error('Error applying coupon:', error);
       setCouponError('Failed to apply coupon');
       setDiscount(0);
+      setAppliedCouponId(null);
     }
   };
 
   const handlePayment = async () => {
-    const totalAmount = product!.price * (1 - discount / 100);
+    const priceNum = Number(product!.price) || 0;
+    const totalAmount = Math.round(priceNum * (1 - discount / 100) * 100) / 100;
     const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
     const safeWalletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, totalAmount));
     const gatewayAmount = Math.max(0, totalAmount - safeWalletDeduction);
+
+    if (discount > 0 && !appliedCouponId) {
+      setPaymentError('কুপন আবার Apply করুন / Please apply your coupon again before paying.');
+      return;
+    }
 
     if (gatewayAmount > 0 && !paymentMethod) {
       setPaymentError('The payment method field is required.');
@@ -164,18 +176,17 @@ export const Checkout = () => {
         await supabase.auth.updateUser({ data: { phone } });
       }
 
-      // 1. Create order with 'pending' status (or 'paid' if free)
+      // 1. Create order as pending; server /api/payment/create finalizes totals, payment method, and fulfillment (coupon 100% = free path).
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
           user_id: user.id,
           product_id: product.id,
-          payment_method: gatewayAmount === 0
-            ? (safeWalletDeduction > 0 ? 'wallet' : 'coupon')
-            : (useWallet ? 'wallet+gateway' : paymentMethod),
+          coupon_id: discount > 0 && appliedCouponId ? appliedCouponId : null,
+          payment_method: 'pending',
           total_amount: totalAmount,
-          status: gatewayAmount === 0 ? 'paid' : 'pending',
-          payment_status: gatewayAmount === 0 ? 'paid' : 'pending',
+          status: 'pending',
+          payment_status: 'pending',
           auto_renew: isAutoRenew,
           personal_email: personalEmail || null
         })
@@ -235,8 +246,8 @@ export const Checkout = () => {
 
   if (!product) return null;
 
-  const originalPrice = product.price;
-  const finalPrice = originalPrice * (1 - discount / 100);
+  const originalPrice = Number(product.price) || 0;
+  const finalPrice = Math.round(originalPrice * (1 - discount / 100) * 100) / 100;
   const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
   const walletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, finalPrice));
   const dueNow = Math.max(0, finalPrice - walletDeduction);
@@ -503,7 +514,15 @@ export const Checkout = () => {
                 <input
                   type="text"
                   value={couponCode}
-                  onChange={(e) => setCouponCode(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCouponCode(v);
+                    if (!v.trim()) {
+                      setDiscount(0);
+                      setAppliedCouponId(null);
+                      setCouponError('');
+                    }
+                  }}
                   placeholder="Enter code"
                   className="flex-1 border border-gray-200 dark:border-[#26262d] rounded-lg px-3 py-2 text-sm focus:ring-primary focus:border-primary outline-none dark:bg-[#111113] dark:text-gray-100"
                 />
