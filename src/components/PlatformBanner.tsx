@@ -28,16 +28,21 @@ export const PlatformBanner: React.FC = () => {
   }, []);
 
   if (!status?.show_banner || !status.message?.trim()) return null;
-  if (status.level === 'operational') return null;
   if (dismissed) return null;
 
   const sig = `${status.level}:${status.message}:${status.show_banner}`;
   const isMaint = status.level === 'maintenance';
+  const isDegraded = status.level === 'degraded';
+  /** operational + banner = general announcement (still shows when admin enables banner + message) */
+  const isOperational = status.level === 'operational';
+
   const tone = isMaint
     ? 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-100'
-    : 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/35 dark:text-amber-100';
+    : isDegraded
+      ? 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/40 dark:bg-amber-950/35 dark:text-amber-100'
+      : 'border-indigo-200 bg-indigo-50 text-indigo-950 dark:border-indigo-900/40 dark:bg-indigo-950/35 dark:text-indigo-100';
 
-  const Icon = isMaint ? Wrench : AlertTriangle;
+  const Icon = isMaint ? Wrench : isOperational ? Info : AlertTriangle;
 
   return (
     <div className={`relative border-b px-4 py-3 pr-12 ${tone}`}>
@@ -45,7 +50,7 @@ export const PlatformBanner: React.FC = () => {
         <Icon className="w-5 h-5 shrink-0 mt-0.5 opacity-90" aria-hidden />
         <div className="min-w-0 flex-1">
           <p className="font-semibold flex flex-wrap items-center gap-x-2 gap-y-1">
-            {isMaint ? 'Maintenance' : 'Service notice'}
+            {isMaint ? 'Maintenance' : isOperational ? 'Announcement' : 'Service notice'}
             <Link
               to="/status"
               className="inline-flex items-center gap-1 font-normal underline underline-offset-2 hover:opacity-90"

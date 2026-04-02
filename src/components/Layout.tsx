@@ -31,6 +31,7 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
 import { PlatformBanner } from './PlatformBanner';
+import { ImportantNoticesBanner } from './ImportantNoticesBanner';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -275,6 +276,7 @@ export const Layout = () => {
         </header>
 
         <PlatformBanner />
+        {user ? <ImportantNoticesBanner /> : null}
 
         {/* Page Content */}
         <main className="flex-1 p-4 md:p-8 overflow-y-auto">

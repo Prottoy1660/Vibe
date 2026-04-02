@@ -44,7 +44,7 @@ export const AdminPlatformSettings: React.FC = () => {
       );
       if (error) throw error;
       setForm(parsePlatformStatus(value));
-      setMessage({ type: 'ok', text: 'Saved. Users will see the banner when enabled and level is not operational.' });
+      setMessage({ type: 'ok', text: 'Saved. Users see the banner when Show banner is on and the message field is filled.' });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Save failed';
       setMessage({ type: 'err', text: msg });
@@ -70,8 +70,9 @@ export const AdminPlatformSettings: React.FC = () => {
         </div>
         <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 flex gap-2">
           <Info className="w-4 h-4 shrink-0 mt-0.5" />
-          Controls the global notice bar and the public <span className="font-mono text-xs">/status</span> page. Set level to
-          operational to hide the banner (or turn off &quot;Show banner&quot;).
+          Controls the global bar and the public <span className="font-mono text-xs">/status</span> page. Turn on &quot;Show
+          banner&quot; and enter a message: at <span className="font-medium">Operational</span> it shows as a blue announcement;
+          use Degraded / Maintenance for stronger styling. Turn off the toggle to hide completely.
         </p>
 
         <div className="space-y-4">
