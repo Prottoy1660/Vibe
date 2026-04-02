@@ -89,6 +89,32 @@ async function postUddoktaCheckout(payload: any) {
   }
 }
 
+async function logOrderEvent(orderId: string, userId: string | null, eventType: string, message: string, meta: any = {}) {
+  try {
+    await supabase.from('order_events').insert({
+      order_id: orderId,
+      user_id: userId,
+      event_type: eventType,
+      message,
+      meta,
+    });
+  } catch {}
+}
+
+async function logPaymentEvent(orderId: string | null, userId: string | null, eventType: string, amount: number | null, message: string, meta: any = {}) {
+  try {
+    await supabase.from('payment_events').insert({
+      order_id: orderId,
+      user_id: userId,
+      event_type: eventType,
+      amount,
+      gateway: 'uddoktapay',
+      message,
+      meta,
+    });
+  } catch {}
+}
+
 router.post('/create', requireUser, async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   // Silently destroy all pending/abandoned orders older than 30 minutes
@@ -135,6 +161,13 @@ router.post('/create', requireUser, async (req, res) => {
     if (cachedCreate) {
       return res.json(cachedCreate);
     }
+    await logOrderEvent(order_id, user.id, 'payment_init', 'Payment initialization started', {
+      wallet_deduction: walletDeduction,
+      gateway_amount: gatewayAmount,
+    });
+    await logPaymentEvent(order_id, user.id, 'payment_init', gatewayAmount, 'Payment initialization started', {
+      wallet_deduction: walletDeduction,
+    });
 
     if (!Number.isFinite(gatewayAmount)) {
       return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
@@ -204,6 +237,8 @@ router.post('/create', requireUser, async (req, res) => {
         success: true,
         payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`
       };
+      await logOrderEvent(order_id, user.id, 'wallet_only_paid', 'Order paid by wallet only');
+      await logPaymentEvent(order_id, user.id, 'wallet_only_paid', walletDeduction, 'Wallet-only order settled');
       await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, payload);
       return res.json(payload);
     }
@@ -251,6 +286,8 @@ router.post('/create', requireUser, async (req, res) => {
         success: true,
         payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`
       };
+      await logOrderEvent(order_id, user.id, 'payment_simulated_dev', 'Payment simulated in dev mode');
+      await logPaymentEvent(order_id, user.id, 'payment_simulated_dev', gatewayAmount, 'Payment simulated in dev mode');
       await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, payload);
       return res.json(payload);
     }
@@ -277,6 +314,7 @@ router.post('/create', requireUser, async (req, res) => {
 
     if (data.status) {
       const successPayload = { success: true, payment_url: data.payment_url };
+      await logPaymentEvent(order_id, user.id, 'payment_session_created', gatewayAmount, 'Gateway checkout session created');
       await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, successPayload);
       res.json(successPayload);
     } else {
@@ -284,6 +322,7 @@ router.post('/create', requireUser, async (req, res) => {
       if (order_id) {
         await supabase.from('orders').delete().eq('id', order_id);
       }
+      await logPaymentEvent(order_id, user.id, 'payment_session_failed', gatewayAmount, data.message || 'Failed to generate payment URL');
       res.status(400).json({ success: false, message: data.message || 'Failed to generate payment URL' });
     }
 
@@ -297,6 +336,7 @@ router.post('/create', requireUser, async (req, res) => {
         console.error('Failed to cleanup on exception:', cleanupErr);
       }
     }
+    await logPaymentEvent(req.body?.order_id || null, (req as any)?.user?.id || null, 'payment_create_error', null, error?.message || 'payment create error');
     res.status(500).json({
       success: false,
       message: error?.message || 'Internal server error',
@@ -329,6 +369,7 @@ router.post('/recharge', requireUser, async (req, res) => {
     if (cachedRecharge) {
       return res.json(cachedRecharge);
     }
+    await logPaymentEvent(null, user.id, 'recharge_init', normalizedAmount, 'Recharge initialization started');
 
     if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
       console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
@@ -341,6 +382,7 @@ router.post('/recharge', requireUser, async (req, res) => {
         success: true,
         payment_url: `${baseUrl}/?recharge=success`
       };
+      await logPaymentEvent(null, user.id, 'recharge_completed_dev', normalizedAmount, 'Recharge simulated in dev mode');
       await saveIdempotentResponse(user.id, 'payment_recharge', idempotencyKey, payload);
       return res.json(payload);
     }
@@ -369,14 +411,17 @@ router.post('/recharge', requireUser, async (req, res) => {
 
     if (data.status) {
       const successPayload = { success: true, payment_url: data.payment_url };
+      await logPaymentEvent(null, user.id, 'recharge_session_created', normalizedAmount, 'Recharge session created');
       await saveIdempotentResponse(user.id, 'payment_recharge', idempotencyKey, successPayload);
       res.json(successPayload);
     } else {
+      await logPaymentEvent(null, user.id, 'recharge_session_failed', normalizedAmount, data.message || 'Failed to generate recharge URL');
       res.status(400).json({ success: false, message: data.message || 'Failed to generate recharge URL' });
     }
 
   } catch (error) {
     console.error('Error creating recharge session:', error);
+    await logPaymentEvent(null, (req as any)?.user?.id || null, 'recharge_error', null, (error as any)?.message || 'Recharge server error');
     res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
@@ -422,9 +467,11 @@ router.post('/webhook', async (req, res) => {
           console.log(
             `Successfully standalone recharged wallet for user ${metadata.user_id} with amount ${rechargeAmount}`
           );
+          await logPaymentEvent(null, metadata.user_id, 'recharge_completed', rechargeAmount, 'Standalone recharge completed');
           return res.status(200).json({ received: true });
         } catch (walletErr) {
           console.error('Error standalone recharging user wallet via webhook:', walletErr);
+          await logPaymentEvent(null, metadata?.user_id || null, 'recharge_failed', Number(metadata?.recharge_amount) || null, 'Standalone recharge failed');
           return res.status(500).json({ error: 'Failed to process standalone recharge' });
         }
       }
@@ -447,6 +494,7 @@ router.post('/webhook', async (req, res) => {
       const expectedTotal = Number(payableOrder?.total_amount) || 0;
       const expectedGatewayDue = Math.max(0, expectedTotal - walletDeduction);
       if (Number.isFinite(gatewayPaid) && gatewayPaid + 0.0001 < expectedGatewayDue) {
+        await logPaymentEvent(orderId, orderUserId || null, 'payment_failed_underpaid', gatewayPaid, 'Gateway paid lower than expected due');
         return res.status(400).json({ error: 'Gateway paid amount is lower than expected due amount' });
       }
 
@@ -468,6 +516,7 @@ router.post('/webhook', async (req, res) => {
           p_amount: walletDeduction,
         });
         if (deductErr) {
+          await logPaymentEvent(orderId, orderUserId, 'payment_failed_wallet_insufficient', walletDeduction, 'Insufficient wallet balance during settlement');
           return res.status(400).json({ error: 'Insufficient wallet balance during mixed-payment settlement' });
         }
       }
@@ -486,6 +535,8 @@ router.post('/webhook', async (req, res) => {
         .single();
 
       if (order) {
+        await logPaymentEvent(order.id, order.user_id, 'payment_completed', gatewayPaid || expectedGatewayDue, 'Payment webhook completed');
+        await logOrderEvent(order.id, order.user_id, 'payment_completed', 'Payment confirmed by webhook');
         if (order.products?.is_personal && order.personal_email) {
           try {
             // Calculate duration in months
@@ -504,6 +555,7 @@ router.post('/webhook', async (req, res) => {
             
             if (res.success) {
               console.log(`Successfully granted Adobe Cloud Access for personal email: ${order.personal_email}`);
+              await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Personal Adobe access provisioned');
             } else {
               console.error(`Failed to grant Adobe Cloud Access: ${res.error}`);
               // Note: You could potentially mark order as 'failed' here, but keeping 'completed' 
@@ -520,12 +572,15 @@ router.post('/webhook', async (req, res) => {
               `[payment/webhook] Email assignment failed for order ${order.id}: ${assignment.error || 'Unknown error'}`
             );
             await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
+            await logOrderEvent(order.id, order.user_id, 'provisioning_failed', assignment.error || 'Email assignment failed');
             return res.status(500).json({ error: assignment.error || 'Email assignment failed' });
           }
+          await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Assigned product email successfully');
         }
 
         // Mark order as completed
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+        await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
       }
       
       // Legacy fallback for order metadata recharge fields.
@@ -544,6 +599,7 @@ router.post('/webhook', async (req, res) => {
     res.status(200).json({ received: true });
   } catch (error) {
     console.error('Webhook error:', error);
+    await logPaymentEvent((req.body as any)?.metadata?.order_id || null, (req.body as any)?.metadata?.user_id || null, 'webhook_error', null, (error as any)?.message || 'Webhook error');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

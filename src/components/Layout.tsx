@@ -89,6 +89,7 @@ export const Layout = () => {
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
         { name: 'Tutorial & Help Page', href: '/admin?tab=tutorial_help', icon: CircleHelp },
+        { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
       ]
     },
     {

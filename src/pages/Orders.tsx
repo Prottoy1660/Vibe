@@ -140,6 +140,17 @@ export const Orders = () => {
     }
   };
 
+  const getTimelineSteps = (status: string) => {
+    const normalized = status.toLowerCase();
+    const steps = ['Order', 'Payment', 'Provisioning', 'Completed'];
+    let activeIndex = 0;
+    if (normalized === 'pending') activeIndex = 0;
+    else if (normalized === 'paid') activeIndex = 1;
+    else if (normalized === 'completed') activeIndex = 3;
+    else if (normalized === 'cancelled' || normalized === 'expired' || normalized === 'refunded') activeIndex = -1;
+    return { steps, activeIndex };
+  };
+
   return (
     <div className="space-y-6 pb-12 max-w-6xl mx-auto">
       <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-2">
@@ -189,6 +200,7 @@ export const Orders = () => {
               <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
                 {filteredOrders.map((order) => {
                   const effectiveStatus = getEffectiveStatus(order);
+                  const timeline = getTimelineSteps(effectiveStatus);
                   return (
                   <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -205,6 +217,21 @@ export const Orders = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(effectiveStatus, order.created_at)}
+                      <div className="mt-2 flex items-center gap-1.5">
+                        {timeline.steps.map((step, idx) => {
+                          const activeIndex = timeline.activeIndex;
+                          const active = activeIndex >= 0 && idx <= activeIndex;
+                          return (
+                            <div key={step} className="flex items-center">
+                              <span
+                                title={step}
+                                className={`h-1.5 w-7 rounded-full ${active ? 'bg-indigo-500' : 'bg-gray-200 dark:bg-white/10'}`}
+                              />
+                              {idx < 3 ? <span className="w-1" /> : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right">
                       {effectiveStatus === 'pending' && (
