@@ -970,6 +970,44 @@ export const AdobeEmail = () => {
                               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                                 Ordered {format(new Date(order.created_at), 'MMM d, yyyy')}
                               </span>
+
+                              {isLive && (
+                                <div className="flex items-center gap-2.5 ml-1 pl-3 pr-1 py-1 rounded-full bg-zinc-100 dark:bg-[#151518] border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                                  <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest hidden sm:inline-block">Auto-renew</span>
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={!!order.auto_renew}
+                                    disabled={togglingAutoRenewOrderId === order.id}
+                                    onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
+                                    className={`relative inline-flex h-[24px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50 disabled:cursor-not-allowed border ${
+                                      order.auto_renew 
+                                        ? 'bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_8px_rgba(99,102,241,0.4)] border-indigo-400/50 dark:border-indigo-500/30' 
+                                        : 'bg-zinc-200 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-700/80 shadow-inner'
+                                    }`}
+                                    title={order.auto_renew ? "Auto-renew is ON (Uses wallet)" : "Auto-renew is OFF"}
+                                  >
+                                    <span className="sr-only">Use setting</span>
+                                    <span
+                                      className={`pointer-events-none relative flex h-[18px] w-[18px] items-center justify-center transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-300 ease-in-out ${
+                                        order.auto_renew ? 'translate-x-[9px]' : '-translate-x-[9px]'
+                                      }`}
+                                    >
+                                      {togglingAutoRenewOrderId === order.id ? (
+                                        <Loader2 className="absolute h-3 w-3 animate-spin text-indigo-500" />
+                                      ) : (
+                                        <span 
+                                          className={`transition-opacity duration-200 ${order.auto_renew ? 'opacity-100' : 'opacity-0'}`}
+                                        >
+                                          <svg className="h-[10px] w-[10px] text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        </span>
+                                      )}
+                                    </span>
+                                  </button>
+                                </div>
+                              )}
                             </div>
 
                             <div>
@@ -1017,35 +1055,6 @@ export const AdobeEmail = () => {
                                 We are setting up access for this order. Status updates when payment completes.
                               </p>
                             )}
-
-                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2.5">
-                              <div>
-                                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Auto-renew (wallet)</p>
-                                <p className="text-xs text-zinc-500 dark:text-zinc-500">
-                                  {order.auto_renew ? 'Charges your balance before expiry' : 'You renew manually'}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={!!order.auto_renew}
-                                disabled={togglingAutoRenewOrderId === order.id}
-                                onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
-                                className={`relative h-7 w-12 shrink-0 self-start sm:ml-auto rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 ${
-                                  order.auto_renew ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-zinc-300 dark:bg-zinc-600'
-                                }`}
-                              >
-                                {togglingAutoRenewOrderId === order.id ? (
-                                  <Loader2 className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
-                                ) : (
-                                  <span
-                                    className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                                      order.auto_renew ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
-                                    }`}
-                                  />
-                                )}
-                              </button>
-                            </div>
                           </div>
 
                           <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
