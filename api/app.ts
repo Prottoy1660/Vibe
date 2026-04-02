@@ -29,22 +29,40 @@ dotenv.config()
 const app: express.Application = express()
 app.set('trust proxy', 1)
 
-const allowedOrigins = new Set(
-  [
-    process.env.FRONTEND_URL,
-    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://localhost:3001',
-  ].filter(Boolean) as string[]
-);
+function withWwwVariants(url?: string) {
+  if (!url) return [];
+  try {
+    const u = new URL(url);
+    const base = `${u.protocol}//${u.host}`;
+    const variants = new Set<string>([base]);
+    if (u.hostname.startsWith('www.')) {
+      variants.add(`${u.protocol}//${u.hostname.replace(/^www\./, '')}${u.port ? `:${u.port}` : ''}`);
+    } else {
+      variants.add(`${u.protocol}//www.${u.hostname}${u.port ? `:${u.port}` : ''}`);
+    }
+    return [...variants];
+  } catch {
+    return [url];
+  }
+}
+
+const allowedOrigins = new Set([
+  ...withWwwVariants(process.env.FRONTEND_URL),
+  ...(process.env.VERCEL_URL ? withWwwVariants(`https://${process.env.VERCEL_URL}`) : []),
+  'https://vibeaccessbd.shop',
+  'https://www.vibeaccessbd.shop',
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:3001',
+]);
 
 app.use(cors({
   origin: (origin, callback) => {
     // allow server-to-server calls (no Origin header)
     if (!origin) return callback(null, true);
     if (allowedOrigins.has(origin)) return callback(null, true);
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    // Don't throw 500 for disallowed origins; just disable CORS for that request.
+    return callback(null, false);
   },
   credentials: true,
 }))

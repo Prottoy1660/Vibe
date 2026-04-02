@@ -128,6 +128,7 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
       if (!res.ok) {
         // If server responded, keep base cached (endpoint exists).
         if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
+        const message = data?.message || data?.error || `Request failed (${res.status})`;
         saveDebug({
           at: new Date().toISOString(),
           base,
@@ -135,9 +136,11 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
           ok: false,
           status: res.status,
           request_id: res.headers.get('x-request-id'),
-          message: data?.message || data?.error || `Request failed (${res.status})`
+          message
         });
-        throw new Error(data?.message || data?.error || `Request failed (${res.status})`);
+        const e: any = new Error(message);
+        e.__alreadyLogged = true;
+        throw e;
       }
 
       saveDebug({
@@ -152,13 +155,15 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
       return data as T;
     } catch (err: any) {
       lastErr = err;
-      saveDebug({
-        at: new Date().toISOString(),
-        base,
-        path,
-        ok: false,
-        message: err?.message || 'Unknown error'
-      });
+      if (!err?.__alreadyLogged) {
+        saveDebug({
+          at: new Date().toISOString(),
+          base,
+          path,
+          ok: false,
+          message: err?.message || 'Unknown error'
+        });
+      }
       // Try next base on network errors / fetch failures.
       const msg = (err?.message || '').toLowerCase();
       const isNetwork =
