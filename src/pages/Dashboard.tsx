@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
-import { getApiBaseUrl } from '../lib/apiBase';
+import { postJsonWithFallback } from '../lib/apiClient';
 
 interface Stats {
   totalOrders: number;
@@ -138,20 +138,13 @@ export const Dashboard = () => {
     try {
       if (!user) return;
       
-      const API_URL = getApiBaseUrl();
-      const response = await fetch(`${API_URL}/api/payment/recharge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          amount: amount,
-          full_name: user?.user_metadata?.full_name || 'Customer',
-          email: user?.email,
-          frontend_url: window.location.origin
-        })
+      const data = await postJsonWithFallback('/api/payment/recharge', {
+        user_id: user.id,
+        amount: amount,
+        full_name: user?.user_metadata?.full_name || 'Customer',
+        email: user?.email,
+        frontend_url: window.location.origin
       });
-
-      const data = await response.json();
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;
       } else {

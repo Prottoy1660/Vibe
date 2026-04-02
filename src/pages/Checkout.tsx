@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { getApiBaseUrl } from '../lib/apiBase';
+import { postJsonWithFallback } from '../lib/apiClient';
 import { 
   CreditCard, 
   ShieldCheck, 
@@ -186,24 +186,15 @@ export const Checkout = () => {
       createdOrderId = order.id;
 
       // 2. Call backend to process fully wallet/coupon orders OR create gateway checkout for mixed/direct.
-      const API_URL = getApiBaseUrl();
-      const response = await fetch(`${API_URL}/api/payment/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          order_id: order.id,
-          amount: gatewayAmount,
-          full_name: user.user_metadata?.full_name || 'Customer',
-          email: user.email,
-          frontend_url: window.location.origin,
-          user_id: user.id,
-          wallet_deduction: safeWalletDeduction
-        })
+      const data = await postJsonWithFallback('/api/payment/create', {
+        order_id: order.id,
+        amount: gatewayAmount,
+        full_name: user.user_metadata?.full_name || 'Customer',
+        email: user.email,
+        frontend_url: window.location.origin,
+        user_id: user.id,
+        wallet_deduction: safeWalletDeduction
       });
-
-      const data = await response.json();
 
       if (data.success && data.payment_url) {
         // Redirect to UddoktaPay

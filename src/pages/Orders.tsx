@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Search, Filter, ShoppingCart, Loader2, CreditCard } from 'lucide-react';
 import { format } from 'date-fns';
-import { getApiBaseUrl } from '../lib/apiBase';
+import { postJsonWithFallback } from '../lib/apiClient';
 
 interface Order {
   id: string;
@@ -99,23 +99,13 @@ export const Orders = () => {
   const handlePayNow = async (orderId: string, amount: number) => {
     try {
       setProcessingId(orderId);
-      const API_URL = getApiBaseUrl();
-      
-      const response = await fetch(`${API_URL}/api/payment/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          order_id: orderId,
-          amount: amount,
-          full_name: user?.user_metadata?.full_name || 'Customer',
-          email: user?.email,
-          frontend_url: window.location.origin
-        })
+      const data = await postJsonWithFallback('/api/payment/create', {
+        order_id: orderId,
+        amount: amount,
+        full_name: user?.user_metadata?.full_name || 'Customer',
+        email: user?.email,
+        frontend_url: window.location.origin
       });
-
-      const data = await response.json();
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;
       } else {
