@@ -48,6 +48,10 @@ export const NotificationBell: React.FC<Props> = ({ userId, enabled }) => {
     }
   }, [enabled, userId]);
 
+  /** Avoid effect deps on `load` (unstable ref) + unique channel name so Strict Mode / resubscribe never reuses a subscribed channel. */
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -55,8 +59,9 @@ export const NotificationBell: React.FC<Props> = ({ userId, enabled }) => {
   useEffect(() => {
     if (!enabled || !userId) return;
 
+    const channelName = `user_inbox_rt:${userId}:${crypto.randomUUID()}`;
     const channel = supabase
-      .channel(`user_inbox:${userId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -66,7 +71,7 @@ export const NotificationBell: React.FC<Props> = ({ userId, enabled }) => {
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          void load();
+          void loadRef.current();
         }
       )
       .subscribe();
@@ -74,7 +79,7 @@ export const NotificationBell: React.FC<Props> = ({ userId, enabled }) => {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [enabled, userId, load]);
+  }, [enabled, userId]);
 
   useEffect(() => {
     if (!open) return;

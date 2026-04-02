@@ -52,23 +52,29 @@ export const Layout = () => {
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
 
   useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+
+    let cancelled = false;
+
     const checkAdmin = async () => {
-      if (!user) return;
       const { data } = await supabase
         .from('users')
         .select('role, is_banned, preferred_language')
         .eq('id', user.id)
         .single();
-      
+
+      if (cancelled) return;
+
       if (data?.is_banned) {
         alert('Your account has been suspended.');
-        signOut();
+        void signOut();
         return;
       }
 
-      if (data?.role === 'admin') {
-        setIsAdmin(true);
-      }
+      setIsAdmin(data?.role === 'admin');
 
       // Auto language personalization: first-time users inherit browser language.
       if (!data?.preferred_language) {
@@ -79,9 +85,12 @@ export const Layout = () => {
         setStoredLanguage(data.preferred_language);
       }
     };
-    
-    checkAdmin();
-  }, [user]);
+
+    void checkAdmin();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, signOut]);
 
   const navigation = isAdmin ? [
     {

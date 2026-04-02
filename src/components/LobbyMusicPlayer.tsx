@@ -95,21 +95,25 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
     void fetchSettings();
   }, [fetchSettings]);
 
+  const fetchSettingsRef = useRef(fetchSettings);
+  fetchSettingsRef.current = fetchSettings;
+
   useEffect(() => {
+    const channelName = `lobby_music_rt:${crypto.randomUUID()}`;
     const ch = supabase
-      .channel('lobby_music_settings')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.lobby_music' },
         () => {
-          void fetchSettings();
+          void fetchSettingsRef.current();
         }
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(ch);
     };
-  }, [fetchSettings]);
+  }, []);
 
   const globOn = settings?.enabled === true && (settings.urls?.length ?? 0) > 0;
   const active = Boolean(userId && !adminRoute && globOn);

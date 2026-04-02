@@ -48,7 +48,7 @@ import { AdminWaitlist } from '../components/admin/AdminWaitlist';
 import { AdminUserNotifications } from '../components/admin/AdminUserNotifications';
 import { AdminLobbyMusic } from '../components/admin/AdminLobbyMusic';
 export const AdminDashboard = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -75,9 +75,20 @@ export const AdminDashboard = () => {
   const [uploadMessage, setUploadMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const checkAdminAndFetchData = async () => {
-      if (!user) return;
-      
+      if (authLoading) return;
+
+      if (!user) {
+        setIsAdmin(false);
+        setLoading(false);
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      setLoading(true);
+
       try {
         // 1. Check if user is admin
         const { data: userData, error: userError } = await supabase
@@ -85,13 +96,15 @@ export const AdminDashboard = () => {
           .select('role')
           .eq('id', user.id)
           .single();
-          
+
+        if (cancelled) return;
+
         if (userError || userData?.role !== 'admin') {
           setIsAdmin(false);
-          navigate('/');
+          navigate('/', { replace: true });
           return;
         }
-        
+
         setIsAdmin(true);
         
         // 2. Fetch stats
@@ -249,7 +262,7 @@ export const AdminDashboard = () => {
     }
   };
 
-  if (loading || isAdmin === null) {
+  if (authLoading || loading || isAdmin === null) {
     return (
       <div className="flex justify-center items-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
