@@ -63,6 +63,7 @@ export const AdminEmails = () => {
   const [emails, setEmails] = useState<EmailPool[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [unfulfilledCount, setUnfulfilledCount] = useState(0);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [deletingAll, setDeletingAll] = useState(false);
@@ -78,7 +79,24 @@ export const AdminEmails = () => {
 
   useEffect(() => {
     fetchEmails();
+    fetchUnfulfilledCount();
   }, []);
+
+  const fetchUnfulfilledCount = async () => {
+    try {
+      const { data } = await supabase
+        .from('orders')
+        .select('id, products!inner(is_personal), user_emails(id)')
+        .in('status', ['paid', 'completed'])
+        .eq('payment_status', 'paid')
+        .eq('products.is_personal', false);
+      
+      if (data) {
+        const missing = data.filter((o: any) => !o.user_emails || o.user_emails.length === 0);
+        setUnfulfilledCount(missing.length);
+      }
+    } catch {}
+  };
 
   const fetchEmails = async () => {
     setLoading(true);
@@ -190,6 +208,7 @@ export const AdminEmails = () => {
       if (data.success) {
         alert(data.message);
         fetchEmails();
+        fetchUnfulfilledCount();
       } else {
         alert(data.message || 'Failed to bulk assign emails.');
       }
@@ -429,11 +448,20 @@ export const AdminEmails = () => {
                   <button
                     type="button"
                     onClick={handleBulkAssign}
-                    disabled={assigningBulk || loading}
-                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                    disabled={assigningBulk || loading || unfulfilledCount === 0}
+                    className={`w-full py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-40 inline-flex items-center justify-center gap-2 ${
+                      unfulfilledCount > 0
+                        ? 'bg-orange-500 hover:bg-orange-600 shadow-[0_0_15px_-3px_rgba(249,115,22,0.4)] animate-pulse'
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
                   >
                     {assigningBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                     Fulfill Missing
+                    {unfulfilledCount > 0 && (
+                      <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs font-bold tabular-nums">
+                        {unfulfilledCount}
+                      </span>
+                    )}
                   </button>
                 }
               />

@@ -38,6 +38,7 @@ interface Order {
     title: string;
     is_personal?: boolean;
   };
+  user_emails?: { id: string }[];
 }
 
 type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled';
@@ -80,7 +81,8 @@ export const AdminOrders = () => {
           `
           *,
           users (email, name, phone),
-          products (title, is_personal)
+          products (title, is_personal),
+          user_emails (id)
         `
         )
         .order('created_at', { ascending: false })
@@ -105,6 +107,14 @@ export const AdminOrders = () => {
       refunded: o.filter((x) => x.status === 'refunded').length,
       cancelled: o.filter((x) => x.status === 'cancelled').length,
     };
+  }, [rawOrders]);
+
+  const unfulfilledCount = useMemo(() => {
+    return rawOrders.filter(o => 
+      (o.status === 'paid' || o.status === 'completed') && 
+      !o.products?.is_personal && 
+      (!o.user_emails || o.user_emails.length === 0)
+    ).length;
   }, [rawOrders]);
 
   const orders = useMemo(() => {
@@ -336,11 +346,20 @@ export const AdminOrders = () => {
             <button
               type="button"
               onClick={handleBulkAssign}
-              disabled={loading || assigningBulk}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold border border-transparent shadow-[0_0_15px_-3px_rgba(16,185,129,0.3)] disabled:opacity-50 transition-all active:scale-95"
+              disabled={loading || assigningBulk || unfulfilledCount === 0}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold border border-transparent shadow-sm disabled:opacity-50 transition-all active:scale-95 ${
+                unfulfilledCount > 0
+                  ? 'bg-orange-500 hover:bg-orange-600 shadow-[0_0_15px_-3px_rgba(249,115,22,0.4)] animate-pulse'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
             >
               {assigningBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Fulfill Missing Emails
+              Fulfill Missing
+              {unfulfilledCount > 0 && (
+                <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs font-bold tabular-nums">
+                  {unfulfilledCount}
+                </span>
+              )}
             </button>
             <button
               type="button"
