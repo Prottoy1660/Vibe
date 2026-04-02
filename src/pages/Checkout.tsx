@@ -3,17 +3,18 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getLastApiDebug, postJsonWithFallback } from '../lib/apiClient';
-import { 
-  CreditCard, 
-  ShieldCheck, 
-  Lock, 
+import {
+  CreditCard,
+  ShieldCheck,
+  Lock,
   Zap,
-  ArrowRight,
   Loader2,
   Ticket,
   CheckCircle2,
   ShoppingBag,
-  Phone
+  Phone,
+  Sparkles,
+  Wallet,
 } from 'lucide-react';
 
 interface Product {
@@ -28,11 +29,10 @@ export const Checkout = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const personalEmail = searchParams.get('personal_email');
-  const autoRenewParam = searchParams.get('auto_renew');
-  
+
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -44,7 +44,14 @@ export const Checkout = () => {
   const [paymentError, setPaymentError] = useState('');
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
-  const [isAutoRenew, setIsAutoRenew] = useState(autoRenewParam === 'true' ? true : false);
+  /**
+   * Default off. Personal Adobe request may open checkout with ?auto_renew=true (lazy init reads once).
+   * No URL↔state sync effect — otherwise toggling off while the param stays "true" would flip back on.
+   */
+  const [isAutoRenew, setIsAutoRenew] = useState(() => {
+    const v = searchParams.get('auto_renew');
+    return v != null && v.toLowerCase() === 'true';
+  });
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
@@ -52,25 +59,20 @@ export const Checkout = () => {
   useEffect(() => {
     const fetchProductAndUser = async () => {
       if (!id) return;
-      
+
       try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('id', id)
-          .single();
+        const { data, error } = await supabase.from('products').select('*').eq('id', id).single();
 
         if (error) throw error;
         if (data) setProduct(data);
 
-        // Check if user has a phone number
         if (user) {
           const { data: userData } = await supabase
             .from('users')
             .select('phone, wallet_balance')
             .eq('id', user.id)
             .single();
-            
+
           if (!userData?.phone) {
             setRequirePhone(true);
           } else {
@@ -91,7 +93,7 @@ export const Checkout = () => {
 
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
-    
+
     setCouponError('');
     try {
       const { data, error } = await supabase
@@ -108,7 +110,6 @@ export const Checkout = () => {
         return;
       }
 
-      // Check usage limits
       if (data.usage_limit > 0 && data.used_count >= data.usage_limit) {
         setCouponError('Coupon usage limit reached');
         setDiscount(0);
@@ -116,7 +117,6 @@ export const Checkout = () => {
         return;
       }
 
-      // Check expiry
       if (data.expires_at && new Date(data.expires_at) < new Date()) {
         setCouponError('Coupon has expired');
         setDiscount(0);
@@ -156,12 +156,12 @@ export const Checkout = () => {
       setPaymentError('Enter a valid wallet amount to use.');
       return;
     }
-    
+
     if (requirePhone && (!phone || phone.length < 11)) {
       setPaymentError('A valid phone number is required to complete this order.');
       return;
     }
-    
+
     setPaymentError('');
     setProcessing(true);
 
@@ -170,13 +170,11 @@ export const Checkout = () => {
     try {
       if (!user || !product) throw new Error('Missing user or product information');
 
-      // Update phone number if it was required and provided during checkout
       if (requirePhone && phone) {
         await supabase.from('users').update({ phone }).eq('id', user.id);
         await supabase.auth.updateUser({ data: { phone } });
       }
 
-      // 1. Create order as pending; server /api/payment/create finalizes totals, payment method, and fulfillment (coupon 100% = free path).
       const { data: order, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -188,7 +186,7 @@ export const Checkout = () => {
           status: 'pending',
           payment_status: 'pending',
           auto_renew: isAutoRenew,
-          personal_email: personalEmail || null
+          personal_email: personalEmail || null,
         })
         .select()
         .single();
@@ -196,7 +194,6 @@ export const Checkout = () => {
       if (orderError) throw orderError;
       createdOrderId = order.id;
 
-      // 2. Call backend to process fully wallet/coupon orders OR create gateway checkout for mixed/direct.
       const data = await postJsonWithFallback('/api/payment/create', {
         order_id: order.id,
         amount: gatewayAmount,
@@ -204,26 +201,24 @@ export const Checkout = () => {
         email: user.email,
         frontend_url: window.location.origin,
         user_id: user.id,
-        wallet_deduction: safeWalletDeduction
+        wallet_deduction: safeWalletDeduction,
       });
 
       if (data.success && data.payment_url) {
-        // Redirect to UddoktaPay
         window.location.href = data.payment_url;
       } else {
         throw new Error(data.message || data.error || 'Failed to initialize payment');
       }
-      
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Payment processing error:', error);
+      const err = error as { message?: string };
       const debug = getLastApiDebug();
       const lastAttempt = debug?.attempts?.[0];
       const extra = lastAttempt
         ? `\n\nDebug:\n- base: ${lastAttempt.base}\n- status: ${lastAttempt.status ?? 'n/a'}\n- request_id: ${lastAttempt.request_id ?? 'n/a'}\n- message: ${lastAttempt.message ?? 'n/a'}`
         : '';
-      setPaymentError((error.message || 'Failed to process payment. Please try again.') + extra);
-      
-      // Cleanup the abandoned order from the database so it doesn't flood the UI
+      setPaymentError((err.message || 'Failed to process payment. Please try again.') + extra);
+
       if (createdOrderId) {
         try {
           await supabase.from('orders').delete().eq('id', createdOrderId);
@@ -239,7 +234,7 @@ export const Checkout = () => {
   if (loading) {
     return (
       <div className="flex justify-center items-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
       </div>
     );
   }
@@ -252,292 +247,354 @@ export const Checkout = () => {
   const walletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, finalPrice));
   const dueNow = Math.max(0, finalPrice - walletDeduction);
 
-  return (
-    <div className="space-y-6 pb-12 max-w-5xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Direct Checkout</h1>
+  const detailsDone = !requirePhone || (phone && phone.length >= 11);
+  const paymentReady = dueNow <= 0 || paymentMethod === 'uddoktapay';
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Product & Payment Flow */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* Product Summary Card */}
-          <div className="bg-white dark:bg-[#151518] rounded-xl p-6 shadow-soft dark:shadow-none">
-            <div className="flex justify-between items-start">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">{product.title_bn || product.title}</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-300 mb-4 flex items-center flex-wrap gap-1">
-                  <span className="text-orange-500 mr-1">🔥</span> 
-                  এখন ৳{product.price} টাকায় VibeAccess - এ পাওয়া যাচ্ছে Complete Package 
-                  <span className="font-semibold text-gray-800 dark:text-gray-100 ml-1">Adobe Creative Cloud</span> 
-                  একসাথে! <span className="font-bold ml-1">Everything in ONE Bundle!</span>
-                </p>
+  const btnPrimary =
+    'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed';
+  const btnOutline =
+    'inline-flex items-center justify-center rounded-xl border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900/50 px-6 py-3 text-sm font-medium text-zinc-800 dark:text-zinc-200 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors';
+
+  return (
+    <div className="space-y-6 pb-16 max-w-6xl mx-auto">
+      <div>
+        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5" />
+          Checkout
+        </p>
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight mt-1">Complete purchase</h1>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 max-w-xl">
+          Review the plan, apply a coupon if you have one, then pay the amount due. Personal Adobe orders use the email you entered earlier.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 lg:gap-8">
+        <div className="lg:col-span-3 space-y-5">
+          <div className="rounded-2xl border border-zinc-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none p-5 sm:p-6">
+            <div className="flex gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                <ShoppingBag className="w-6 h-6" />
               </div>
-              <div className="bg-primary/10 p-3 rounded-xl flex-shrink-0 ml-4">
-                <ShoppingBag className="w-6 h-6 text-primary" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                  {product.title_bn || product.title}
+                </h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">৳{product.price}</span>
+                  <span className="text-zinc-500 dark:text-zinc-500"> · </span>
+                  {product.duration}
+                  <span className="text-zinc-500 dark:text-zinc-500"> · </span>
+                  Adobe Creative Cloud access via Vibe Access
+                </p>
+                {personalEmail && (
+                  <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1.5 inline-block">
+                    Personal order email: <span className="font-mono">{personalEmail}</span>
+                  </p>
+                )}
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t border-gray-100 dark:border-[#26262d]">
-              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                <ShieldCheck className="w-4 h-4 mr-1.5 text-green-500" />
-                Secure Checkout
-              </div>
-              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                <Zap className="w-4 h-4 mr-1.5 text-blue-500" />
-                Instant Delivery
-              </div>
-              <div className="flex items-center text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                <Lock className="w-4 h-4 mr-1.5 text-orange-500" />
-                Encrypted Payment
-              </div>
+            <div className="mt-5 flex flex-wrap gap-3 pt-5 border-t border-zinc-100 dark:border-zinc-800">
+              {[
+                { icon: ShieldCheck, label: 'Secure checkout', tone: 'text-emerald-600 dark:text-emerald-400' },
+                { icon: Zap, label: 'Fast delivery', tone: 'text-sky-600 dark:text-sky-400' },
+                { icon: Lock, label: 'Encrypted payment', tone: 'text-amber-700 dark:text-amber-400' },
+              ].map(({ icon: Icon, label, tone }) => (
+                <div
+                  key={label}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400"
+                >
+                  <Icon className={`w-4 h-4 ${tone}`} />
+                  {label}
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Checkout Flow Card */}
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none overflow-hidden">
-            <div className="p-6 border-b border-gray-100 dark:border-[#26262d]">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <CreditCard className="w-5 h-5 mr-2 text-primary" />
-                Complete Your Purchase
-              </h3>
+          <div className="rounded-2xl border border-zinc-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
+              <CreditCard className="w-5 h-5 text-indigo-500 shrink-0" />
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Payment steps</h3>
             </div>
-            
-            {/* Step Indicators */}
-            <div className="flex border-b border-gray-100 dark:border-[#26262d]">
-              <div className="flex-1 p-4 flex items-center justify-center border-r border-gray-100 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/5">
-                <div className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center mr-2">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Customer Info</span>
+
+            <div className="grid grid-cols-2 divide-x divide-zinc-100 dark:divide-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/30">
+              <div
+                className={`px-4 py-3 flex items-center gap-2 ${
+                  detailsDone ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400'
+                }`}
+              >
+                {detailsDone ? (
+                  <CheckCircle2 className="w-5 h-5 shrink-0" />
+                ) : (
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-zinc-400 text-[10px] font-bold">
+                    1
+                  </span>
+                )}
+                <span className="text-xs sm:text-sm font-medium leading-tight">
+                  {requirePhone ? 'Phone for delivery' : 'Account OK'}
+                </span>
               </div>
-              <div className="flex-1 p-4 flex items-center justify-center">
-                <div className="w-6 h-6 rounded-full border-2 border-primary text-primary flex items-center justify-center mr-2 text-xs font-bold">
-                  02
-                </div>
-                <span className="text-sm font-medium text-primary">Method</span>
+              <div
+                className={`px-4 py-3 flex items-center gap-2 ${
+                  paymentReady && detailsDone ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-600 dark:text-zinc-300'
+                }`}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-current text-[10px] font-bold">
+                  2
+                </span>
+                <span className="text-xs sm:text-sm font-medium leading-tight">Pay balance</span>
               </div>
             </div>
 
-            <div className="p-6">
+            <div className="p-5 sm:p-6 space-y-6">
               {requirePhone && (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Contact Number <span className="text-red-500">*</span>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
+                    Mobile number <span className="text-red-500">*</span>
                   </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Phone className="h-5 w-5 text-gray-400 dark:text-gray-500" />
-                    </div>
+                  <div className="relative max-w-md">
+                    <Phone className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400 pointer-events-none" />
                     <input
                       type="tel"
                       required
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-[#303038] rounded-xl focus:ring-primary focus:border-primary outline-none dark:bg-[#111113] dark:text-gray-100"
-                      placeholder="017xxxxxxxx"
+                      className="block w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 py-2.5 pl-10 pr-3 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+                      placeholder="01XXXXXXXXX"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1.5">Required for order delivery and support.</p>
-                </div>
-              )}
-
-              {dueNow > 0 ? (
-                <>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
-                    Select Payment Method <span className="text-red-500">*</span>
-                  </label>
-                  
-                  <div className="grid grid-cols-1 gap-3 mb-2">
-                    <button
-                      onClick={() => {
-                        setPaymentMethod('uddoktapay');
-                        setPaymentError('');
-                      }}
-                      className={`p-4 border rounded-xl flex items-center justify-center h-16 transition-all ${
-                        paymentMethod === 'uddoktapay' 
-                          ? 'border-primary bg-primary/5 ring-1 ring-primary' 
-                          : 'border-gray-200 dark:border-[#26262d] hover:border-gray-300 dark:border-[#303038] bg-white dark:bg-[#151518]'
-                      }`}
-                    >
-                      <span className="font-semibold text-gray-700 dark:text-gray-200">UddoktaPay</span>
-                    </button>
-                  </div>
-                  
-                  {paymentError && (
-                    <p className="text-red-500 text-xs mt-2">{paymentError}</p>
-                  )}
-                </>
-              ) : (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                  <p className="text-green-800 font-medium flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 mr-2" />
-                    No gateway payment needed. You can complete this using wallet/coupon.
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5">
+                    সাপোর্ট ও ডেলিভারি যোগাযোগের জন্য প্রয়োজন।
                   </p>
                 </div>
               )}
 
-              <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-100 dark:border-[#26262d]">
-                <button 
-                  onClick={() => navigate('/store')}
-                  className="px-6 py-2.5 border border-gray-300 dark:border-[#303038] text-gray-700 dark:text-gray-200 rounded-xl font-medium hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors"
-                >
-                  Back
+              {!requirePhone && user?.email && (
+                <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                  Signed in as <span className="font-medium text-zinc-800 dark:text-zinc-200">{user.email}</span>
+                </p>
+              )}
+
+              {dueNow > 0 ? (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
+                    Gateway <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMethod('uddoktapay');
+                      setPaymentError('');
+                    }}
+                    className={`w-full max-w-md rounded-xl border px-4 py-4 text-left transition-all ${
+                      paymentMethod === 'uddoktapay'
+                        ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
+                        : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
+                    }`}
+                  >
+                    <p className="font-semibold text-zinc-900 dark:text-zinc-100">Bkash, Nagad, Rocket</p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                      Mobile wallets, card & bank (UddoktaPay gateway)
+                    </p>
+                  </button>
+                  {paymentError && <p className="text-red-600 dark:text-red-400 text-sm mt-2 whitespace-pre-wrap">{paymentError}</p>}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/35 px-4 py-3">
+                  <p className="text-sm text-emerald-900 dark:text-emerald-100 font-medium flex items-center gap-2">
+                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    No card payment needed — wallet or coupon covers the total.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <button type="button" onClick={() => navigate('/store')} className={btnOutline}>
+                  Back to store
                 </button>
                 <button
+                  type="button"
                   onClick={handlePayment}
-                  disabled={processing}
-                  className="px-8 py-2.5 bg-gradient-primary text-white rounded-xl font-medium shadow-sm hover:opacity-90 transition-opacity flex items-center disabled:opacity-70 disabled:cursor-not-allowed"
+                  disabled={processing || !detailsDone || (dueNow > 0 && !paymentMethod)}
+                  className={btnPrimary}
                 >
-                  {processing ? (
-                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                  ) : null}
-                  {finalPrice === 0 ? 'Claim Free' : 'Pay Now'}
+                  {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                  {finalPrice === 0 ? 'Claim free' : dueNow === 0 ? 'Complete order' : `Pay ৳${dueNow.toFixed(2)}`}
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column - Order Summary */}
-        <div className="lg:col-span-1">
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none overflow-hidden sticky top-6">
-            <div className="p-6 border-b border-gray-100 dark:border-[#26262d]">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Order Summary</h3>
+        <div className="lg:col-span-2">
+          <div className="rounded-2xl border border-zinc-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden lg:sticky lg:top-6">
+            <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Order summary</h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Prices in ৳ (BDT)</p>
             </div>
-            
-            <div className="p-6 space-y-4">
-              <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-300">
-                <span>Original Price</span>
-                <span>৳{originalPrice.toFixed(2)}</span>
+
+            <div className="p-5 space-y-4">
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="text-zinc-600 dark:text-zinc-400">Plan price</span>
+                <span className="font-medium text-zinc-900 dark:text-zinc-100 tabular-nums">৳{originalPrice.toFixed(2)}</span>
               </div>
-              
-              {discount > 0 && (
-                <div className="flex justify-between items-center text-sm text-green-600">
-                  <span>Discount ({discount}%)</span>
-                  <span>-৳{(originalPrice * (discount / 100)).toFixed(2)}</span>
-                </div>
-              )}
-              
-              <div className="pt-4 border-t border-gray-100 dark:border-[#26262d]">
-                {walletBalance > 0 && (
-                  <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-blue-500/10 dark:border-blue-500/30">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">Wallet Balance: ৳{walletBalance.toFixed(2)}</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextUse = !useWallet;
-                          setUseWallet(nextUse);
-                          if (nextUse) {
-                            setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2));
-                          } else {
-                            setWalletAmount('');
-                          }
-                        }}
-                        className={`px-2.5 py-1 rounded-md text-xs font-bold ${useWallet ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 border border-blue-200'}`}
-                      >
-                        {useWallet ? 'Using Wallet' : 'Use Wallet'}
-                      </button>
-                    </div>
-                    {useWallet && (
-                      <div className="space-y-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max={Math.min(walletBalance, finalPrice)}
-                          step="0.01"
-                          value={walletAmount}
-                          onChange={(e) => setWalletAmount(e.target.value)}
-                          className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white dark:bg-[#111113] dark:border-[#303038]"
-                          placeholder="Enter wallet amount to use"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2))}
-                          className="text-xs font-medium text-blue-700 dark:text-blue-300"
-                        >
-                          Use Max Wallet
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex justify-between items-end">
-                  <span className="text-base font-bold text-gray-900 dark:text-gray-100">Total</span>
-                  <div className="text-right">
-                    <span className="text-3xl font-bold text-primary">৳{finalPrice.toFixed(2)}</span>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">Including VAT & Taxes</p>
-                  </div>
-                </div>
-                {walletDeduction > 0 && (
-                  <div className="mt-3 flex justify-between text-sm">
-                    <span className="text-blue-700 dark:text-blue-300 font-medium">Wallet Used</span>
-                    <span className="text-blue-700 dark:text-blue-300 font-semibold">-৳{walletDeduction.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="mt-2 flex justify-between text-sm">
-                  <span className="text-gray-700 dark:text-gray-300 font-medium">Due Now</span>
-                  <span className="text-gray-900 dark:text-gray-100 font-semibold">৳{dueNow.toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Auto-Renew Option */}
-            {finalPrice > 0 && (
-              <div className="p-5 border-t border-gray-100 dark:border-[#26262d] bg-indigo-50/50 dark:bg-indigo-500/5">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 pr-4">
-                    <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-1 flex items-center">
-                      <Zap className="w-4 h-4 mr-1.5 text-indigo-500" />
-                      Enable Auto-Renewal
-                    </h4>
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      When this subscription expires, automatically renew it by deducting from your Wallet Balance if you have sufficient funds.
-                    </p>
-                  </div>
-                  <button 
-                    onClick={() => setIsAutoRenew(!isAutoRenew)}
-                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isAutoRenew ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-[#303038]'}`}
+
+              <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 p-3">
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
+                  <Ticket className="w-4 h-4 text-indigo-500" />
+                  Coupon
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCouponCode(v);
+                      if (!v.trim()) {
+                        setDiscount(0);
+                        setAppliedCouponId(null);
+                        setCouponError('');
+                      }
+                    }}
+                    placeholder="Code"
+                    className="flex-1 min-w-0 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500/25 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700"
                   >
-                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isAutoRenew ? 'translate-x-5' : 'translate-x-0'}`}></span>
+                    Apply
                   </button>
                 </div>
+                {couponError && <p className="text-red-600 dark:text-red-400 text-xs mt-1.5">{couponError}</p>}
+                {discount > 0 && !couponError && (
+                  <p className="text-emerald-700 dark:text-emerald-400 text-xs mt-1.5 font-medium">Coupon applied (−{discount}%)</p>
+                )}
               </div>
-            )}
-            
-            <div className="p-6 bg-gray-50/50 dark:bg-white/5 border-t border-gray-100 dark:border-[#26262d]">
-              <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                <Ticket className="w-4 h-4 mr-1.5 text-primary" />
-                Have a Coupon?
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={couponCode}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setCouponCode(v);
-                    if (!v.trim()) {
-                      setDiscount(0);
-                      setAppliedCouponId(null);
-                      setCouponError('');
-                    }
-                  }}
-                  placeholder="Enter code"
-                  className="flex-1 border border-gray-200 dark:border-[#26262d] rounded-lg px-3 py-2 text-sm focus:ring-primary focus:border-primary outline-none dark:bg-[#111113] dark:text-gray-100"
-                />
-                <button 
-                  onClick={handleApplyCoupon}
-                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
-                >
-                  Apply
-                </button>
-              </div>
-              {couponError && (
-                <p className="text-red-500 text-xs mt-2">{couponError}</p>
-              )}
+
               {discount > 0 && (
-                <p className="text-green-600 text-xs mt-2">Coupon applied successfully!</p>
+                <div className="flex justify-between text-sm text-emerald-700 dark:text-emerald-400">
+                  <span>Discount</span>
+                  <span className="tabular-nums">−৳{(originalPrice * (discount / 100)).toFixed(2)}</span>
+                </div>
+              )}
+
+              {walletBalance > 0 && finalPrice > 0 && (
+                <div className="rounded-xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/80 dark:bg-sky-950/25 p-3">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                      <Wallet className="w-4 h-4 text-sky-600" />
+                      Wallet · ৳{walletBalance.toFixed(2)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextUse = !useWallet;
+                        setUseWallet(nextUse);
+                        if (nextUse) {
+                          setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2));
+                        } else {
+                          setWalletAmount('');
+                        }
+                      }}
+                      className={`text-xs font-semibold rounded-lg px-2.5 py-1 ${
+                        useWallet ? 'bg-sky-600 text-white' : 'border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200'
+                      }`}
+                    >
+                      {useWallet ? 'On' : 'Use'}
+                    </button>
+                  </div>
+                  {useWallet && (
+                    <div className="space-y-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max={Math.min(walletBalance, finalPrice)}
+                        step="0.01"
+                        value={walletAmount}
+                        onChange={(e) => setWalletAmount(e.target.value)}
+                        className="w-full rounded-lg border border-sky-200 dark:border-sky-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2))}
+                        className="text-xs font-medium text-sky-700 dark:text-sky-300"
+                      >
+                        Use max
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="h-px bg-zinc-200 dark:bg-zinc-800" />
+
+              <div className="flex justify-between items-baseline">
+                <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Order total</span>
+                <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">৳{finalPrice.toFixed(2)}</span>
+              </div>
+              {walletDeduction > 0 && (
+                <div className="flex justify-between text-sm text-sky-800 dark:text-sky-200">
+                  <span>From wallet</span>
+                  <span className="tabular-nums">−৳{walletDeduction.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-baseline rounded-xl bg-indigo-500/10 dark:bg-indigo-950/40 px-3 py-2.5 border border-indigo-200/60 dark:border-indigo-900/50">
+                <span className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">Due now</span>
+                <span className="text-lg font-bold text-indigo-700 dark:text-indigo-300 tabular-nums">৳{dueNow.toFixed(2)}</span>
+              </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">Taxes included where applicable.</p>
+
+              {finalPrice > 0 && (
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30 px-3 py-3 space-y-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-amber-500 shrink-0" aria-hidden />
+                      Auto-renew from wallet
+                    </p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 leading-snug">
+                      When the term ends, we can try to renew using your wallet if the balance covers the price.
+                    </p>
+                  </div>
+                  <div
+                    className="flex rounded-xl border border-zinc-300 dark:border-zinc-600 overflow-hidden bg-white/60 dark:bg-zinc-950/40 p-0.5 gap-0.5"
+                    role="group"
+                    aria-label="Auto-renew"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={!isAutoRenew}
+                      onClick={() => setIsAutoRenew(false)}
+                      className={`flex-1 min-h-[2.75rem] rounded-lg text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900 ${
+                        !isAutoRenew
+                          ? 'bg-zinc-200 text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-50'
+                          : 'text-zinc-500 hover:bg-zinc-100/80 dark:text-zinc-400 dark:hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      Off
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={isAutoRenew}
+                      onClick={() => setIsAutoRenew(true)}
+                      className={`flex-1 min-h-[2.75rem] rounded-lg text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900 ${
+                        isAutoRenew
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-zinc-500 hover:bg-zinc-100/80 dark:text-zinc-400 dark:hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      On
+                    </button>
+                  </div>
+                  <p
+                    className={`text-[11px] leading-snug ${isAutoRenew ? 'text-indigo-700 dark:text-indigo-300' : 'text-zinc-500 dark:text-zinc-400'}`}
+                  >
+                    {isAutoRenew
+                      ? 'Auto-renew is on — we will attempt renewal at the end of the term (if your wallet can cover it).'
+                      : 'Auto-renew is off — you renew manually; nothing will be charged automatically at term end.'}
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -546,5 +603,3 @@ export const Checkout = () => {
     </div>
   );
 };
-
-// Add CreditCard icon to imports since it wasn't there

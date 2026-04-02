@@ -19,7 +19,8 @@ import {
   Inbox,
   X,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Info,
 } from 'lucide-react';
 import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
 
@@ -76,6 +77,7 @@ export const AdobeEmail = () => {
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<{id: number, subject: string, snippet: string, date: string, code: string | null}[]>([]);
+  const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
 
   // Personal Subscriptions state
   const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
@@ -411,37 +413,55 @@ export const AdobeEmail = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleOpenInbox = async (emailAddress: string, password?: string) => {
-    setIsInboxOpen(true);
+  const loadInboxMessages = async (
+    emailAddress: string,
+    password?: string,
+    options?: { closeOnError?: boolean }
+  ): Promise<boolean> => {
+    const closeOnError = options?.closeOnError ?? false;
     setInboxLoading(true);
     try {
       const API_URL = import.meta.env.VITE_API_URL || '';
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       const response = await fetch(`${API_URL}/api/cpanel/inbox`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
+          Authorization: `Bearer ${session?.access_token}`,
         },
-        body: JSON.stringify({ email: emailAddress, password })
+        body: JSON.stringify({ email: emailAddress, password }),
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to connect to email server');
       }
-      
+
       setInboxMessages(data.messages || []);
-      
-    } catch (error: any) {
+      return true;
+    } catch (error: unknown) {
       console.error('Error fetching inbox:', error);
-      alert(error.message || 'Failed to connect to email server');
-      setIsInboxOpen(false);
+      const message = error instanceof Error ? error.message : 'Failed to connect to email server';
+      alert(message);
+      setInboxMessages([]);
+      if (closeOnError) setIsInboxOpen(false);
+      return false;
     } finally {
       setInboxLoading(false);
     }
+  };
+
+  const handleOpenInbox = async (emailAddress: string, password?: string) => {
+    setInboxCredentials({ email: emailAddress, password });
+    setIsInboxOpen(true);
+    await loadInboxMessages(emailAddress, password, { closeOnError: true });
+  };
+
+  const refreshInbox = async () => {
+    if (!inboxCredentials?.email) return;
+    await loadInboxMessages(inboxCredentials.email, inboxCredentials.password, { closeOnError: false });
   };
 
   const filteredEmails = emails.filter(email => 
@@ -500,6 +520,9 @@ export const AdobeEmail = () => {
     'inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-900/50 px-3 py-2 text-sm font-medium text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors';
   const btnPrimary =
     'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors disabled:opacity-50';
+  /** Matches Store / checkout primary CTAs (gradient + shadow) so personal-plan actions feel part of the same system */
+  const btnPersonalPlanCta =
+    'inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary/25 ring-1 ring-white/15 dark:ring-white/10 transition-all hover:opacity-[0.97] hover:shadow-lg hover:shadow-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50';
 
   return (
     <div className="space-y-6 pb-16 max-w-5xl mx-auto">
@@ -511,8 +534,18 @@ export const AdobeEmail = () => {
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight mt-1">
           Adobe access
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-xl">
-          Your pooled Adobe logins, renewal, and inbox—one place. Use copy buttons to paste into Adobe’s sign-in page.
+        <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 max-w-xl leading-relaxed">
+          {activeTab === 'emails' ? (
+            <>
+              Team plans share pooled logins here—renewal, inbox, and copy-to-clipboard for Adobe’s sign-in page.
+            </>
+          ) : (
+            <>
+              Personal plans use{' '}
+              <span className="font-medium text-zinc-800 dark:text-zinc-200">your own email</span> for
+              Adobe. Track renewal below; pay from checkout or enable wallet auto-renew.
+            </>
+          )}
         </p>
       </div>
 
@@ -560,12 +593,6 @@ export const AdobeEmail = () => {
             Personal subscriptions
           </button>
         </div>
-        {activeTab === 'personal' && (
-          <button type="button" onClick={() => setIsRequestModalOpen(true)} className={btnPrimary}>
-            <CreditCard className="w-4 h-4" />
-            Request personal plan
-          </button>
-        )}
         {activeTab === 'emails' && emails.length > 0 && (
           <div className="relative w-full sm:max-w-xs sm:ml-auto">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500 pointer-events-none" />
@@ -878,97 +905,182 @@ export const AdobeEmail = () => {
         )}
       </div>
       ) : (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-            <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Personal Adobe Subscriptions</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Your personal Adobe Creative Cloud subscription requests
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+            <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-zinc-100">Your personal plans</h2>
+                <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 leading-relaxed max-w-lg">
+                  Each card is one subscription tied to <span className="text-zinc-800 dark:text-zinc-200">your Gmail or work email</span>
+                  — not the shared team pool. Order date and renewal are shown in plain language.
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsRequestModalOpen(true)}
+                className={`${btnPersonalPlanCta} w-full sm:w-auto shrink-0`}
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 shadow-inner">
+                  <CreditCard className="w-4 h-4" aria-hidden />
+                </span>
+                New personal plan
+              </button>
             </div>
-            
-            <div className="p-6">
+
+            <div className="p-4 sm:p-6">
               {loading ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <div className="flex justify-center py-14">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
                 </div>
               ) : personalOrders.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-white/10">
-                    <thead className="bg-gray-100/90 dark:bg-zinc-900/80">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Email</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Plan</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Auto-renew</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Ends</th>
-                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 dark:text-zinc-300 uppercase tracking-wide">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white dark:bg-[#151518] divide-y divide-gray-200 dark:divide-white/10">
-                      {personalOrders.map((order) => (
-                        <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-[#1c1c21] transition-colors border-b border-gray-100 dark:border-white/10 last:border-0">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {order.personal_email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                            {order.products?.title} ({order.products?.duration})
-                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Ordered: {format(new Date(order.created_at), 'MMM dd, yyyy')}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <button
-                              onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
-                              disabled={togglingAutoRenewOrderId === order.id}
-                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider transition-opacity ${
-                                order.auto_renew
-                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-400'
-                                  : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400'
-                              } ${togglingAutoRenewOrderId === order.id ? 'opacity-60 cursor-not-allowed' : 'hover:opacity-80'}`}
-                            >
-                              {togglingAutoRenewOrderId === order.id ? 'UPDATING...' : (order.auto_renew ? 'ON' : 'OFF')}
-                            </button>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {(order.status === 'completed' || order.status === 'paid') && order.expiresAt ? (
-                              <div className="flex flex-col">
-                                <span className={`text-sm font-bold flex items-center ${
-                                  order.isExpired ? 'text-red-600' : 'text-green-600'
-                                }`}>
-                                  {order.daysLeft} Days Left
+                <ul className="space-y-4">
+                  {personalOrders.map((order) => {
+                    const isLive = order.status === 'completed' || order.status === 'paid';
+                    return (
+                      <li
+                        key={order.id}
+                        className="rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50/80 dark:bg-zinc-900/35 p-4 sm:p-5"
+                      >
+                        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 flex-1 space-y-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
+                                  isLive
+                                    ? 'border-emerald-800 bg-emerald-950 text-emerald-100'
+                                    : 'border-amber-800 bg-amber-950 text-amber-100'
+                                }`}
+                              >
+                                {isLive ? 'Active' : 'Pending setup'}
+                              </span>
+                              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                Ordered {format(new Date(order.created_at), 'MMM d, yyyy')}
+                              </span>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                Your Adobe login email
+                              </p>
+                              <p className="mt-1 break-all font-mono text-sm sm:text-base text-zinc-900 dark:text-zinc-100">
+                                {order.personal_email}
+                              </p>
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Plan</p>
+                              <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                {order.products?.title ?? 'Adobe'}{' '}
+                                <span className="text-zinc-500 dark:text-zinc-400 font-normal">
+                                  · {order.products?.duration ?? '—'}
                                 </span>
-                                <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center mt-1">
-                                  <Calendar className="w-3 h-3 mr-1" />
-                                  {format(order.expiresAt, 'MMM dd, yyyy')}
-                                </span>
+                              </p>
+                            </div>
+
+                            {isLive && order.expiresAt ? (
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                  Access until
+                                </p>
+                                <p
+                                  className={`mt-1 text-sm font-semibold ${
+                                    order.isExpired ? 'text-red-600 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {order.daysLeft} days left · {format(order.expiresAt, 'MMM d, yyyy')}
+                                </p>
+                                <div className="mt-2 h-1.5 max-w-xs overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                  <div
+                                    className={`h-full rounded-full ${order.isExpired ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                    style={{
+                                      width: `${Math.min(100, Math.max(0, (order.daysLeft / 30) * 100))}%`,
+                                    }}
+                                  />
+                                </div>
                               </div>
                             ) : (
-                              <span className="text-sm text-gray-400 italic">Pending Setup</span>
+                              <p className="text-sm text-amber-800 dark:text-amber-200/90">
+                                We are setting up access for this order. Status updates when payment completes.
+                              </p>
                             )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full border ${
-                              order.status === 'completed' || order.status === 'paid'
-                                ? 'border-emerald-800 bg-emerald-950 text-emerald-100'
-                                : 'border-amber-800 bg-amber-950 text-amber-100'
-                            }`}>
-                              {order.status === 'completed' || order.status === 'paid' ? 'Active' : 'Pending'}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950/40 px-3 py-2.5">
+                              <div>
+                                <p className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Auto-renew (wallet)</p>
+                                <p className="text-xs text-zinc-500 dark:text-zinc-500">
+                                  {order.auto_renew ? 'Charges your balance before expiry' : 'You renew manually'}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={!!order.auto_renew}
+                                disabled={togglingAutoRenewOrderId === order.id}
+                                onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
+                                className={`relative h-7 w-12 shrink-0 self-start sm:ml-auto rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 disabled:opacity-50 ${
+                                  order.auto_renew ? 'bg-indigo-600 dark:bg-indigo-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                }`}
+                              >
+                                {togglingAutoRenewOrderId === order.id ? (
+                                  <Loader2 className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 animate-spin text-white" />
+                                ) : (
+                                  <span
+                                    className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
+                                      order.auto_renew ? 'translate-x-[1.375rem]' : 'translate-x-0.5'
+                                    }`}
+                                  />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:flex-col">
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(order.personal_email, `personal-${order.id}`)}
+                              className={btnOutline}
+                            >
+                              {copiedId === `personal-${order.id}` ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                              ) : (
+                                <Copy className="w-4 h-4" />
+                              )}
+                              Copy email
+                            </button>
+                            <a
+                              href="https://account.adobe.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={btnOutline}
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                              Adobe account
+                            </a>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
               ) : (
-                <div className="text-center py-12">
-                  <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center mx-auto mb-4 border border-gray-100 dark:border-[#26262d]">
-                    <CreditCard className="w-8 h-8 text-gray-300" />
+                <div className="rounded-xl border border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/20 px-6 py-12 text-center">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                    <CreditCard className="h-7 w-7 text-zinc-400" />
                   </div>
-                  <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">No Personal Subscriptions</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm max-w-md mx-auto">
-                    You haven't requested any personal Adobe subscriptions yet.
+                  <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">No personal plans yet</h3>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 max-w-md mx-auto leading-relaxed">
+                    Request a plan with your own email, pay at checkout, then track renewal and auto-renew here.
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setIsRequestModalOpen(true)}
+                    className={`${btnPersonalPlanCta} mt-6 px-6 py-3 text-[15px]`}
+                  >
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 shadow-inner">
+                      <Sparkles className="w-4 h-4" aria-hidden />
+                    </span>
+                    Start a personal plan
+                  </button>
                 </div>
               )}
             </div>
@@ -978,102 +1090,179 @@ export const AdobeEmail = () => {
 
       {/* Personal Subscription Request Modal */}
       {isRequestModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-xl w-full max-w-md flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                Personal Adobe Subscription
-              </h3>
-              <button 
-                onClick={() => setIsRequestModalOpen(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="personal-sub-modal-title"
+            aria-describedby="personal-sub-modal-desc"
+            className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gradient-to-r from-violet-50/90 to-white dark:from-violet-950/40 dark:to-[#151518]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+                    <Sparkles className="w-5 h-5" aria-hidden />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="personal-sub-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">
+                      Personal Adobe subscription
+                    </h3>
+                    <p id="personal-sub-modal-desc" className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                      Use your own email on Adobe. Pick a duration, then pay on the next screen.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsRequestModalOpen(false)}
+                  className="shrink-0 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 dark:hover:bg-white/10 dark:hover:text-gray-200 transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            
-            <form onSubmit={handleRequestSubmit} className="p-6 space-y-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                Subscribe to get your personal Adobe account with your own email.
-              </p>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Your Adobe Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={requestForm.email}
-                  onChange={(e) => setRequestForm({ ...requestForm, email: e.target.value })}
-                  placeholder="your-email@example.com"
-                  className="w-full px-4 py-2 border border-gray-200 dark:border-[#303038] rounded-xl bg-gray-50 dark:bg-white/5 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent outline-none transition-all"
-                />
-                <p className="text-xs text-gray-500 mt-1">This will be your Adobe account email</p>
+            <form onSubmit={handleRequestSubmit} className="p-5 sm:p-6 space-y-5">
+              <div className="flex gap-2 rounded-xl border border-indigo-100/90 dark:border-indigo-500/25 bg-indigo-50/60 dark:bg-indigo-950/25 px-3 py-2.5">
+                <Info className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" aria-hidden />
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Fill in three quick steps below. You can change auto-renew later from your dashboard.
+                </p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Subscription Duration *
+              <div className="space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <label htmlFor="personal-adobe-email" className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    <span className="text-indigo-600 dark:text-indigo-400 font-bold mr-1.5">1</span>
+                    Your Adobe email
+                  </label>
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500">Required</span>
+                </div>
+                <input
+                  id="personal-adobe-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={requestForm.email}
+                  onChange={(e) => setRequestForm({ ...requestForm, email: e.target.value })}
+                  placeholder="you@example.com"
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-zinc-600 rounded-xl bg-white dark:bg-[#1a1a22] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-zinc-500 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none transition-all text-[15px]"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400">This address will be used for your Adobe sign-in.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="personal-adobe-plan" className="text-sm font-semibold text-gray-900 dark:text-gray-100 block">
+                  <span className="text-indigo-600 dark:text-indigo-400 font-bold mr-1.5">2</span>
+                  Plan duration
                 </label>
                 <select
+                  id="personal-adobe-plan"
                   required
                   value={requestForm.productId}
                   onChange={(e) => setRequestForm({ ...requestForm, productId: e.target.value })}
-                  className="w-full px-4 py-2.5 border-2 border-gray-300 dark:border-indigo-500/70 rounded-xl bg-white dark:bg-[#1f1f28] text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary/70 focus:border-primary outline-none transition-all"
+                  className="w-full px-4 py-3 border border-gray-200 dark:border-zinc-600 rounded-xl bg-white dark:bg-[#1a1a22] text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none transition-all text-[15px] cursor-pointer"
                 >
-                  <option value="" className="bg-white text-gray-700 dark:bg-[#1f1f28] dark:text-gray-300">
-                    Select an option
+                  <option value="" className="bg-white text-gray-700 dark:bg-[#1a1a22] dark:text-gray-300">
+                    Choose how long you want access…
                   </option>
                   {personalProducts.map((product) => (
                     <option
                       key={product.id}
                       value={product.id}
-                      className="bg-white text-gray-900 dark:bg-[#1f1f28] dark:text-gray-100"
+                      className="bg-white text-gray-900 dark:bg-[#1a1a22] dark:text-gray-100"
                     >
-                      {product.title} - ৳{product.price} ({product.duration})
+                      {product.title} — ৳{product.price} ({product.duration})
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="flex items-center justify-between py-2 border-t border-gray-100 dark:border-[#26262d] mt-2">
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Auto Renew</p>
-                  <p className="text-xs text-gray-500">Automatically renew using wallet balance</p>
+              <div className="rounded-2xl border border-gray-200 dark:border-zinc-700 bg-gray-50/90 dark:bg-white/[0.04] p-4 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      <span className="text-indigo-600 dark:text-indigo-400 font-bold mr-1.5">3</span>
+                      Auto-renew from wallet
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 max-w-[280px] leading-relaxed">
+                      When the term ends, we can try to charge your wallet if there is enough balance.
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${
+                      requestForm.autoRenew
+                        ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
+                    }`}
+                  >
+                    {requestForm.autoRenew ? 'On' : 'Off'}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setRequestForm({ ...requestForm, autoRenew: !requestForm.autoRenew })}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 dark:focus:ring-offset-[#151518] ${
-                    requestForm.autoRenew ? 'bg-primary' : 'bg-gray-200 dark:bg-[#303038]'
+                <div
+                  className="flex rounded-xl border border-gray-300/80 dark:border-zinc-600 overflow-hidden bg-white dark:bg-[#12121a] p-1 gap-1"
+                  role="group"
+                  aria-label="Auto renew from wallet"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={!requestForm.autoRenew}
+                    onClick={() => setRequestForm({ ...requestForm, autoRenew: false })}
+                    className={`flex-1 min-h-[2.75rem] rounded-lg text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#151518] ${
+                      !requestForm.autoRenew
+                        ? 'bg-zinc-200 text-zinc-900 shadow-inner dark:bg-zinc-600 dark:text-white'
+                        : 'text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/80'
+                    }`}
+                  >
+                    Off
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={requestForm.autoRenew}
+                    onClick={() => setRequestForm({ ...requestForm, autoRenew: true })}
+                    className={`flex-1 min-h-[2.75rem] rounded-lg text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#151518] ${
+                      requestForm.autoRenew
+                        ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/25'
+                        : 'text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800/80'
+                    }`}
+                  >
+                    On
+                  </button>
+                </div>
+                <p
+                  className={`text-[11px] leading-relaxed border-t border-gray-200/80 dark:border-zinc-600/80 pt-3 ${
+                    requestForm.autoRenew ? 'text-emerald-800 dark:text-emerald-300/90' : 'text-gray-500 dark:text-gray-400'
                   }`}
                 >
-                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
-                    requestForm.autoRenew ? 'translate-x-6' : 'translate-x-1'
-                  }`} />
-                </button>
+                  {requestForm.autoRenew
+                    ? 'Enabled: we will try to renew automatically when your plan ends (wallet must cover the price).'
+                    : 'Disabled: you renew yourself; nothing auto-charges at the end of the term.'}
+                </p>
               </div>
 
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={submittingRequest}
-                  className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors flex justify-center items-center"
-                >
-                  {submittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                    <>
-                      <ShoppingBag className="w-4 h-4 mr-2" />
-                      Proceed to Checkout
-                    </>
-                  )}
-                </button>
+              <div className="flex flex-col-reverse sm:flex-row gap-3 pt-1">
                 <button
                   type="button"
                   onClick={() => setIsRequestModalOpen(false)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-white/10 dark:hover:bg-white/20 text-gray-700 dark:text-gray-300 rounded-xl font-medium transition-colors"
+                  className="sm:flex-1 px-4 py-3 rounded-xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-transparent text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
                 >
                   Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingRequest}
+                  className="sm:flex-[1.6] px-4 py-3 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl font-semibold transition-colors flex justify-center items-center gap-2 shadow-md shadow-primary/20"
+                >
+                  {submittingRequest ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-4 h-4" />
+                      Continue to checkout
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -1083,55 +1272,130 @@ export const AdobeEmail = () => {
 
       {/* Inbox Modal */}
       {isInboxOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center bg-gray-50/50 dark:bg-white/5">
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <Inbox className="w-5 h-5 mr-2 text-indigo-600" />
-                Email Inbox
-              </h3>
-              <button 
-                onClick={() => setIsInboxOpen(false)}
-                className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#1c1c21] dark:bg-white/10 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div
+            className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            role="dialog"
+            aria-labelledby="inbox-modal-title"
+            aria-describedby="inbox-modal-desc"
+          >
+            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gradient-to-r from-indigo-50/80 to-white dark:from-indigo-950/40 dark:to-[#151518]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex items-start gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+                    <Inbox className="w-5 h-5" aria-hidden />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="inbox-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">
+                      Verification inbox
+                    </h3>
+                    <p id="inbox-modal-desc" className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all">
+                      {inboxCredentials?.email ?? 'Loading…'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => refreshInbox()}
+                    disabled={inboxLoading || !inboxCredentials?.email}
+                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                    title="Check again for new mail"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${inboxLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsInboxOpen(false);
+                      setInboxCredentials(null);
+                    }}
+                    className="p-2 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+                    aria-label="Close inbox"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+              <div className="mt-4 flex gap-2 rounded-xl border border-indigo-100/80 dark:border-indigo-500/20 bg-white/70 dark:bg-[#1a1a22]/80 px-3 py-2.5 text-left">
+                <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" aria-hidden />
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Use this inbox when Adobe sends a <span className="font-medium text-gray-800 dark:text-gray-200">sign-in or verification code</span>. New mail can take a minute — tap <span className="font-medium">Refresh</span> if you do not see it yet.
+                </p>
+              </div>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50/30 dark:bg-transparent">
-              {inboxLoading ? (
-                <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
-                  <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
-                  <p>Connecting to mail server...</p>
+
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50/50 dark:bg-[#12121a]/50">
+              {inboxLoading && inboxMessages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-14 px-4">
+                  <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Connecting to your mail…</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center max-w-xs">
+                    Fetching the latest messages for this address.
+                  </p>
                 </div>
-              ) : inboxMessages.length > 0 ? (
-                <div className="space-y-3">
-                  {inboxMessages.map((msg) => (
-                    <div key={msg.id} className="bg-white dark:bg-[#151518] border border-gray-200 dark:border-[#26262d] rounded-xl p-4 hover:border-indigo-200 transition-colors shadow-sm">
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-semibold text-gray-900 dark:text-gray-100">{msg.subject}</h4>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-full">
-                          {format(new Date(msg.date), 'MMM d, HH:mm')}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">{msg.snippet}</p>
-                      {msg.code && (
-                        <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3 flex justify-between items-center">
-                          <span className="text-sm text-indigo-800 font-medium">Verification Code:</span>
-                          <span className="text-lg font-mono font-bold text-indigo-700 tracking-wider bg-white dark:bg-[#151518] px-3 py-1 rounded shadow-sm">
-                            {msg.code}
-                          </span>
+              ) : inboxLoading && inboxMessages.length > 0 ? (
+                <div className="flex items-center justify-center gap-2 py-3 text-sm text-indigo-600 dark:text-indigo-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Updating…
+                </div>
+              ) : null}
+
+              {!inboxLoading || inboxMessages.length > 0 ? (
+                <>
+                  {inboxMessages.length > 0 ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-0.5">
+                        Recent messages ({inboxMessages.length})
+                      </p>
+                      {inboxMessages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className="bg-white dark:bg-[#18181f] border border-gray-200 dark:border-[#2e2e38] rounded-xl p-4 shadow-sm hover:border-indigo-300/60 dark:hover:border-indigo-500/40 transition-colors"
+                        >
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-snug pr-2">{msg.subject}</h4>
+                            <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0">
+                              {format(new Date(msg.date), 'MMM d, HH:mm')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">{msg.snippet}</p>
+                          {msg.code && (
+                            <div className="rounded-lg border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/90 dark:bg-indigo-950/35 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide">
+                                Verification code
+                              </span>
+                              <span className="text-xl font-mono font-bold text-indigo-700 dark:text-indigo-300 tracking-[0.2em] bg-white dark:bg-[#151518] px-3 py-1.5 rounded-md shadow-inner border border-indigo-100 dark:border-indigo-900/50">
+                                {msg.code}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-                  <Inbox className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                  <p>No messages found in this inbox.</p>
-                </div>
-              )}
+                  ) : !inboxLoading ? (
+                    <div className="rounded-2xl border border-dashed border-indigo-200/70 dark:border-indigo-500/25 bg-gradient-to-b from-indigo-50/60 to-transparent dark:from-indigo-950/25 dark:to-transparent px-5 py-10 text-center">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                        <Mail className="w-8 h-8 opacity-90" />
+                      </div>
+                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No messages yet</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-sm mx-auto leading-relaxed">
+                        Your inbox is empty right now. After you request a code from Adobe, it should show up here — wait a moment, then use <span className="font-medium text-gray-700 dark:text-gray-300">Refresh</span>.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => refreshInbox()}
+                        disabled={!inboxCredentials?.email}
+                        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-500 transition-colors disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Check again
+                      </button>
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </div>
         </div>

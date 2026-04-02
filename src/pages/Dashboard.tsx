@@ -455,7 +455,7 @@ export const Dashboard = () => {
                   ) : (
                     <>
                       <Wallet className="w-4 h-4 mr-2" />
-                      Recharge via UddoktaPay
+                      Bkash, Nagad, Rocket (UddoktaPay)
                     </>
                   )}
                 </button>
