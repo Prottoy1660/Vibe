@@ -29,6 +29,7 @@ interface UserEmail {
   order_id: string;
   email_slots: number;
   single_device_warning: boolean;
+  order_auto_renew?: boolean;
   email_details: {
     email: string;
     password: string;
@@ -81,6 +82,7 @@ export const AdobeEmail = () => {
   const [personalProducts, setPersonalProducts] = useState<any[]>([]);
   const [requestForm, setRequestForm] = useState({ email: '', productId: '', autoRenew: false });
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [togglingAutoRenewOrderId, setTogglingAutoRenewOrderId] = useState<string | null>(null);
 
   const fetchEmailData = async () => {
     if (!user) return;
@@ -213,6 +215,7 @@ export const AdobeEmail = () => {
             is_active: item.is_active,
             email_slots: item.orders?.products?.email_slots ?? 3,
             single_device_warning: item.orders?.products?.single_device_warning ?? false,
+            order_auto_renew: item.orders?.auto_renew ?? false,
             email_details: {
               email: poolData?.email || 'Unknown',
               password: poolData?.password || 'Unknown'
@@ -453,6 +456,34 @@ export const AdobeEmail = () => {
     navigate(`/checkout/${requestForm.productId}?personal_email=${encodeURIComponent(requestForm.email)}&auto_renew=${requestForm.autoRenew}`);
   };
 
+  const handleToggleAutoRenew = async (orderId: string, currentValue: boolean) => {
+    try {
+      setTogglingAutoRenewOrderId(orderId);
+      const nextValue = !currentValue;
+
+      const { error } = await supabase
+        .from('orders')
+        .update({ auto_renew: nextValue })
+        .eq('id', orderId)
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      setPersonalOrders(prev => prev.map(order => (
+        order.id === orderId ? { ...order, auto_renew: nextValue } : order
+      )));
+
+      setEmails(prev => prev.map(email => (
+        email.order_id === orderId ? { ...email, order_auto_renew: nextValue } : email
+      )));
+    } catch (err: any) {
+      console.error('Failed to toggle auto renew:', err);
+      alert(err.message || 'Failed to update auto-renew setting.');
+    } finally {
+      setTogglingAutoRenewOrderId(null);
+    }
+  };
+
   // Group emails by order_id
   const emailsByOrder = filteredEmails.reduce((acc, email) => {
     const orderId = email.order_id || 'unassigned';
@@ -542,6 +573,7 @@ export const AdobeEmail = () => {
           const slotLimit = firstEmail?.email_slots ?? 3;
           const canGenerate = slotLimit > 1;
           const showDeviceWarning = firstEmail?.single_device_warning ?? false;
+          const orderAutoRenew = firstEmail?.order_auto_renew ?? false;
           
           return (
             <div key={orderId} className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
@@ -565,6 +597,22 @@ export const AdobeEmail = () => {
                 </div>
                 
                 <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                  {!isUnassigned && isActive && (
+                    <button
+                      onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
+                      disabled={togglingAutoRenewOrderId === orderId}
+                      className={`flex items-center px-3 py-1.5 border rounded-lg text-sm font-medium transition-colors ${
+                        orderAutoRenew
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:border-indigo-500/30 dark:text-indigo-300'
+                          : 'border-gray-300 text-gray-700 dark:border-[#303038] dark:text-gray-200 dark:bg-white/5'
+                      }`}
+                    >
+                      {togglingAutoRenewOrderId === orderId ? (
+                        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                      ) : null}
+                      Auto Renew: {orderAutoRenew ? 'ON' : 'OFF'}
+                    </button>
+                  )}
                   <button className="flex items-center px-3 py-1.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors">
                     <PlayCircle className="w-4 h-4 mr-1.5" />
                     Tutorial
@@ -794,13 +842,17 @@ export const AdobeEmail = () => {
                             <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Ordered: {format(new Date(order.created_at), 'MMM dd, yyyy')}</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 inline-flex text-[10px] uppercase font-bold tracking-wider rounded-full ${
-                              order.auto_renew 
-                                ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-400' 
-                                : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400'
-                            }`}>
-                              {order.auto_renew ? 'ON' : 'OFF'}
-                            </span>
+                            <button
+                              onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
+                              disabled={togglingAutoRenewOrderId === order.id}
+                              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider transition-opacity ${
+                                order.auto_renew
+                                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-400'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-400'
+                              } ${togglingAutoRenewOrderId === order.id ? 'opacity-60 cursor-not-allowed' : 'hover:opacity-80'}`}
+                            >
+                              {togglingAutoRenewOrderId === order.id ? 'UPDATING...' : (order.auto_renew ? 'ON' : 'OFF')}
+                            </button>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {(order.status === 'completed' || order.status === 'paid') && order.expiresAt ? (

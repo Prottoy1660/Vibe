@@ -18,6 +18,17 @@ export async function assignEmailForOrder(
   productId: string
 ): Promise<{ success: boolean; emailId?: string; error?: string }> {
   try {
+    const applyCloudAccessFilter = (query: any, withCloudAccess: boolean) => {
+      if (withCloudAccess) {
+        return query.in('cloud_access_type', ['api', 'manual']);
+      }
+
+      // "No Access" has appeared in mixed legacy forms; accept all equivalent values.
+      return query.or(
+        'cloud_access_type.is.null,cloud_access_type.eq.none,cloud_access_type.eq.NO ACCESS,cloud_access_type.eq.no access,cloud_access_type.eq.no_access'
+      );
+    };
+
     // Fetch product config
     const { data: product } = await supabase
       .from('products')
@@ -39,11 +50,7 @@ export async function assignEmailForOrder(
         .eq('status', 'available')
         .is('product_id', null);
 
-      if (withCloudAccess) {
-        query = query.in('cloud_access_type', ['api', 'manual']);
-      } else {
-        query = query.eq('cloud_access_type', 'none');
-      }
+      query = applyCloudAccessFilter(query, withCloudAccess);
 
       const { data: available } = await query.limit(1).single();
 
@@ -53,10 +60,8 @@ export async function assignEmailForOrder(
           .from('emails_pool')
           .select('id')
           .eq('status', 'available');
-          
-        if (withCloudAccess) {
-           fallbackQuery = fallbackQuery.in('cloud_access_type', ['api', 'manual']);
-        }
+
+        fallbackQuery = applyCloudAccessFilter(fallbackQuery, withCloudAccess);
         
         const { data: fallback } = await fallbackQuery.limit(1).single();
         if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
@@ -85,11 +90,7 @@ export async function assignEmailForOrder(
         .lt('current_users', maxUsersPerEmail) // still has room
         .order('current_users', { ascending: false });
 
-      if (withCloudAccess) {
-        partialQuery = partialQuery.in('cloud_access_type', ['api', 'manual']);
-      } else {
-        partialQuery = partialQuery.eq('cloud_access_type', 'none');
-      }
+      partialQuery = applyCloudAccessFilter(partialQuery, withCloudAccess);
 
       const { data: partialEmail } = await partialQuery.limit(1).single();
 
@@ -113,20 +114,14 @@ export async function assignEmailForOrder(
           .eq('status', 'available')
           .is('product_id', null);
 
-        if (withCloudAccess) {
-          freshQuery = freshQuery.in('cloud_access_type', ['api', 'manual']);
-        } else {
-          freshQuery = freshQuery.eq('cloud_access_type', 'none');
-        }
+        freshQuery = applyCloudAccessFilter(freshQuery, withCloudAccess);
 
         const { data: freshEmail } = await freshQuery.limit(1).single();
 
         if (!freshEmail) {
           // Fallback: any available email matching requirements
           let fallbackQuery = supabase.from('emails_pool').select('id').eq('status', 'available');
-          if (withCloudAccess) {
-            fallbackQuery = fallbackQuery.in('cloud_access_type', ['api', 'manual']);
-          }
+          fallbackQuery = applyCloudAccessFilter(fallbackQuery, withCloudAccess);
           const { data: fallback } = await fallbackQuery.limit(1).single();
           if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
           emailId = fallback.id;

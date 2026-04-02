@@ -199,9 +199,10 @@ export const AdminEmails = () => {
   const grouped = groupByDate(emails);
 
   const handleUpdateCloudAccess = async (id: string, currentStatus: string) => {
-    const newStatus = prompt('Update Cloud Access Status (none, api, manual):', currentStatus || 'none');
-    if (!newStatus || !['none', 'api', 'manual'].includes(newStatus)) {
-      if (newStatus) alert('Invalid status. Use none, api, or manual.');
+    const normalizedCurrentStatus = currentStatus === 'manual' ? 'api' : currentStatus || 'none';
+    const newStatus = prompt('Update Cloud Access Status (none, api):', normalizedCurrentStatus);
+    if (!newStatus || !['none', 'api'].includes(newStatus)) {
+      if (newStatus) alert('Invalid status. Use none or api.');
       return;
     }
     
@@ -412,13 +413,12 @@ export const AdminEmails = () => {
                             <button
                               onClick={() => handleUpdateCloudAccess(email.id, email.cloud_access_type || 'none')}
                               className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize cursor-pointer hover:opacity-80 transition-opacity ${
-                                email.cloud_access_type === 'api' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20' :
-                                email.cloud_access_type === 'manual' ? 'bg-purple-100 text-purple-700 dark:bg-purple-500/10 dark:text-purple-300 border border-purple-200 dark:border-purple-500/20' :
+                                (email.cloud_access_type === 'api' || email.cloud_access_type === 'manual') ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 border border-blue-200 dark:border-blue-500/20' :
                                 'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400 border border-gray-200 dark:border-[#303038]'
                               }`}
                               title="Click to update cloud access"
                             >
-                              {email.cloud_access_type || 'none'}
+                              {(email.cloud_access_type === 'manual' ? 'api' : email.cloud_access_type) || 'none'}
                             </button>
                           </td>
                           <td className="py-2.5 px-4">

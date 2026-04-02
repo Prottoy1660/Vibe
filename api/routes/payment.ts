@@ -60,7 +60,14 @@ router.post('/create', async (req, res) => {
             console.error('Error in personal subscription fulfillment (free):', err);
           }
         } else {
-          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          if (!assignment.success) {
+            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
+            return res.status(500).json({
+              success: false,
+              error: assignment.error || 'Failed to assign an email for this order'
+            });
+          }
         }
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
@@ -98,7 +105,14 @@ router.post('/create', async (req, res) => {
             console.error('Error in personal subscription fulfillment (dev):', err);
           }
         } else {
-          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          if (!assignment.success) {
+            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
+            return res.status(500).json({
+              success: false,
+              error: assignment.error || 'Failed to assign an email for this order'
+            });
+          }
         }
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
@@ -179,7 +193,7 @@ router.post('/recharge', async (req, res) => {
 
       return res.json({
         success: true,
-        payment_url: `${baseUrl}/dashboard?recharge=success`
+        payment_url: `${baseUrl}/?recharge=success`
       });
     }
 
@@ -196,8 +210,8 @@ router.post('/recharge', async (req, res) => {
         recharge_amount: amount,
         recharge_id
       },
-      redirect_url: `${baseUrl}/dashboard?recharge=success`,
-      cancel_url: `${baseUrl}/dashboard?recharge=cancelled`,
+      cancel_url: `${baseUrl}/?recharge=cancelled`,
+      redirect_url: `${baseUrl}/?recharge=success`,
       webhook_url: `${baseUrl}/api/payment/webhook`
     };
 
@@ -285,7 +299,14 @@ router.post('/webhook', async (req, res) => {
           }
         } else {
           // Use product-aware email assignment (respects email_slots & max_users_per_email)
-          await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+          if (!assignment.success) {
+            console.error(
+              `[payment/webhook] Email assignment failed for order ${order.id}: ${assignment.error || 'Unknown error'}`
+            );
+            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
+            return res.status(500).json({ error: assignment.error || 'Email assignment failed' });
+          }
         }
 
         // Mark order as completed
