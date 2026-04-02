@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Users, Mail, Clock, AlertTriangle, CheckCircle2, XCircle, Search, Filter, ShieldAlert } from 'lucide-react';
+import { Loader2, Users, Mail, Clock, AlertTriangle, CheckCircle2, XCircle, Search, Filter, ShieldAlert, Zap, ZapOff } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 
 interface UserEmailRecord {
@@ -21,6 +21,7 @@ interface UserEmailRecord {
   orders: {
     created_at: string;
     status: string;
+    auto_renew?: boolean;
     products: {
       duration: string;
     };
@@ -55,6 +56,7 @@ export const AdminUserEmails = () => {
           orders:order_id (
             created_at,
             status,
+            auto_renew,
             products:product_id (duration)
           )
         `)
@@ -150,6 +152,7 @@ export const AdminUserEmails = () => {
           id,
           created_at,
           status,
+          auto_renew,
           personal_email,
           users:user_id (name, email, phone),
           products:product_id (title, duration, is_personal)
@@ -376,12 +379,14 @@ export const AdminUserEmails = () => {
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Adobe Email</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Assigned Date</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiration</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Auto Renew</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {filteredEmails.map((email) => {
                   const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
+                  const autoRenew = !!email.orders?.auto_renew;
                   
                   return (
                     <tr key={email.id} className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${isFaded ? 'bg-gray-50 dark:bg-white/[0.02]' : ''}`}>
@@ -420,6 +425,16 @@ export const AdminUserEmails = () => {
                         )}
                       </td>
                       <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${
+                          autoRenew
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                            : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'
+                        }`}>
+                          {autoRenew ? <Zap className="w-3 h-3" /> : <ZapOff className="w-3 h-3" />}
+                          {autoRenew ? 'ON' : 'OFF'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                           email.computed_status === 'Active' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-800 dark:text-emerald-300' :
                           email.computed_status === 'Expiring Soon' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-800 dark:text-amber-300' :
@@ -435,7 +450,7 @@ export const AdminUserEmails = () => {
                 })}
                 {filteredEmails.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="py-12 text-center text-gray-500 dark:text-gray-400">
                       No records found matching your filters.
                     </td>
                   </tr>
@@ -450,12 +465,14 @@ export const AdminUserEmails = () => {
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Requested Email</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ordered Date</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Expiration</th>
+                  <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Auto Renew</th>
                   <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                 {filteredPersonalSubs.map((sub) => {
                   const isFaded = sub.computed_status === 'Revoked';
+                  const autoRenew = !!sub.auto_renew;
                   
                   return (
                     <tr key={sub.id} className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${isFaded ? 'bg-gray-50 dark:bg-white/[0.02]' : ''}`}>
@@ -494,6 +511,16 @@ export const AdminUserEmails = () => {
                         )}
                       </td>
                       <td className="py-3 px-4">
+                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${
+                          autoRenew
+                            ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
+                            : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'
+                        }`}>
+                          {autoRenew ? <Zap className="w-3 h-3" /> : <ZapOff className="w-3 h-3" />}
+                          {autoRenew ? 'ON' : 'OFF'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
                           sub.computed_status === 'Active' ? 'bg-green-100 dark:bg-emerald-500/10 text-green-800 dark:text-emerald-300' :
                           sub.computed_status === 'Expiring Soon' ? 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-800 dark:text-amber-300' :
@@ -509,7 +536,7 @@ export const AdminUserEmails = () => {
                 })}
                 {filteredPersonalSubs.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="py-12 text-center text-gray-500 dark:text-gray-400">
                       No personal subscriptions found matching your filters.
                     </td>
                   </tr>
