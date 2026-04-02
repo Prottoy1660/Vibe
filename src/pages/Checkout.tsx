@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
+import { getApiBaseUrl } from '../lib/apiBase';
 import { 
   CreditCard, 
   ShieldCheck, 
@@ -185,7 +186,7 @@ export const Checkout = () => {
       createdOrderId = order.id;
 
       // 2. Call backend to process fully wallet/coupon orders OR create gateway checkout for mixed/direct.
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/payment/create`, {
         method: 'POST',
         headers: {

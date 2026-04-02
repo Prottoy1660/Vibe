@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from '../lib/apiBase';
 
 interface Stats {
   totalOrders: number;
@@ -137,7 +138,7 @@ export const Dashboard = () => {
     try {
       if (!user) return;
       
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/payment/recharge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

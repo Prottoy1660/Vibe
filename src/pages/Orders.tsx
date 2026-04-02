@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Search, Filter, ShoppingCart, Loader2, CreditCard } from 'lucide-react';
 import { format } from 'date-fns';
+import { getApiBaseUrl } from '../lib/apiBase';
 
 interface Order {
   id: string;
@@ -98,7 +99,7 @@ export const Orders = () => {
   const handlePayNow = async (orderId: string, amount: number) => {
     try {
       setProcessingId(orderId);
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       
       const response = await fetch(`${API_URL}/api/payment/create`, {
         method: 'POST',
