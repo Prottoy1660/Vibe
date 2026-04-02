@@ -66,7 +66,7 @@ export const Store = () => {
           event_type: 'store_view',
           meta: {},
         });
-      } catch {}
+      } catch { }
     };
     logStoreView();
   }, [user]);
@@ -121,12 +121,12 @@ export const Store = () => {
     // Hide personal products from the main store
     if ((product as any).is_personal) return false;
 
-    const matchesSearch = product.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (product.title_bn && product.title_bn.includes(searchQuery));
-    
+    const matchesSearch = product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (product.title_bn && product.title_bn.includes(searchQuery));
+
     // Simplistic category filter - in a real app this would use a category column
-    const matchesCategory = category === 'adobe' 
-      ? product.title.toLowerCase().includes('adobe') 
+    const matchesCategory = category === 'adobe'
+      ? product.title.toLowerCase().includes('adobe')
       : !product.title.toLowerCase().includes('adobe');
 
     // Currently showing all if search is used, otherwise filter by category
@@ -142,7 +142,7 @@ export const Store = () => {
             event_type: 'checkout_start',
             meta: { product_id: productId },
           });
-        } catch {}
+        } catch { }
       })();
     }
     navigate(`/checkout/${productId}`);
@@ -181,10 +181,16 @@ export const Store = () => {
     setRedeemApplying(true);
     setRedeemError('');
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
       const API_URL = import.meta.env.VITE_API_URL || '';
       const res = await fetch(`${API_URL}/api/redeem/apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({ code: redeemCode.toUpperCase().trim(), user_id: user.id }),
       });
       const data = await res.json();
@@ -210,27 +216,25 @@ export const Store = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Product Store</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">Browse our collection of authentic subscriptions</p>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Category Toggle */}
           <div className="flex p-1 bg-gray-100 dark:bg-white/10 rounded-lg">
             <button
               onClick={() => setCategory('adobe')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                category === 'adobe' 
-                  ? 'bg-white dark:bg-[#151518] text-primary shadow-sm' 
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${category === 'adobe'
+                  ? 'bg-white dark:bg-[#151518] text-primary shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-200'
-              }`}
+                }`}
             >
               Adobe
             </button>
             <button
               onClick={() => setCategory('envato')}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
-                category === 'envato' 
-                  ? 'bg-white dark:bg-[#151518] text-primary shadow-sm' 
+              className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${category === 'envato'
+                  ? 'bg-white dark:bg-[#151518] text-primary shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-200'
-              }`}
+                }`}
             >
               Others
             </button>
@@ -283,7 +287,7 @@ export const Store = () => {
                   </>
                 )}
               </div>
-              
+
               <div className="p-6 flex-1 flex flex-col">
                 <div className="mb-4">
                   <div className="flex justify-between items-start mb-2">
@@ -293,7 +297,7 @@ export const Store = () => {
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{product.description}</p>
                 </div>
-                
+
                 <div className="mt-auto">
                   <div className="flex items-end justify-between mb-4">
                     <div>
@@ -305,7 +309,7 @@ export const Store = () => {
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{product.duration}</p>
                     </div>
                   </div>
-                  
+
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleBuyNow(product.id)}
@@ -406,7 +410,7 @@ export const Store = () => {
 
                     {redeemInfo && (
                       <div className="mt-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl">
-                        <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-2">✅ Valid Code — Grants Access To:</p>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-2">Valid Code — Grants Access To:</p>
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="font-bold text-gray-900 dark:text-gray-100">{redeemInfo.products?.title}</p>
