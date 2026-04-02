@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Loader2, Camera, Mail, Phone, User, Lock, Save, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { setStoredLanguage, type AppLanguage } from '../lib/language';
 
 export const Profile = () => {
   const { user } = useAuth();
@@ -16,6 +17,7 @@ export const Profile = () => {
     password: '',
     avatar_url: ''
   });
+  const [preferredLanguage, setPreferredLanguage] = useState<AppLanguage>('en');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -32,6 +34,9 @@ export const Profile = () => {
         if (error) throw error;
         
         if (data) {
+          const lang = data.preferred_language === 'bn' ? 'bn' : 'en';
+          setPreferredLanguage(lang);
+          setStoredLanguage(lang);
           setFormData({
             name: data.name || '',
             email: data.email || '',
@@ -120,7 +125,8 @@ export const Profile = () => {
         .update({
           name: formData.name,
           phone: formData.phone,
-          email: formData.email // Sync email to public table as well
+          email: formData.email, // Sync email to public table as well
+          preferred_language: preferredLanguage,
         })
         .eq('id', user.id);
 
@@ -257,6 +263,22 @@ export const Profile = () => {
                   />
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1.5">Changing email requires verification.</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">Preferred Language</label>
+                <select
+                  value={preferredLanguage}
+                  onChange={(e) => {
+                    const lang = e.target.value === 'bn' ? 'bn' : 'en';
+                    setPreferredLanguage(lang);
+                    setStoredLanguage(lang);
+                  }}
+                  className="w-full rounded-xl border-gray-200 dark:border-[#26262d] border px-4 py-2.5 text-sm focus:ring-primary focus:border-primary outline-none transition-colors dark:bg-[#111113] dark:text-gray-100"
+                >
+                  <option value="en">English</option>
+                  <option value="bn">Bangla</option>
+                </select>
               </div>
 
               <div>

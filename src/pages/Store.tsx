@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Search, ShoppingBag, Loader2, Gift, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
+import { getStoredLanguage, pickLocalized } from '../lib/language';
 
 interface Product {
   id: string;
@@ -23,6 +24,7 @@ export const Store = () => {
   const [category, setCategory] = useState<'adobe' | 'envato'>('adobe');
   const navigate = useNavigate();
   const { user } = useAuth();
+  const language = getStoredLanguage() || 'en';
 
   // Redeem code state
   const [redeemCode, setRedeemCode] = useState('');
@@ -53,6 +55,20 @@ export const Store = () => {
     fetchProducts();
   }, []);
 
+  useEffect(() => {
+    const logStoreView = async () => {
+      if (!user) return;
+      try {
+        await supabase.from('funnel_events').insert({
+          user_id: user.id,
+          event_type: 'store_view',
+          meta: {},
+        });
+      } catch {}
+    };
+    logStoreView();
+  }, [user]);
+
   const filteredProducts = products.filter(product => {
     // Hide personal products from the main store
     if ((product as any).is_personal) return false;
@@ -70,6 +86,17 @@ export const Store = () => {
   });
 
   const handleBuyNow = (productId: string) => {
+    if (user) {
+      (async () => {
+        try {
+          await supabase.from('funnel_events').insert({
+            user_id: user.id,
+            event_type: 'checkout_start',
+            meta: { product_id: productId },
+          });
+        } catch {}
+      })();
+    }
     navigate(`/checkout/${productId}`);
   };
 
@@ -212,7 +239,9 @@ export const Store = () => {
               <div className="p-6 flex-1 flex flex-col">
                 <div className="mb-4">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">{product.title_bn || product.title}</h3>
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">
+                      {pickLocalized(product.title, product.title_bn, language)}
+                    </h3>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{product.description}</p>
                 </div>

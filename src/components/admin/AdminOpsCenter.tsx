@@ -23,6 +23,10 @@ export const AdminOpsCenter = () => {
   const [riskHours, setRiskHours] = useState(24);
   const [loadingRisk, setLoadingRisk] = useState(false);
   const [runningPolicies, setRunningPolicies] = useState(false);
+  const [runningReminders, setRunningReminders] = useState(false);
+  const [processingQueue, setProcessingQueue] = useState(false);
+  const [healthRows, setHealthRows] = useState<any[]>([]);
+  const [loadingHealth, setLoadingHealth] = useState(false);
 
   const loadSupportSummary = async () => {
     if (!userId.trim()) return;
@@ -69,6 +73,63 @@ export const AdminOpsCenter = () => {
       alert(e?.message || 'Failed to run policies');
     } finally {
       setRunningPolicies(false);
+    }
+  };
+
+  const runReminders = async () => {
+    setRunningReminders(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch('/api/admin/ops/run-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Failed to run reminders');
+      alert(`Reminder queue updated. New queued: ${json.queued}`);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to run reminders');
+    } finally {
+      setRunningReminders(false);
+    }
+  };
+
+  const loadHealth = async () => {
+    setLoadingHealth(true);
+    try {
+      const data = await adminGet('/api/admin/ops/subscription-health?limit=150');
+      setHealthRows(data.rows || []);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to load subscription health');
+    } finally {
+      setLoadingHealth(false);
+    }
+  };
+
+  const processQueue = async () => {
+    setProcessingQueue(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      const res = await fetch('/api/admin/ops/process-notification-queue', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ limit: 200 }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || 'Failed to process queue');
+      alert(`Queue processed\nScanned: ${json.scanned}\nProcessed: ${json.processed}`);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to process notification queue');
+    } finally {
+      setProcessingQueue(false);
     }
   };
 
@@ -150,6 +211,20 @@ export const AdminOpsCenter = () => {
             >
               {runningPolicies ? 'Running...' : 'Run Policies'}
             </button>
+            <button
+              onClick={runReminders}
+              disabled={runningReminders}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm disabled:opacity-60"
+            >
+              {runningReminders ? 'Running...' : 'Run Reminders'}
+            </button>
+            <button
+              onClick={processQueue}
+              disabled={processingQueue}
+              className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-sm disabled:opacity-60"
+            >
+              {processingQueue ? 'Processing...' : 'Process Queue'}
+            </button>
           </div>
         </div>
 
@@ -178,6 +253,53 @@ export const AdminOpsCenter = () => {
           </div>
         ) : (
           <p className="text-sm text-gray-500">Click refresh to load risk metrics.</p>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-[#151518] rounded-xl border border-gray-100 dark:border-[#26262d] p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Subscription Health Score</h3>
+          <button onClick={loadHealth} disabled={loadingHealth} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-sm">
+            {loadingHealth ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
+        {healthRows.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-gray-100 dark:border-[#26262d]">
+                  <th className="py-2 pr-3">User</th>
+                  <th className="py-2 pr-3">Product</th>
+                  <th className="py-2 pr-3">Days Left</th>
+                  <th className="py-2 pr-3">Score</th>
+                  <th className="py-2 pr-3">Label</th>
+                </tr>
+              </thead>
+              <tbody>
+                {healthRows.slice(0, 60).map((r) => (
+                  <tr key={r.order_id} className="border-b border-gray-100 dark:border-[#26262d]">
+                    <td className="py-2 pr-3">{r.user_name || r.user_email}</td>
+                    <td className="py-2 pr-3">{r.product_title}</td>
+                    <td className="py-2 pr-3">{r.days_left}</td>
+                    <td className="py-2 pr-3 font-semibold">{r.score}</td>
+                    <td className="py-2 pr-3">
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${
+                        r.label === 'healthy'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400'
+                          : r.label === 'risk'
+                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+                          : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'
+                      }`}>
+                        {r.label}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Click refresh to load health scores.</p>
         )}
       </div>
     </div>

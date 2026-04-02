@@ -27,6 +27,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -45,7 +46,7 @@ export const Layout = () => {
       if (!user) return;
       const { data } = await supabase
         .from('users')
-        .select('role, is_banned')
+        .select('role, is_banned, preferred_language')
         .eq('id', user.id)
         .single();
       
@@ -57,6 +58,15 @@ export const Layout = () => {
 
       if (data?.role === 'admin') {
         setIsAdmin(true);
+      }
+
+      // Auto language personalization: first-time users inherit browser language.
+      if (!data?.preferred_language) {
+        const detected = detectBrowserLanguage();
+        setStoredLanguage(detected);
+        await supabase.from('users').update({ preferred_language: detected }).eq('id', user.id);
+      } else if (data.preferred_language === 'bn' || data.preferred_language === 'en') {
+        setStoredLanguage(data.preferred_language);
       }
     };
     
@@ -90,6 +100,7 @@ export const Layout = () => {
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
         { name: 'Tutorial & Help Page', href: '/admin?tab=tutorial_help', icon: CircleHelp },
         { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
+        { name: 'Growth Ops', href: '/admin?tab=growth_ops', icon: TrendingUp },
       ]
     },
     {

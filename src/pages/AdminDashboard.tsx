@@ -33,6 +33,7 @@ import { AdminIntelligence } from '../components/admin/AdminIntelligence';
 import { AdminRedeemCodes } from '../components/admin/AdminRedeemCodes';
 import { AdminTutorialHelp } from '../components/admin/AdminTutorialHelp';
 import { AdminOpsCenter } from '../components/admin/AdminOpsCenter';
+import { AdminGrowthOps } from '../components/admin/AdminGrowthOps';
 import { TrendingUp, ShieldAlert } from 'lucide-react';
 
 export const AdminDashboard = () => {
@@ -282,6 +283,7 @@ export const AdminDashboard = () => {
           )}
           {activeTab === 'tutorial_help' && 'Tutorial & Help Page'}
           {activeTab === 'ops' && 'Ops Center'}
+          {activeTab === 'growth_ops' && 'Growth Ops'}
         </h1>
         <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
           <ShieldAlert className="w-5 h-5 text-indigo-500" />
@@ -301,6 +303,7 @@ export const AdminDashboard = () => {
       {activeTab === 'redeem' && <AdminRedeemCodes />}
       {activeTab === 'tutorial_help' && <AdminTutorialHelp />}
       {activeTab === 'ops' && <AdminOpsCenter />}
+      {activeTab === 'growth_ops' && <AdminGrowthOps />}
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
