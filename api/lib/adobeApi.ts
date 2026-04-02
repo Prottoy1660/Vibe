@@ -1,7 +1,4 @@
-import crypto from 'crypto';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import crypto from 'node:crypto';
 
 const API_KEY = process.env.ADOBE_API_KEY || '';
 const BASE_URL = 'https://reseller.adobe.yoga/api/credits-pool/external';
@@ -26,7 +23,8 @@ export async function grantAdobeCloudAccess(email: string, durationMonths: numbe
         'x-timestamp': timestamp,
         'x-signature': signature
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(25000) // 25 second timeout
     });
     
     const text = await res.text();

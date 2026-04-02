@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
-import { grantAdobeCloudAccess } from '../lib/adobeApi';
+import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
 
 dotenv.config();
 
@@ -86,7 +86,8 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
           method: 'GET', // UAPI execute allows GET with params
           headers: {
             'Authorization': `cpanel ${CPANEL_USERNAME}:${CPANEL_API_TOKEN}`
-          }
+          },
+          signal: AbortSignal.timeout(25000) // 25 second timeout
         });
         
         const responseText = await response.text();
