@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Music2, Music4, Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import {
   parseLobbyMusicSettings,
@@ -8,8 +8,6 @@ import {
   shuffleInPlace,
   type ParsedTubeLine,
 } from '../lib/lobbyMusicSettings';
-
-const USER_PAUSED_KEY = 'lobby_music_user_paused';
 
 type YTPlayer = {
   playVideo: () => void;
@@ -80,7 +78,7 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
   const videoIndexRef = useRef(0);
   const inPlaylistAfterVideosRef = useRef(false);
   const playlistOnlyRef = useRef(false);
-  const [fabMode, setFabMode] = useState<'playing' | 'paused' | 'muted'>('muted');
+  const [fabMode, setFabMode] = useState<'playing' | 'muted'>('playing');
 
   const fetchSettings = useCallback(async () => {
     const { data, error } = await supabase.from('system_settings').select('value').eq('key', 'lobby_music').maybeSingle();
@@ -122,13 +120,6 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
     const p = playerRef.current;
     if (!p) return;
     try {
-      const paused = typeof (p as unknown as { getPlayerState?: () => number }).getPlayerState === 'function'
-        ? (p as unknown as { getPlayerState: () => number }).getPlayerState() === 2
-        : false;
-      if (paused) {
-        setFabMode('paused');
-        return;
-      }
       setFabMode(p.isMuted() ? 'muted' : 'playing');
     } catch {
       setFabMode('muted');
@@ -155,8 +146,6 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
     inPlaylistAfterVideosRef.current = false;
     playlistOnlyRef.current = false;
 
-    const userPausedInit = typeof localStorage !== 'undefined' && localStorage.getItem(USER_PAUSED_KEY) === '1';
-
     let cancelled = false;
 
     const boot = async () => {
@@ -175,7 +164,7 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
         modestbranding: 1,
         playsinline: 1,
         rel: 0,
-        mute: 1,
+        mute: 0,
       };
 
       const onStateChange = (e: { data: number; target: YTPlayer }) => {
@@ -219,8 +208,7 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
               onReady: (e) => {
                 try {
                   e.target.setShuffle(true);
-                  if (userPausedInit) e.target.pauseVideo();
-                  else e.target.playVideo();
+                  e.target.playVideo();
                 } catch {
                   /* ignore */
                 }
@@ -239,8 +227,7 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
             playerVars: commonVars,
             events: {
               onReady: (e) => {
-                if (userPausedInit) e.target.pauseVideo();
-                else e.target.playVideo();
+                e.target.playVideo();
                 queueMicrotask(syncFabFromPlayer);
               },
               onStateChange: (ev) => {
@@ -267,26 +254,6 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
       playerRef.current = null;
     };
   }, [active, hostId, settings?.enabled, settings?.urls?.join('\n'), syncFabFromPlayer]);
-
-  const toggleUserPause = () => {
-    const p = playerRef.current;
-    if (!p) return;
-    try {
-      const getPs = (p as unknown as { getPlayerState?: () => number }).getPlayerState;
-      const st = typeof getPs === 'function' ? getPs() : null;
-      if (st === 1) {
-        p.pauseVideo();
-        localStorage.setItem(USER_PAUSED_KEY, '1');
-        setFabMode('paused');
-      } else {
-        p.playVideo();
-        localStorage.removeItem(USER_PAUSED_KEY);
-        setFabMode(p.isMuted() ? 'muted' : 'playing');
-      }
-    } catch {
-      /* ignore */
-    }
-  };
 
   const toggleMute = () => {
     const p = playerRef.current;
@@ -341,23 +308,7 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
               <VolumeX className="h-5 w-5" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={toggleUserPause}
-            title={fabMode === 'paused' ? 'Play lobby music' : 'Stop lobby music'}
-            className="group relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-secondary text-white shadow-lg shadow-primary/35 ring-2 ring-white/30 transition hover:scale-[1.04] hover:shadow-xl hover:shadow-primary/40 dark:ring-white/10"
-          >
-            <span className="absolute inset-0 rounded-2xl bg-white/10 opacity-0 transition group-hover:opacity-100" />
-            {fabMode === 'paused' ? (
-              <Music4 className="relative h-6 w-6 opacity-90" />
-            ) : (
-              <Music2 className={`relative h-6 w-6 ${fabMode === 'playing' ? 'animate-pulse' : ''}`} />
-            )}
-          </button>
         </div>
-        <p className="max-w-[10rem] text-right text-[10px] leading-tight text-gray-500 dark:text-gray-500">
-          Lobby music · YouTube
-        </p>
       </div>
     </>
   );
