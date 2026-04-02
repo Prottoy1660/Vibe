@@ -42,7 +42,7 @@ export const Checkout = () => {
   const [paymentError, setPaymentError] = useState('');
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
-  const [isAutoRenew, setIsAutoRenew] = useState(autoRenewParam === 'false' ? false : true);
+  const [isAutoRenew, setIsAutoRenew] = useState(autoRenewParam === 'true' ? true : false);
 
   useEffect(() => {
     const fetchProductAndUser = async () => {

@@ -79,7 +79,7 @@ export const AdobeEmail = () => {
   const [personalOrders, setPersonalOrders] = useState<any[]>([]);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [personalProducts, setPersonalProducts] = useState<any[]>([]);
-  const [requestForm, setRequestForm] = useState({ email: '', productId: '', autoRenew: true });
+  const [requestForm, setRequestForm] = useState({ email: '', productId: '', autoRenew: false });
   const [submittingRequest, setSubmittingRequest] = useState(false);
 
   const fetchEmailData = async () => {
@@ -928,7 +928,12 @@ export const AdobeEmail = () => {
                   disabled={submittingRequest}
                   className="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors flex justify-center items-center"
                 >
-                  {submittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Submit'}
+                  {submittingRequest ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+                    <>
+                      <ShoppingBag className="w-4 h-4 mr-2" />
+                      Proceed to Checkout
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"

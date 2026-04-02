@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, ShoppingBag, CheckCircle, XCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { Loader2, ShoppingBag, CheckCircle, XCircle, RotateCcw, Trash2, Zap, ZapOff } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Order {
@@ -13,6 +13,7 @@ interface Order {
   total_amount: number;
   created_at: string;
   personal_email?: string;
+  auto_renew?: boolean;
   users?: {
     email: string;
     name: string;
@@ -250,6 +251,7 @@ export const AdminOrders = () => {
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Order Details</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Customer</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Amount & Payment</th>
+                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Auto Renew</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
               </tr>
@@ -280,6 +282,16 @@ export const AdminOrders = () => {
                   <td className="py-3 px-4">
                     <div className="font-semibold text-gray-900 dark:text-gray-100">৳{order.total_amount}</div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">{order.payment_method} - {order.payment_status}</div>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider ${
+                      order.auto_renew 
+                        ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-400' 
+                        : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-500'
+                    }`}>
+                      {order.auto_renew ? <Zap className="w-3 h-3" /> : <ZapOff className="w-3 h-3" />}
+                      {order.auto_renew ? 'ON' : 'OFF'}
+                    </span>
                   </td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${
@@ -337,7 +349,7 @@ export const AdminOrders = () => {
               ))}
               {orders.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={6} className="py-8 text-center text-gray-500 dark:text-gray-400">
                     No orders found.
                   </td>
                 </tr>
