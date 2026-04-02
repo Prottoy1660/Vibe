@@ -14,6 +14,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const UDDOKTAPAY_API_KEY = process.env.UDDOKTAPAY_API_KEY || '';
 const UDDOKTAPAY_BASE_URL = process.env.UDDOKTAPAY_BASE_URL || '';
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 async function requireUser(req: any, res: any, next: any) {
   try {
     const authHeader = req.headers.authorization || '';
@@ -58,6 +62,12 @@ router.post('/create', requireUser, async (req, res) => {
   try {
     const { order_id, full_name, email, frontend_url, wallet_deduction } = req.body;
     if (!order_id) return res.status(400).json({ success: false, message: 'Missing order_id' });
+    if (!full_name || typeof full_name !== 'string' || full_name.trim().length < 2) {
+      return res.status(400).json({ success: false, message: 'Invalid full_name' });
+    }
+    if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+      return res.status(400).json({ success: false, message: 'Invalid email' });
+    }
 
     const user = (req as any).user;
     const { order, productPrice } = await computeOrderPricing(order_id);
@@ -76,6 +86,9 @@ router.post('/create', requireUser, async (req, res) => {
     const requestedWallet = Number(wallet_deduction) || 0;
     const walletDeduction = Math.max(0, Math.min(productPrice, requestedWallet));
     const gatewayAmount = Math.max(0, productPrice - walletDeduction);
+    if (!Number.isFinite(gatewayAmount)) {
+      return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
+    }
 
     // Normalize stored totals (server-side truth)
     try {
@@ -254,13 +267,20 @@ router.post('/recharge', requireUser, async (req, res) => {
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid recharge parameters' });
     }
+    const normalizedAmount = Number(amount);
+    if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0 || normalizedAmount > 100000) {
+      return res.status(400).json({ success: false, message: 'Recharge amount out of allowed range' });
+    }
+    if (email && (typeof email !== 'string' || !isValidEmail(email))) {
+      return res.status(400).json({ success: false, message: 'Invalid email' });
+    }
 
     if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
       console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
       
       const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
       const currentBalance = Number(userData?.wallet_balance) || 0;
-      await supabase.from('users').update({ wallet_balance: currentBalance + Number(amount) }).eq('id', user.id);
+      await supabase.from('users').update({ wallet_balance: currentBalance + normalizedAmount }).eq('id', user.id);
 
       return res.json({
         success: true,
@@ -278,7 +298,7 @@ router.post('/recharge', requireUser, async (req, res) => {
       metadata: {
         is_standalone_recharge: true,
         user_id: user.id,
-        recharge_amount: amount,
+        recharge_amount: normalizedAmount,
         recharge_id
       },
       cancel_url: `${baseUrl}/?recharge=cancelled`,
@@ -318,7 +338,7 @@ router.post('/webhook', async (req, res) => {
   // ----------------------------------------- //
 
   try {
-    const { metadata, status } = req.body;
+    const { metadata, status, amount } = req.body;
     
     const headerApiKey = req.headers['rt-uddoktapay-api-key'];
     if (UDDOKTAPAY_API_KEY && headerApiKey !== UDDOKTAPAY_API_KEY) {
@@ -364,6 +384,19 @@ router.post('/webhook', async (req, res) => {
 
       const walletDeduction = Number(metadata?.wallet_deduction) || 0;
       const orderUserId = metadata?.user_id;
+      const gatewayPaid = Number(amount);
+
+      // If gateway provides amount, ensure it is not lower than expected due amount.
+      const { data: payableOrder } = await supabase
+        .from('orders')
+        .select('id, total_amount')
+        .eq('id', orderId)
+        .single();
+      const expectedTotal = Number(payableOrder?.total_amount) || 0;
+      const expectedGatewayDue = Math.max(0, expectedTotal - walletDeduction);
+      if (Number.isFinite(gatewayPaid) && gatewayPaid + 0.0001 < expectedGatewayDue) {
+        return res.status(400).json({ error: 'Gateway paid amount is lower than expected due amount' });
+      }
 
       const { data: existingOrder } = await supabase
         .from('orders')

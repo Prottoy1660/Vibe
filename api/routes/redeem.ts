@@ -31,6 +31,9 @@ router.post('/validate', async (req, res) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+    if (typeof code !== 'string' || code.trim().length < 4 || code.trim().length > 64) {
+      return res.status(400).json({ success: false, message: 'Invalid code format' });
+    }
 
     const { data, error } = await supabase
       .from('redeem_codes')
@@ -59,6 +62,9 @@ router.post('/apply', requireUser, async (req, res) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ success: false, message: 'Code is required' });
+    if (typeof code !== 'string' || code.trim().length < 4 || code.trim().length > 64) {
+      return res.status(400).json({ success: false, message: 'Invalid code format' });
+    }
     const user = (req as any).user;
 
     // Atomically consume code (locks row + enforces max uses)

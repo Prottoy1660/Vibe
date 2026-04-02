@@ -76,16 +76,32 @@ const strictLimiter = rateLimit({
   message: { success: false, error: 'Too many cPanel requests, please wait and try again' }
 })
 
+const paymentLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many payment requests, please wait and try again' }
+})
+
+const redeemLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many redeem attempts, please wait and try again' }
+})
+
 app.use(globalLimiter)
 
 /**
  * API Routes
  */
 app.use('/api/auth', authRoutes)
-app.use('/api/payment', paymentRoutes)
+app.use('/api/payment', paymentLimiter, paymentRoutes)
 app.use('/api/cpanel', strictLimiter, cpanelRoutes)
 app.use('/api/admin', adminRoutes)
-app.use('/api/redeem', redeemRoutes)
+app.use('/api/redeem', redeemLimiter, redeemRoutes)
 
 /**
  * health
