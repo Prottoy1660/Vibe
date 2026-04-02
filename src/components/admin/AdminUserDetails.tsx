@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { 
   Loader2, ArrowLeft, User, Mail, Phone, Calendar, 
-  ShoppingBag, CreditCard, ShieldAlert, CheckCircle2, 
-  XCircle, Clock, Activity, Zap, Edit2, Save, Camera, Lock, AlertCircle, History
+  ShoppingBag, CreditCard, ShieldCheck, CheckCircle2, 
+  XCircle, Activity, Edit2, Save, Camera, Lock, AlertCircle, History, Sparkles
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
 
@@ -38,6 +38,9 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
     activeSubscriptions: 0,
     totalEmailsGenerated: 0
   });
+
+  /** One section at a time — easier to scan than a 3-column grid */
+  const [detailTab, setDetailTab] = useState<'orders' | 'emails' | 'activity'>('orders');
 
   const fetchUserDetails = async () => {
     setLoading(true);
@@ -300,73 +303,96 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
     );
   }
 
+  const detailTabs = [
+    { id: 'orders' as const, label: 'Orders', short: 'Purchases', icon: ShoppingBag, count: orders.length },
+    { id: 'emails' as const, label: 'Adobe accounts', short: 'Accounts', icon: Mail, count: emails.length },
+    { id: 'activity' as const, label: 'Activity', short: 'Log', icon: History, count: activityLogs.length },
+  ];
+
   return (
-    <div className="space-y-6 animate-in fade-in duration-300">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between bg-white dark:bg-[#151518] p-6 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] gap-4">
-        <div className="flex items-start md:items-center gap-4">
-          <button 
-            onClick={onBack}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-[#1c1c21] dark:bg-white/10 rounded-lg transition-colors text-gray-600 dark:text-gray-300 mt-1 md:mt-0 shrink-0"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          
-          <div className="flex items-center gap-4">
+    <div className="space-y-5 animate-in fade-in duration-300 max-w-6xl mx-auto">
+      {/* Profile — single focused card */}
+      <div className="rounded-2xl border border-gray-200/80 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-gray-100 dark:border-white/5 bg-gradient-to-r from-indigo-50/40 via-transparent to-violet-50/30 dark:from-indigo-950/20 dark:to-transparent">
+          <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            Customer profile
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+            Orders, subscriptions, and assigned Adobe accounts for this user.
+          </p>
+        </div>
+
+        <div className="p-4 sm:p-6 flex flex-col lg:flex-row lg:items-center gap-5">
+          <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-2.5 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 transition-colors shrink-0"
+              aria-label="Back to user list"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+
             <div className="relative group shrink-0">
-              <div className="w-16 h-16 bg-gradient-primary text-white rounded-full flex items-center justify-center font-bold text-2xl shadow-sm overflow-hidden border-2 border-white ring-2 ring-gray-100">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-primary text-white rounded-2xl flex items-center justify-center font-bold text-xl sm:text-2xl shadow-md overflow-hidden ring-2 ring-white dark:ring-[#1a1a1d]">
                 {userProfile.avatar_url ? (
-                  <img src={userProfile.avatar_url} alt={userProfile.name} className="w-full h-full object-cover" />
+                  <img src={userProfile.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (
                   userProfile.name?.charAt(0).toUpperCase() || 'U'
                 )}
               </div>
-              <button 
+              <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"
-                title="Change Avatar"
+                className="absolute inset-0 rounded-2xl flex items-center justify-center bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                title="Change photo"
               >
                 <Camera className="w-5 h-5 text-white" />
               </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                className="hidden" 
-                accept="image/*"
-                onChange={handleAvatarUpload}
-              />
+              <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleAvatarUpload} />
             </div>
-            
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2 flex-wrap">
-                {userProfile.name}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2 gap-y-1">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100 truncate">
+                  {userProfile.name}
+                </h2>
+                <span className="text-xs text-gray-500 dark:text-gray-500 tabular-nums shrink-0 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-white/10">
+                  Joined {format(new Date(userProfile.created_at), 'MMM d, yyyy')}
+                </span>
                 {userProfile.role === 'admin' && (
-                  <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full font-medium">Admin</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200 font-medium">Admin</span>
                 )}
                 {userProfile.is_banned && (
-                  <span className="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full font-medium">Banned</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 font-medium">Banned</span>
                 )}
-              </h2>
-              <div className="flex flex-col sm:flex-row sm:items-center text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 gap-2 sm:gap-4 mt-1">
-                <span className="flex items-center"><Mail className="w-3.5 h-3.5 mr-1.5" /> {userProfile.email}</span>
-                {userProfile.phone && <span className="flex items-center"><Phone className="w-3.5 h-3.5 mr-1.5" /> {userProfile.phone}</span>}
-                <span className="flex items-center sm:hidden"><Calendar className="w-3.5 h-3.5 mr-1.5" /> Joined {format(new Date(userProfile.created_at), 'MMM yyyy')}</span>
+              </div>
+              <div className="mt-2 flex flex-col sm:flex-row sm:flex-wrap gap-x-4 gap-y-1.5 text-sm text-gray-600 dark:text-gray-400">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Mail className="w-4 h-4 shrink-0 text-gray-400" />
+                  <span className="truncate">{userProfile.email}</span>
+                </span>
+                {userProfile.phone && (
+                  <span className="flex items-center gap-1.5">
+                    <Phone className="w-4 h-4 shrink-0 text-gray-400" />
+                    {userProfile.phone}
+                  </span>
+                )}
               </div>
             </div>
           </div>
-        </div>
-        
-        <div className="flex items-center justify-between w-full md:w-auto gap-4">
-          <div className="hidden sm:block text-right text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
-            Joined: {format(new Date(userProfile.created_at), 'MMM dd, yyyy')}
+
+          <div className="flex w-full lg:w-auto lg:shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsEditing(!isEditing)}
+              className="w-full lg:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 shadow-sm transition-colors"
+            >
+              <Edit2 className="w-4 h-4" />
+              {isEditing ? 'Cancel editing' : 'Edit profile'}
+            </button>
           </div>
-          <button 
-            onClick={() => setIsEditing(!isEditing)}
-            className="flex items-center px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors ml-auto md:ml-0"
-          >
-            <Edit2 className="w-4 h-4 mr-2" />
-            {isEditing ? 'Cancel Edit' : 'Edit User'}
-          </button>
         </div>
       </div>
 
@@ -378,11 +404,12 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
       )}
 
       {isEditing && (
-        <div className="bg-white dark:bg-[#151518] rounded-xl p-6 shadow-soft dark:shadow-none border border-indigo-100 mb-6">
-          <h3 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
-            <Edit2 className="w-4 h-4 mr-2 text-indigo-500" />
-            Edit User Profile
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 sm:p-6 shadow-sm dark:shadow-none border border-indigo-200/60 dark:border-indigo-500/20">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-1 flex items-center gap-2">
+            <Edit2 className="w-4 h-4 text-indigo-500" />
+            Edit profile
           </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Update name, contact, or password. Leave password blank to keep the current one.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Full Name</label>
@@ -426,228 +453,277 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
         </div>
       )}
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center">
-          <div className="w-12 h-12 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mr-4">
-            <CreditCard className="w-6 h-6" />
+      {/* At-a-glance metrics — compact strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[
+          { label: 'Total spent', sub: 'Completed & paid orders', value: `৳${stats.totalSpent.toFixed(2)}`, icon: CreditCard, tone: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
+          { label: 'Orders', sub: 'All time', value: String(stats.totalOrders), icon: ShoppingBag, tone: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/30' },
+          { label: 'Active subscriptions', sub: 'Non-replaced seats', value: String(stats.activeSubscriptions), icon: Activity, tone: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30' },
+          { label: 'Adobe accounts', sub: 'Issued to user', value: String(stats.totalEmailsGenerated), icon: Mail, tone: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30' },
+        ].map((row) => (
+          <div
+            key={row.label}
+            className="rounded-xl border border-gray-100 dark:border-[#2a2a32] bg-white dark:bg-[#121214] p-4 flex gap-3 items-start shadow-sm dark:shadow-none"
+          >
+            <div className={`w-10 h-10 rounded-lg ${row.bg} ${row.tone} flex items-center justify-center shrink-0`}>
+              <row.icon className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-500 leading-tight">{row.label}</p>
+              <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 tabular-nums truncate">{row.value}</p>
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 leading-snug">{row.sub}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total Spent</p>
-            <h4 className="text-2xl font-bold text-gray-900 dark:text-gray-100">৳{stats.totalSpent.toFixed(2)}</h4>
-          </div>
-        </div>
-        
-        <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center">
-          <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mr-4">
-            <ShoppingBag className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Total Orders</p>
-            <h4 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalOrders}</h4>
-          </div>
-        </div>
-        
-        <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center">
-          <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center mr-4">
-            <Activity className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Active Subs</p>
-            <h4 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.activeSubscriptions}</h4>
-          </div>
-        </div>
-        
-        <div className="bg-white dark:bg-[#151518] rounded-xl p-5 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center">
-          <div className="w-12 h-12 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center mr-4">
-            <Mail className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Emails Gen.</p>
-            <h4 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalEmailsGenerated}</h4>
-          </div>
-        </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Order History */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-            <div className="p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/5">
-              <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <ShoppingBag className="w-4 h-4 mr-2 text-blue-500" />
-                Purchase History
-              </h3>
-            </div>
-            <div className="p-0">
-              {orders.length > 0 ? (
-                <div className="divide-y divide-gray-100 dark:divide-white/5 max-h-[600px] overflow-y-auto">
-                  {orders.map((order) => (
-                    <div key={order.id} className="p-4 hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="font-medium text-gray-900 dark:text-gray-100 text-sm">{order.products?.title || 'Unknown Product'}</div>
-                        <div className="font-bold text-primary text-sm whitespace-nowrap ml-2">৳{order.total_amount}</div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-xs mt-2">
-                        <div className="flex flex-col gap-1 text-gray-500 dark:text-gray-400 dark:text-gray-500">
-                          <span className="flex items-center"><Calendar className="w-3 h-3 mr-1" /> {format(new Date(order.created_at), 'MMM dd, yyyy HH:mm')}</span>
-                          <span className="flex items-center capitalize"><CreditCard className="w-3 h-3 mr-1" /> Gateway: {order.payment_method}</span>
-                        </div>
-                        <div className="flex flex-col items-end gap-1">
-                          <span className={`px-2 py-0.5 rounded-full font-medium capitalize ${
-                            order.status === 'completed' ? 'bg-green-100 text-green-700' :
-                            order.status === 'paid' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'refunded' ? 'bg-gray-200 text-gray-700 dark:text-gray-200' :
-                            order.status === 'cancelled' ? 'bg-red-100 text-red-700' :
-                            'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {order.status}
-                          </span>
-                          <span className="text-gray-400 dark:text-gray-500 font-mono">ID: {order.id.slice(0, 6)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm">No purchase history found.</div>
-              )}
-            </div>
+      {/* One primary panel — tabbed to reduce clutter */}
+      <div className="rounded-2xl border border-gray-200/80 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+        <div className="p-2 sm:p-3 border-b border-gray-100 dark:border-white/5 bg-gray-50/80 dark:bg-white/[0.02]">
+          <p className="px-2 pb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Details — pick a section</p>
+          <div className="flex flex-wrap gap-2">
+            {detailTabs.map((t) => {
+              const Icon = t.icon;
+              const active = detailTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setDetailTab(t.id)}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                    active
+                      ? 'bg-indigo-600 text-white shadow-sm dark:bg-indigo-500'
+                      : 'bg-white dark:bg-[#1a1a1e] text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-white/10 hover:border-indigo-300 dark:hover:border-indigo-500/40'
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0 opacity-90" />
+                  <span className="hidden sm:inline">{t.label}</span>
+                  <span className="sm:hidden">{t.short}</span>
+                  <span
+                    className={`text-xs tabular-nums px-1.5 py-0.5 rounded-md ${
+                      active ? 'bg-white/20' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-
-          {/* Activity Logs */}
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-            <div className="p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/5">
-              <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <History className="w-4 h-4 mr-2 text-purple-500" />
-                Recent Activity & Changes
-              </h3>
-            </div>
-            <div className="p-0">
-              {activityLogs.length > 0 ? (
-                <div className="divide-y divide-gray-100 dark:divide-white/5 max-h-[400px] overflow-y-auto">
-                  {activityLogs.map((log) => (
-                    <div key={log.id} className="p-4 hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors">
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="font-medium text-gray-900 dark:text-gray-100 text-sm flex items-center">
-                          <span className={`w-2 h-2 rounded-full mr-2 ${
-                            log.action_type === 'admin_update' ? 'bg-purple-500' :
-                            log.action_type === 'profile_update' ? 'bg-blue-500' :
-                            'bg-gray-50 dark:bg-white/50'
-                          }`}></span>
-                          {log.details?.message || log.action_type.replace('_', ' ')}
-                        </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 whitespace-nowrap ml-4">
-                          {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                        </span>
-                      </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 pl-4 mt-1 flex items-center">
-                        <User className="w-3 h-3 mr-1" />
-                        By: {log.changer?.name || 'System'} {log.changer?.role === 'admin' ? '(Admin)' : ''}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm flex flex-col items-center">
-                  <History className="w-8 h-8 text-gray-300 mb-2" />
-                  No recent activity found.
-                </div>
-              )}
-            </div>
-          </div>
-
         </div>
 
-        {/* Right Column - Email Subscriptions */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden">
-            <div className="p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/5">
-              <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <ShieldAlert className="w-4 h-4 mr-2 text-indigo-500" />
-                Generated Adobe Emails & Expirations
-              </h3>
-            </div>
-            
-            <div className="overflow-x-auto">
-              {emails.length > 0 ? (
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
-                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Account Details</th>
-                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Assigned Date</th>
-                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider">Expiration</th>
-                      <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase tracking-wider text-right">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                    {emails.map((email) => {
-                      const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
-                      return (
-                        <tr key={email.id} className={`hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors ${isFaded ? 'opacity-60 bg-gray-50/50 dark:bg-white/5' : ''}`}>
-                          <td className="py-3 px-4">
-                            <div className={`text-sm font-medium ${isFaded ? 'text-gray-500 dark:text-gray-400 dark:text-gray-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>
-                              {email.emails_pool.email}
-                            </div>
-                            <div className="text-xs font-mono text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
-                              {email.emails_pool.password}
-                            </div>
-                            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 font-mono">Order: {email.order_id?.slice(0, 8)}</div>
-                          </td>
-                          <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
-                            {format(new Date(email.assigned_at), 'MMM dd, yyyy')}
-                          </td>
-                          <td className="py-3 px-4">
-                            {email.expires_at ? (
-                              <div className="flex flex-col">
-                                <span className={`text-sm font-bold flex items-center ${
-                                  isFaded ? 'text-gray-400 dark:text-gray-500' :
-                                  email.computed_status === 'Expired' ? 'text-red-600' : 'text-green-600'
-                                }`}>
-                                  {email.days_left} Days Left
-                                </span>
-                                <span className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 flex items-center mt-1">
-                                  <Calendar className="w-3 h-3 mr-1" />
-                                  {format(email.expires_at, 'MMM dd, yyyy')}
-                                </span>
-                                {!isFaded && (
-                                  <div className="w-full bg-gray-200 h-1.5 rounded-full mt-1.5 overflow-hidden max-w-[120px]">
-                                    <div 
-                                      className={`h-full rounded-full transition-all duration-1000 ${email.computed_status === 'Expired' ? 'bg-red-500' : 'bg-green-500'}`} 
-                                      style={{ width: `${Math.min(100, Math.max(0, (email.days_left / 30) * 100))}%` }}
-                                    ></div>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-gray-400 dark:text-gray-500 italic">Unknown</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                              email.computed_status === 'Active' ? 'bg-green-100 text-green-800' :
-                              email.computed_status === 'Expiring Soon' ? 'bg-yellow-100 text-yellow-800' :
-                              email.computed_status === 'Expired' ? 'bg-red-100 text-red-800' :
-                              email.computed_status === 'Replaced' ? 'bg-gray-200 text-gray-600 dark:text-gray-300' :
-                              'bg-orange-100 text-orange-800'
-                            }`}>
-                              {email.computed_status}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+        <div className="p-4 sm:p-6">
+          {detailTab === 'orders' && (
+            <div>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-sky-500" />
+                  Purchase history
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Every order for this customer, newest first.</p>
+              </div>
+              {orders.length > 0 ? (
+                <div className="divide-y divide-gray-100 dark:divide-white/5 rounded-xl border border-gray-100 dark:border-white/5 overflow-hidden max-h-[min(520px,70vh)] overflow-y-auto">
+                  {orders.map((order) => (
+                    <div key={order.id} className="p-4 hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors">
+                      <div className="flex justify-between items-start gap-3 mb-2">
+                        <div className="font-medium text-gray-900 dark:text-gray-100 text-sm">{order.products?.title || 'Unknown product'}</div>
+                        <div className="font-semibold text-primary text-sm whitespace-nowrap">৳{order.total_amount}</div>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-col gap-1 text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 shrink-0" /> {format(new Date(order.created_at), 'MMM d, yyyy · HH:mm')}
+                          </span>
+                          <span className="flex items-center gap-1 capitalize">
+                            <CreditCard className="w-3.5 h-3.5 shrink-0" /> {order.payment_method}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-medium capitalize ${
+                              order.status === 'completed'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                                : order.status === 'paid'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'
+                                  : order.status === 'refunded'
+                                    ? 'bg-gray-200 text-gray-800 dark:bg-zinc-700 dark:text-zinc-200'
+                                    : order.status === 'cancelled'
+                                      ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+                                      : 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                          <span className="text-gray-400 dark:text-gray-500 font-mono text-[10px]">#{order.id.slice(0, 8)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <div className="p-12 text-center flex flex-col items-center justify-center">
-                  <Mail className="w-12 h-12 text-gray-300 mb-3" />
-                  <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm">No emails generated by this user yet.</p>
+                <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/15 bg-gray-50/50 dark:bg-white/[0.02] px-6 py-12 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-sky-100 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 flex items-center justify-center mx-auto mb-3">
+                    <ShoppingBag className="w-6 h-6" />
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">No orders yet</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+                    When this customer completes a purchase, it will appear in this list.
+                  </p>
                 </div>
               )}
             </div>
-          </div>
+          )}
+
+          {detailTab === 'emails' && (
+            <div>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-indigo-500" />
+                  Adobe accounts & expiry
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  Credentials issued from the pool, with subscription window and current status.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-white/5">
+                {emails.length > 0 ? (
+                  <table className="w-full text-left border-collapse min-w-[640px]">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-[#2a2a32] bg-gray-50/90 dark:bg-white/5">
+                        <th className="py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Account</th>
+                        <th className="py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Assigned</th>
+                        <th className="py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Expiry</th>
+                        <th className="py-3 px-3 sm:px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+                      {emails.map((email) => {
+                        const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
+                        return (
+                          <tr
+                            key={email.id}
+                            className={`hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors ${isFaded ? 'opacity-60 bg-gray-50/40 dark:bg-white/[0.02]' : ''}`}
+                          >
+                            <td className="py-3 px-3 sm:px-4 align-top">
+                              <div className={`text-sm font-medium ${isFaded ? 'text-gray-500 line-through dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                                {email.emails_pool.email}
+                              </div>
+                              <div className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-1 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded inline-block">
+                                {email.emails_pool.password}
+                              </div>
+                              <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 font-mono">Order {email.order_id?.slice(0, 8)}</div>
+                            </td>
+                            <td className="py-3 px-3 sm:px-4 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                              {format(new Date(email.assigned_at), 'MMM d, yyyy')}
+                            </td>
+                            <td className="py-3 px-3 sm:px-4">
+                              {email.expires_at ? (
+                                <div className="flex flex-col gap-1">
+                                  <span
+                                    className={`text-sm font-semibold ${
+                                      isFaded ? 'text-gray-400 dark:text-gray-500' : email.computed_status === 'Expired' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+                                    }`}
+                                  >
+                                    {email.days_left} days left
+                                  </span>
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                                    <Calendar className="w-3 h-3 shrink-0" />
+                                    {format(email.expires_at, 'MMM d, yyyy')}
+                                  </span>
+                                  {!isFaded && (
+                                    <div className="w-full bg-gray-200 dark:bg-white/10 h-1.5 rounded-full overflow-hidden max-w-[120px]">
+                                      <div
+                                        className={`h-full rounded-full ${email.computed_status === 'Expired' ? 'bg-red-500' : 'bg-emerald-500'}`}
+                                        style={{ width: `${Math.min(100, Math.max(0, (email.days_left / 30) * 100))}%` }}
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-sm text-gray-400 dark:text-gray-500 italic">Unknown</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 sm:px-4 text-right align-top">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                                  email.computed_status === 'Active'
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
+                                    : email.computed_status === 'Expiring Soon'
+                                      ? 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100'
+                                      : email.computed_status === 'Expired'
+                                        ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
+                                        : email.computed_status === 'Replaced'
+                                          ? 'bg-gray-200 text-gray-700 dark:bg-zinc-700 dark:text-zinc-200'
+                                          : 'bg-orange-100 text-orange-900 dark:bg-orange-900/30 dark:text-orange-100'
+                                }`}
+                              >
+                                {email.computed_status}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="px-6 py-14 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3">
+                      <Mail className="w-6 h-6" />
+                    </div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">No Adobe accounts yet</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                      After an order assigns an email from the pool, you will see it here with expiry and status.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {detailTab === 'activity' && (
+            <div>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <History className="w-4 h-4 text-violet-500" />
+                  Recent activity
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Profile and admin changes recorded for this user.</p>
+              </div>
+              {activityLogs.length > 0 ? (
+                <div className="divide-y divide-gray-100 dark:divide-white/5 rounded-xl border border-gray-100 dark:border-white/5 max-h-[min(480px,65vh)] overflow-y-auto">
+                  {activityLogs.map((log) => (
+                    <div key={log.id} className="p-4 hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors">
+                      <div className="flex justify-between items-start gap-3 mb-1">
+                        <div className="font-medium text-gray-900 dark:text-gray-100 text-sm flex items-start gap-2">
+                          <span
+                            className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                              log.action_type === 'admin_update' ? 'bg-violet-500' : log.action_type === 'profile_update' ? 'bg-sky-500' : 'bg-gray-300 dark:bg-gray-600'
+                            }`}
+                          />
+                          <span>{log.details?.message || log.action_type.replace('_', ' ')}</span>
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 pl-4 flex items-center gap-1">
+                        <User className="w-3 h-3 shrink-0" />
+                        {log.changer?.name || 'System'}
+                        {log.changer?.role === 'admin' ? ' · Admin' : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/15 bg-gray-50/50 dark:bg-white/[0.02] px-6 py-12 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-violet-100 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 flex items-center justify-center mx-auto mb-3">
+                    <History className="w-6 h-6" />
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">No activity logged</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">When admins or the user make changes, entries show up here.</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
