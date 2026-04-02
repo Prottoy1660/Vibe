@@ -43,6 +43,9 @@ export const Checkout = () => {
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
   const [isAutoRenew, setIsAutoRenew] = useState(autoRenewParam === 'true' ? true : false);
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [useWallet, setUseWallet] = useState(false);
+  const [walletAmount, setWalletAmount] = useState('');
 
   useEffect(() => {
     const fetchProductAndUser = async () => {
@@ -62,7 +65,7 @@ export const Checkout = () => {
         if (user) {
           const { data: userData } = await supabase
             .from('users')
-            .select('phone')
+            .select('phone, wallet_balance')
             .eq('id', user.id)
             .single();
             
@@ -71,6 +74,7 @@ export const Checkout = () => {
           } else {
             setPhone(userData.phone);
           }
+          setWalletBalance(Number(userData?.wallet_balance) || 0);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -126,9 +130,17 @@ export const Checkout = () => {
 
   const handlePayment = async () => {
     const totalAmount = product!.price * (1 - discount / 100);
+    const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
+    const safeWalletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, totalAmount));
+    const gatewayAmount = Math.max(0, totalAmount - safeWalletDeduction);
 
-    if (totalAmount > 0 && !paymentMethod) {
+    if (gatewayAmount > 0 && !paymentMethod) {
       setPaymentError('The payment method field is required.');
+      return;
+    }
+
+    if (useWallet && safeWalletDeduction <= 0) {
+      setPaymentError('Enter a valid wallet amount to use.');
       return;
     }
     
@@ -157,10 +169,12 @@ export const Checkout = () => {
         .insert({
           user_id: user.id,
           product_id: product.id,
-          payment_method: totalAmount === 0 ? 'coupon' : paymentMethod,
+          payment_method: gatewayAmount === 0
+            ? (safeWalletDeduction > 0 ? 'wallet' : 'coupon')
+            : (useWallet ? 'wallet+gateway' : paymentMethod),
           total_amount: totalAmount,
-          status: totalAmount === 0 ? 'paid' : 'pending',
-          payment_status: totalAmount === 0 ? 'paid' : 'pending',
+          status: gatewayAmount === 0 ? 'paid' : 'pending',
+          payment_status: gatewayAmount === 0 ? 'paid' : 'pending',
           auto_renew: isAutoRenew,
           personal_email: personalEmail || null
         })
@@ -170,27 +184,7 @@ export const Checkout = () => {
       if (orderError) throw orderError;
       createdOrderId = order.id;
 
-      if (totalAmount === 0) {
-        // Direct assignment logic for 100% free items using the centralized API
-        try {
-          const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ order_id: order.id }),
-          });
-          const assignData = await res.json();
-          if (!res.ok || !assignData.success) {
-            console.error('Failed to assign free email:', assignData.message);
-          }
-        } catch (err) {
-          console.error('Failed to assign free email network error:', err);
-        }
-        
-        navigate(`/adobe-email?payment=success&order_id=${order.id}`);
-        return;
-      }
-
-      // 2. Call backend to get UddoktaPay checkout URL for non-zero amounts
+      // 2. Call backend to process fully wallet/coupon orders OR create gateway checkout for mixed/direct.
       const API_URL = import.meta.env.VITE_API_URL || '';
       const response = await fetch(`${API_URL}/api/payment/create`, {
         method: 'POST',
@@ -199,10 +193,12 @@ export const Checkout = () => {
         },
         body: JSON.stringify({
           order_id: order.id,
-          amount: totalAmount,
+          amount: gatewayAmount,
           full_name: user.user_metadata?.full_name || 'Customer',
           email: user.email,
-          frontend_url: window.location.origin
+          frontend_url: window.location.origin,
+          user_id: user.id,
+          wallet_deduction: safeWalletDeduction
         })
       });
 
@@ -244,6 +240,9 @@ export const Checkout = () => {
 
   const originalPrice = product.price;
   const finalPrice = originalPrice * (1 - discount / 100);
+  const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
+  const walletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, finalPrice));
+  const dueNow = Math.max(0, finalPrice - walletDeduction);
 
   return (
     <div className="space-y-6 pb-12 max-w-5xl mx-auto">
@@ -334,7 +333,7 @@ export const Checkout = () => {
                 </div>
               )}
 
-              {finalPrice > 0 ? (
+              {dueNow > 0 ? (
                 <>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">
                     Select Payment Method <span className="text-red-500">*</span>
@@ -364,7 +363,7 @@ export const Checkout = () => {
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
                   <p className="text-green-800 font-medium flex items-center justify-center">
                     <CheckCircle2 className="w-5 h-5 mr-2" />
-                    100% Discount Applied. No payment required.
+                    No gateway payment needed. You can complete this using wallet/coupon.
                   </p>
                 </div>
               )}
@@ -412,12 +411,65 @@ export const Checkout = () => {
               )}
               
               <div className="pt-4 border-t border-gray-100 dark:border-[#26262d]">
+                {walletBalance > 0 && (
+                  <div className="mb-4 p-3 rounded-lg border border-blue-200 bg-blue-50/60 dark:bg-blue-500/10 dark:border-blue-500/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-blue-800 dark:text-blue-200">Wallet Balance: ৳{walletBalance.toFixed(2)}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextUse = !useWallet;
+                          setUseWallet(nextUse);
+                          if (nextUse) {
+                            setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2));
+                          } else {
+                            setWalletAmount('');
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-xs font-bold ${useWallet ? 'bg-blue-600 text-white' : 'bg-white text-blue-700 border border-blue-200'}`}
+                      >
+                        {useWallet ? 'Using Wallet' : 'Use Wallet'}
+                      </button>
+                    </div>
+                    {useWallet && (
+                      <div className="space-y-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max={Math.min(walletBalance, finalPrice)}
+                          step="0.01"
+                          value={walletAmount}
+                          onChange={(e) => setWalletAmount(e.target.value)}
+                          className="w-full border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white dark:bg-[#111113] dark:border-[#303038]"
+                          placeholder="Enter wallet amount to use"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2))}
+                          className="text-xs font-medium text-blue-700 dark:text-blue-300"
+                        >
+                          Use Max Wallet
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-between items-end">
                   <span className="text-base font-bold text-gray-900 dark:text-gray-100">Total</span>
                   <div className="text-right">
                     <span className="text-3xl font-bold text-primary">৳{finalPrice.toFixed(2)}</span>
                     <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mt-1">Including VAT & Taxes</p>
                   </div>
+                </div>
+                {walletDeduction > 0 && (
+                  <div className="mt-3 flex justify-between text-sm">
+                    <span className="text-blue-700 dark:text-blue-300 font-medium">Wallet Used</span>
+                    <span className="text-blue-700 dark:text-blue-300 font-semibold">-৳{walletDeduction.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="mt-2 flex justify-between text-sm">
+                  <span className="text-gray-700 dark:text-gray-300 font-medium">Due Now</span>
+                  <span className="text-gray-900 dark:text-gray-100 font-semibold">৳{dueNow.toFixed(2)}</span>
                 </div>
               </div>
             </div>

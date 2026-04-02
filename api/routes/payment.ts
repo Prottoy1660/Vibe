@@ -26,7 +26,7 @@ router.post('/create', async (req, res) => {
   // ----------------------------------------- //
 
   try {
-    const { order_id, amount, full_name, email, frontend_url } = req.body;
+    const { order_id, amount, full_name, email, frontend_url, user_id, wallet_deduction } = req.body;
 
     // Dynamically get the base URL:
     // 1. Exact origin reported by the browser checkout page (Most reliable)
@@ -38,6 +38,17 @@ router.post('/create', async (req, res) => {
     // Handle 100% discount / free orders
     if (amount === 0 || amount === '0') {
       console.log(`Processing free order: ${order_id}`);
+
+      // If this order used wallet balance (full wallet payment), deduct it now.
+      if (user_id && Number(wallet_deduction) > 0) {
+        const deduction = Number(wallet_deduction);
+        const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user_id).single();
+        const currentBalance = Number(userData?.wallet_balance) || 0;
+        if (currentBalance < deduction) {
+          return res.status(400).json({ success: false, message: 'Insufficient wallet balance.' });
+        }
+        await supabase.from('users').update({ wallet_balance: currentBalance - deduction }).eq('id', user_id);
+      }
       
       const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
       if (order) {
@@ -131,7 +142,9 @@ router.post('/create', async (req, res) => {
       metadata: {
         order_id,
         is_recharge: req.body.is_recharge || false,
-        recharge_amount: req.body.recharge_amount || 0
+        recharge_amount: req.body.recharge_amount || 0,
+        user_id: user_id || null,
+        wallet_deduction: Number(wallet_deduction) || 0
       },
       redirect_url: `${baseUrl}/adobe-email?payment=success`,
       cancel_url: `${baseUrl}/store?payment=cancelled`,
@@ -289,6 +302,40 @@ router.post('/webhook', async (req, res) => {
       const orderId = metadata?.order_id;
       if (!orderId) {
         return res.status(400).json({ error: 'Missing order_id for order payment webhook' });
+      }
+
+      const walletDeduction = Number(metadata?.wallet_deduction) || 0;
+      const orderUserId = metadata?.user_id;
+
+      const { data: existingOrder } = await supabase
+        .from('orders')
+        .select('id, status, payment_status')
+        .eq('id', orderId)
+        .single();
+
+      // Idempotency guard for repeated callbacks.
+      if (existingOrder?.payment_status === 'paid' && existingOrder?.status === 'completed') {
+        return res.status(200).json({ received: true });
+      }
+
+      // For mixed checkout, deduct wallet part only after gateway confirms completion.
+      if (walletDeduction > 0 && orderUserId) {
+        const { data: userData } = await supabase
+          .from('users')
+          .select('wallet_balance')
+          .eq('id', orderUserId)
+          .single();
+        const currentBalance = Number(userData?.wallet_balance) || 0;
+        if (currentBalance < walletDeduction) {
+          return res.status(400).json({ error: 'Insufficient wallet balance during mixed-payment settlement' });
+        }
+        const { error: walletUpdateError } = await supabase
+          .from('users')
+          .update({ wallet_balance: currentBalance - walletDeduction })
+          .eq('id', orderUserId);
+        if (walletUpdateError) {
+          throw walletUpdateError;
+        }
       }
       
       const { error: updateError } = await supabase
