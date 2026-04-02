@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getLastApiDebug, postJsonWithFallback } from '../lib/apiClient';
-import { isPhoneOptionalAtCheckout } from '../lib/authProviderLabels';
 import {
   CreditCard,
   ShieldCheck,
@@ -74,14 +73,12 @@ export const Checkout = () => {
             .eq('id', user.id)
             .single();
 
-          const sessionProvider = user.app_metadata?.provider as string | undefined;
-          const oauthSkipsPhone = isPhoneOptionalAtCheckout(sessionProvider, userData?.signup_auth_provider);
-
           if (userData?.phone) {
             setPhone(userData.phone);
             setRequirePhone(false);
           } else {
-            setRequirePhone(!oauthSkipsPhone);
+            // Always require phone — including Google / Facebook OAuth users
+            setRequirePhone(true);
           }
           setWalletBalance(Number(userData?.wallet_balance) || 0);
         }
