@@ -63,7 +63,7 @@ export const Login = () => {
       if (authError) throw authError;
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session could not be established. Try again.');
-      navigate('/', { replace: true });
+      navigate('/app', { replace: true });
     } catch (err: any) {
       setError(err.message || 'Invalid login credentials');
     } finally {

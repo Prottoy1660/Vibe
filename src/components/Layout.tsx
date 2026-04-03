@@ -135,7 +135,7 @@ export const Layout = () => {
       ]
     }
   ] : [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+    { name: 'Dashboard', href: '/app', icon: LayoutDashboard },
     {
       name: 'Purchases',
       items: [
@@ -163,7 +163,7 @@ export const Layout = () => {
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
-        <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+        <Link to="/app" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
             Vibe
           </span>
@@ -189,7 +189,7 @@ export const Layout = () => {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="hidden md:flex h-16 items-center px-6 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
-          <Link to="/" className="flex flex-col hover:opacity-80 transition-opacity">
+          <Link to="/app" className="flex flex-col hover:opacity-80 transition-opacity">
             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
               Vibe
             </span>
