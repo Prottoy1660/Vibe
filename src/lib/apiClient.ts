@@ -192,14 +192,20 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
         // If we get 405, it usually means this deployment doesn't support the method for the endpoint.
         // Don't cache that base as preferred; allow retry on next candidates.
         if (typeof window !== 'undefined' && res.status !== 405) window.localStorage.setItem('api_base_url', base);
-        const message = data?.message || data?.error || `Request failed (${res.status})`;
+        const rid = res.headers.get('x-request-id');
+        let message = data?.message || data?.error || `Request failed (${res.status})`;
+        message = `${message} [${path}]`;
+        if (res.status === 405 && !rid) {
+          message +=
+            ' — If this persists, your reverse proxy may block POST to /api. Run API+SPA in one Node service (SERVE_STATIC_SPA=1) or fix Coolify routing.';
+        }
         saveDebug({
           at: new Date().toISOString(),
           base,
           path,
           ok: false,
           status: res.status,
-          request_id: res.headers.get('x-request-id'),
+          request_id: rid,
           message
         });
         const e: any = new Error(message);

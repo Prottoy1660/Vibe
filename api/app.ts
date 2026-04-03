@@ -13,6 +13,7 @@ import path from 'path'
 import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
+import { existsSync } from 'fs'
 import authRoutes from './routes/auth.js'
 import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
@@ -155,6 +156,31 @@ app.use(
 )
 
 /**
+ * Optional: serve Vite `dist/` from the same Node process (Coolify single service).
+ * Set SERVE_STATIC_SPA=1 and ensure `dist/` exists next to the built `api/` output.
+ * Avoids reverse-proxy misroutes where GET /api/health hits Node but POST /api/* returns 405.
+ */
+if (process.env.SERVE_STATIC_SPA === '1') {
+  const distPath = (() => {
+    if (process.env.SPA_DIST_PATH) {
+      return path.resolve(process.cwd(), process.env.SPA_DIST_PATH)
+    }
+    const siblingDist = path.join(__dirname, '../dist')
+    const parentAsDist = path.join(__dirname, '..')
+    if (existsSync(path.join(siblingDist, 'index.html'))) return siblingDist
+    if (existsSync(path.join(parentAsDist, 'index.html'))) return parentAsDist
+    return siblingDist
+  })()
+  app.use(express.static(distPath, { index: false }))
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/api')) return next()
+    res.sendFile(path.join(distPath, 'index.html'), (err) => {
+      if (err) next(err)
+    })
+  })
+}
+
+/**
  * error handler middleware
  */
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
@@ -168,10 +194,14 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
 })
 
 /**
- * 404 handler
+ * 404 handler (API only — non-API GET is handled by SERVE_STATIC_SPA catch-all above)
  */
 app.use((req: Request, res: Response) => {
   const requestId = (res.locals as any)?.requestId;
+  if (!req.path.startsWith('/api')) {
+    res.status(404).type('text/plain').send('Not found')
+    return
+  }
   res.status(404).json({
     success: false,
     error: 'API not found',
