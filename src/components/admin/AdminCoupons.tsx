@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Ticket, Plus, Save, Search, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, Ticket, Plus, Save, Search, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Coupon {
@@ -99,6 +99,18 @@ export const AdminCoupons = () => {
       fetchCoupons();
     } catch (error) {
       console.error('Error updating coupon:', error);
+    }
+  };
+
+  const deleteCoupon = async (id: string) => {
+    if (!window.confirm('Permanently delete this coupon? This cannot be undone. Orders using it will keep running but coupon reference becomes null.')) return;
+    try {
+      const { error } = await supabase.from('coupons').delete().eq('id', id);
+      if (error) throw error;
+      fetchCoupons();
+    } catch (error: any) {
+      console.error('Error deleting coupon:', error);
+      alert(error?.message || 'Failed to delete coupon');
     }
   };
 
@@ -445,17 +457,28 @@ export const AdminCoupons = () => {
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <button 
-                      onClick={() => toggleStatus(coupon.id, coupon.is_active)}
-                      className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ml-auto transition-colors ${
-                        coupon.is_active
-                          ? 'text-red-600 dark:text-red-400 bg-red-50/60 dark:bg-red-900/20 hover:bg-red-50 dark:hover:bg-red-900/30'
-                          : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-900/20 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
-                      }`}
-                      type="button"
-                    >
-                      {coupon.is_active ? 'Deactivate' : 'Activate'}
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => toggleStatus(coupon.id, coupon.is_active)}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                          coupon.is_active
+                            ? 'text-red-600 dark:text-red-400 bg-red-50/60 dark:bg-red-900/20 hover:bg-red-50 dark:hover:bg-red-900/30'
+                            : 'text-emerald-600 dark:text-emerald-400 bg-emerald-50/60 dark:bg-emerald-900/20 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
+                        }`}
+                        type="button"
+                      >
+                        {coupon.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+
+                      <button
+                        onClick={() => deleteCoupon(coupon.id)}
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                        title="Delete coupon"
+                        type="button"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

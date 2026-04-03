@@ -73,6 +73,7 @@ export const Dashboard = () => {
     const fetchDashboardData = async () => {
       if (!user) return;
 
+      let didRedirect = false;
       try {
         // First check if user is an admin
         const { data: userData } = await supabase
@@ -82,6 +83,7 @@ export const Dashboard = () => {
           .single();
 
         if (userData?.role === 'admin') {
+          didRedirect = true;
           navigate('/admin', { replace: true });
           return;
         }
@@ -131,7 +133,8 @@ export const Dashboard = () => {
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
-        setLoading(false);
+        // If we redirected to admin, keep loading true to avoid showing customer dashboard UI briefly.
+        if (!didRedirect) setLoading(false);
       }
     };
 
