@@ -125,7 +125,6 @@ export const Layout = () => {
         { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
         { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
         { name: 'Growth Ops', href: '/admin?tab=growth_ops', icon: TrendingUp },
-        { name: 'Landing Page', href: '/admin?tab=landing_page', icon: Megaphone },
       ]
     },
     {
