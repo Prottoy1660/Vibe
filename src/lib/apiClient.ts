@@ -149,7 +149,9 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
 
       if (!res.ok) {
         // If server responded, keep base cached (endpoint exists).
-        if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
+        // If we get 405, it usually means this deployment doesn't support the method for the endpoint.
+        // Don't cache that base as preferred; allow retry on next candidates.
+        if (typeof window !== 'undefined' && res.status !== 405) window.localStorage.setItem('api_base_url', base);
         const message = data?.message || data?.error || `Request failed (${res.status})`;
         saveDebug({
           at: new Date().toISOString(),
@@ -194,7 +196,13 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
         msg.includes('networkerror') ||
         msg.includes('network error') ||
         msg.includes('load failed');
-      if (!isNetwork) break;
+      const isMethodMismatch =
+        msg.includes('405') ||
+        msg.includes('method not allowed') ||
+        msg.includes('not allowed');
+
+      // If method is not supported on this base, continue trying the next candidate.
+      if (!isNetwork && !isMethodMismatch) break;
     }
   }
 
