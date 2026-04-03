@@ -132,15 +132,15 @@ export const Register = () => {
   };
 
   return (
-    <div className={`min-h-screen flex overflow-hidden relative selection:bg-indigo-500/30 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
-      <div className="absolute inset-0 z-0">
+    <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-indigo-500/30 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
+      <div className="absolute inset-0 z-0 pointer-events-none">
         <div className={`absolute top-0 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-purple-600/20 mix-blend-screen' : 'bg-purple-500/15 mix-blend-multiply'}`} />
         <div className={`absolute bottom-1/4 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-indigo-600/20 mix-blend-screen' : 'bg-indigo-500/15 mix-blend-multiply'}`} />
         <div className={`absolute top-1/2 right-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-fuchsia-600/20 mix-blend-screen' : 'bg-fuchsia-500/15 mix-blend-multiply'}`} />
         <div className={`absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] ${isDark ? 'opacity-20 mix-blend-overlay' : 'opacity-10 mix-blend-multiply'}`}></div>
       </div>
 
-      <div className={`hidden lg:flex lg:w-1/2 relative items-center justify-center transition-colors duration-300 ${isDark ? 'border-r border-white/5 bg-[#050505]' : 'border-r border-slate-200 bg-white/70'}`}>
+      <div className={`hidden lg:flex lg:w-1/2 h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden relative items-center justify-center transition-colors duration-300 ${isDark ? 'border-r border-white/5 bg-[#050505]' : 'border-r border-slate-200 bg-white/70'}`}>
         <div className={`absolute inset-0 bg-[url('https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=2000&auto=format&fit=crop')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-b from-[#050505] via-transparent to-[#050505]' : 'bg-gradient-to-b from-white via-white/60 to-slate-100'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-l from-[#0A0A0A] to-transparent' : 'bg-gradient-to-l from-slate-50 via-slate-50/85 to-transparent'}`}></div>
@@ -149,18 +149,18 @@ export const Register = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.9, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
-          className="relative z-10 w-full max-w-md px-8 py-10 sm:px-12 lg:py-12"
+          className="relative z-10 w-full max-w-[500px] px-6 lg:px-8 py-10 lg:py-12"
         >
           <AuthCalmSidePanel variant="register" isDark={isDark} />
         </motion.div>
       </div>
 
-      <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 sm:px-16 lg:px-24 xl:px-32 z-10 relative">
+      <div className="w-full lg:w-1/2 h-[100dvh] lg:h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden flex flex-col px-6 sm:px-16 lg:px-24 xl:px-32 z-10 relative">
         <motion.div 
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="max-w-md w-full mx-auto"
+          className="max-w-md w-full mx-auto my-auto py-12 lg:py-16"
         >
           <div className="mb-8 flex justify-end">
             <button
@@ -206,7 +206,7 @@ export const Register = () => {
 
             <div className="space-y-4">
               <motion.div 
-                className={`relative rounded-2xl border transition-all duration-300 ${
+                className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'name' 
                     ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.1)]' 
                     : isDark
@@ -232,7 +232,7 @@ export const Register = () => {
               </motion.div>
 
               <motion.div 
-                className={`relative rounded-2xl border transition-all duration-300 ${
+                className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'email' 
                     ? 'border-purple-500 bg-purple-500/5 shadow-[0_0_20px_rgba(168,85,247,0.1)]' 
                     : isDark
@@ -262,7 +262,7 @@ export const Register = () => {
               </p>
 
               <motion.div 
-                className={`relative rounded-2xl border transition-all duration-300 ${
+                className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'phone' 
                     ? 'border-fuchsia-500 bg-fuchsia-500/5 shadow-[0_0_20px_rgba(217,70,239,0.1)]' 
                     : isDark
@@ -288,7 +288,7 @@ export const Register = () => {
               </motion.div>
 
               <motion.div 
-                className={`relative rounded-2xl border transition-all duration-300 ${
+                className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'password' 
                     ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.1)]' 
                     : isDark

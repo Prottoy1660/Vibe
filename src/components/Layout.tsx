@@ -162,12 +162,12 @@ export const Layout = () => {
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
-        <div className="flex items-center space-x-2">
+        <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
             Vibe
           </span>
           <span className="text-xs text-gray-500 dark:text-gray-400">Access</span>
-        </div>
+        </Link>
         <div className="flex items-center gap-2">
           <button 
             onClick={toggleTheme}
@@ -188,14 +188,14 @@ export const Layout = () => {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="hidden md:flex h-16 items-center px-6 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
-          <div className="flex flex-col">
+          <Link to="/" className="flex flex-col hover:opacity-80 transition-opacity">
             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
               Vibe
             </span>
             <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium tracking-widest uppercase -mt-1">
               Access
             </span>
-          </div>
+          </Link>
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden">

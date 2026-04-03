@@ -3,18 +3,26 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { 
   ShoppingBag, 
-  DollarSign, 
   CreditCard, 
   Wallet,
   LogOut,
   Info,
   Clock,
-  Plus
+  Plus,
+  Sparkles,
+  Infinity as InfinityIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
+import {
+  IllustratorMark,
+  PhotoshopMark,
+  PremiereMark,
+  AfterEffectsMark,
+  LightroomMark,
+} from '../components/auth/AdobeCreativeSuiteIcons';
 import { postJsonWithFallback } from '../lib/apiClient';
 
 interface Stats {
@@ -31,6 +39,12 @@ interface Notice {
   type: string;
   created_at: string;
 }
+
+const TakaIcon = ({ className }: { className?: string }) => (
+  <span className={`flex items-center justify-center font-bold text-[1.35rem] leading-none ${className}`}>
+    ৳
+  </span>
+);
 
 export const Dashboard = () => {
   const { user, signOut } = useAuth();
@@ -172,7 +186,7 @@ export const Dashboard = () => {
       title: 'Total Spent',
       value: `৳${stats.totalSpent.toFixed(2)}`,
       caption: 'Total amount spent',
-      icon: DollarSign,
+      icon: TakaIcon,
       color: 'text-green-500',
       bgColor: 'bg-green-100',
       waveColor: '#22C55E',
@@ -284,36 +298,136 @@ export const Dashboard = () => {
 
       {/* Promo Banners */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-48 relative bg-gradient-to-br from-primary to-secondary p-6 text-white flex flex-col justify-center">
-          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-white dark:bg-[#151518] opacity-10 rounded-full blur-2xl"></div>
-          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-32 h-32 bg-white dark:bg-[#151518] opacity-10 rounded-full blur-xl"></div>
+        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-full min-h-[12rem] relative bg-gradient-to-br from-primary to-secondary p-6 sm:p-8 text-white flex flex-col md:flex-row items-center justify-between gap-8 md:gap-4">
+          <div className="absolute top-0 right-0 -mt-20 -mr-10 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl mix-blend-overlay pointer-events-none"></div>
+          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-purple-900 opacity-30 rounded-full blur-2xl pointer-events-none"></div>
           
-          <div className="relative z-10">
-            <p className="text-sm font-medium mb-2 opacity-90">Bangladesh's Trusted Source For Authentic Subscriptions</p>
-            <h3 className="text-2xl font-bold mb-4">Vibe Access x Adobe</h3>
-            <div className="flex space-x-2">
-              {['Ai', 'Ps', 'Pr', 'Ae', 'Lr'].map(icon => (
-                <div key={icon} className="w-8 h-8 rounded-md bg-white/20 flex items-center justify-center font-bold text-xs backdrop-blur-sm border border-white/30">
-                  {icon}
-                </div>
-              ))}
+          <div className="relative z-10 w-full md:w-3/5 flex flex-col justify-center">
+            <span className="inline-block px-3 py-1 mb-4 text-[10px] w-fit uppercase tracking-widest font-bold bg-white/10 rounded-full backdrop-blur-md border border-white/20 text-white shadow-sm">
+              Official Partner Perks
+            </span>
+            <h3 className="text-3xl sm:text-4xl font-black mb-3 tracking-tight flex items-center flex-wrap gap-2">
+              Vibe <span className="font-light text-white/50 font-serif italic">×</span> Adobe
+            </h3>
+            <p className="text-sm font-medium text-white/80 max-w-md leading-relaxed hidden sm:block">
+              Bangladesh's trusted source for authentic creative subscriptions. Everything a professional needs.
+            </p>
+          </div>
+
+          <div className="relative z-10 w-full md:w-2/5 flex items-center justify-center min-h-[140px] perspective-1000">
+            <div className="relative w-40 h-36">
+              {/* Central Hero Icon - Photoshop */}
+              <motion.div 
+                className="absolute inset-0 m-auto w-16 h-16 z-30 drop-shadow-2xl"
+                animate={{ y: [-4, 4, -4] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <PhotoshopMark className="w-full h-full rounded-2xl ring-1 ring-white/10 shadow-xl" />
+              </motion.div>
+
+              {/* Top Left - Illustrator */}
+              <motion.div 
+                className="absolute top-0 left-2 w-11 h-11 z-20 drop-shadow-xl"
+                animate={{ y: [0, -5, 0], rotate: [-8, -12, -8] }}
+                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+              >
+                <IllustratorMark className="w-full h-full rounded-xl ring-1 ring-white/20 shadow-lg" />
+              </motion.div>
+
+              {/* Top Right - Premiere */}
+              <motion.div 
+                className="absolute top-2 right-1 w-10 h-10 z-10 drop-shadow-xl"
+                animate={{ y: [0, 4, 0], rotate: [12, 16, 12] }}
+                transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut", delay: 2 }}
+              >
+                <PremiereMark className="w-full h-full rounded-xl ring-1 ring-white/20 shadow-lg" />
+              </motion.div>
+
+              {/* Bottom Left - After Effects */}
+              <motion.div 
+                className="absolute bottom-1 left-0 w-12 h-12 z-40 drop-shadow-xl"
+                animate={{ y: [4, -4, 4], rotate: [-15, -10, -15] }}
+                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
+              >
+                <AfterEffectsMark className="w-full h-full rounded-2xl ring-1 ring-white/20 shadow-lg" />
+              </motion.div>
+
+              {/* Bottom Right - Lightroom */}
+              <motion.div 
+                className="absolute bottom-3 right-4 w-10 h-10 z-20 drop-shadow-xl"
+                animate={{ y: [-3, 3, -3], rotate: [10, 5, 10] }}
+                transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut", delay: 1.5 }}
+              >
+                <LightroomMark className="w-full h-full rounded-xl ring-1 ring-white/20 shadow-lg" />
+              </motion.div>
             </div>
           </div>
         </div>
 
-        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-48 relative bg-gradient-to-br from-slate-100 via-white to-slate-200 dark:from-[#111113] dark:via-[#151518] dark:to-[#1c1c21] p-6 text-slate-900 dark:text-white border border-slate-200/80 dark:border-[#26262d] flex flex-col justify-center transition-colors duration-300">
-          <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-500/20 dark:to-teal-500/20"></div>
+        <div className="rounded-xl overflow-hidden shadow-soft dark:shadow-none h-full min-h-[12rem] relative bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-[#0d0f12] dark:via-[#13151a] dark:to-[#090a0c] p-6 sm:p-8 text-slate-900 dark:text-white border border-slate-200/80 dark:border-white/5 flex flex-col md:flex-row items-center justify-between gap-8 md:gap-4 transition-colors duration-300 group">
           
-          <div className="relative z-10 flex justify-between items-center h-full">
-            <div className="w-1/2">
-              <h3 className="text-xl font-bold mb-2">Everything in ONE Bundle!</h3>
-              <p className="text-xs text-slate-600 dark:text-gray-300">Storyblocks, Freepik, Envato Elements, Motion Array, Adobe Creative Cloud</p>
-            </div>
-            <div className="w-1/2 relative h-full flex items-center justify-center">
-              <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-yellow-400 to-red-500 animate-pulse opacity-80 blur-sm absolute"></div>
-              <div className="w-20 h-20 rounded-full bg-white border-2 border-slate-200 dark:bg-slate-800 dark:border-slate-700 z-10 flex items-center justify-center shadow-2xl transition-colors duration-300">
-                <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-yellow-400 to-orange-500">ALL</span>
-              </div>
+          {/* Ambient Background Blur Glows */}
+          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-48 h-48 bg-indigo-500/10 dark:bg-indigo-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-indigo-500/20 transition-colors duration-700"></div>
+          <div className="absolute bottom-0 right-20 -mb-10 w-48 h-48 bg-purple-500/10 dark:bg-purple-500/10 rounded-full blur-3xl pointer-events-none group-hover:bg-purple-500/20 transition-colors duration-700"></div>
+          
+          <div className="relative z-10 w-full md:w-3/5 flex flex-col justify-center">
+            <span className="inline-block px-3 py-1 mb-4 text-[10px] w-fit uppercase tracking-widest font-bold bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 rounded-full border border-indigo-500/20 shadow-sm transition-colors">
+              Adobe CC Bundle
+            </span>
+            <h3 className="text-3xl sm:text-4xl font-black mb-3 tracking-tight">
+              All <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-purple-500">Adobe Apps</span>
+            </h3>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400 max-w-md leading-relaxed hidden sm:block transition-colors">
+              Photoshop, Illustrator, Premiere Pro, After Effects, and 20+ more. Unlock full access to the complete Creative Cloud suite.
+            </p>
+            {/* Mobile simplified text */}
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-400 max-w-md leading-relaxed block sm:hidden">
+              Photoshop, Illustrator, Premiere & 20+ more Adobe apps in one bundle.
+            </p>
+          </div>
+
+          <div className="relative z-10 w-full md:w-2/5 flex items-center justify-center min-h-[140px] mt-2 md:mt-0">
+            {/* Orbital UI Design */}
+            <div className="relative w-32 h-32 md:w-36 md:h-36 flex items-center justify-center">
+              
+              {/* Outer Orbiting Ring 1 (Indigo) */}
+              <motion.div 
+                className="absolute inset-[-15%] rounded-full border border-indigo-500/10 dark:border-indigo-400/10 border-t-indigo-500/60 dark:border-t-indigo-400/60"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+              >
+                <div className="absolute top-0 left-1/2 w-1.5 h-1.5 bg-indigo-400 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] -translate-x-1/2 -translate-y-1/2"></div>
+              </motion.div>
+              
+              {/* Outer Orbiting Ring 2 (Violet) */}
+              <motion.div 
+                className="absolute inset-[-2%] rounded-full border border-violet-500/10 dark:border-violet-400/10 border-b-violet-500/60 dark:border-b-violet-400/60"
+                animate={{ rotate: -360 }}
+                transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
+              >
+                <div className="absolute bottom-0 left-1/2 w-2 h-2 bg-violet-400 rounded-full shadow-[0_0_8px_rgba(139,92,246,0.8)] -translate-x-1/2 translate-y-1/2"></div>
+              </motion.div>
+
+              {/* Inner Orbiting Ring 3 (Purple) */}
+              <motion.div 
+                className="absolute inset-[12%] rounded-full border border-purple-500/10 dark:border-purple-400/10 border-r-purple-500/60 dark:border-r-purple-400/60"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+              />
+
+              {/* Central Glowing Orb (Cosmic Indigo Core) */}
+              <motion.div 
+                className="absolute inset-[25%] rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 shadow-[0_0_30px_rgba(99,102,241,0.4)] flex items-center justify-center p-[2px]"
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              >
+                <div className="w-full h-full bg-gradient-to-br from-white to-slate-200 dark:from-[#13151a] dark:to-[#090b0e] rounded-full flex items-center justify-center shadow-inner relative overflow-hidden backdrop-blur-md">
+                  <div className="absolute inset-0 bg-gradient-to-b from-white/40 to-transparent dark:from-white/10 dark:to-transparent"></div>
+                  
+                  {/* Holographic Icon Styling */}
+                  <InfinityIcon className="w-10 h-10 md:w-12 md:h-12 text-slate-800 dark:text-white drop-shadow-md relative z-10" strokeWidth={1.5} />
+                </div>
+              </motion.div>
             </div>
           </div>
         </div>
