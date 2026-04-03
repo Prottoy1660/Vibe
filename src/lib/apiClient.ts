@@ -163,16 +163,20 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
   const preferred = await resolveBaseUrl();
   const ordered = [preferred, ...candidates.filter(c => c !== preferred)];
 
+  // Telemetry geo-context: use GET so reverse proxies that only allow GET on /api (or mis-route POST) still work.
+  const useGetForGeo =
+    path === '/api/telemetry/geo-context' || path.endsWith('/telemetry/geo-context');
+
   let lastErr: any = null;
   for (const base of ordered) {
     try {
       const res = await fetch(`${base}${path}`, {
-        method: 'POST',
+        method: useGetForGeo ? 'GET' : 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          ...(useGetForGeo ? {} : { 'Content-Type': 'application/json' }),
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(body)
+        ...(useGetForGeo ? {} : { body: JSON.stringify(body) }),
       });
 
       const text = await res.text();

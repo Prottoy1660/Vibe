@@ -21,7 +21,9 @@ const geoLimiter = rateLimit({
 
 // Server-observed IP + geo/ISP enrichment for session logging.
 // This improves accuracy vs. client-side IP/geo APIs (mobile networks often block/return inconsistent results).
-router.post('/geo-context', geoLimiter, async (req: Request, res: Response) => {
+// GET + POST: some reverse proxies mis-route POST to static; GET avoids 405 on misconfigured /api.
+async function geoContextHandler(req: Request, res: Response) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private')
   try {
     const ip = clientIp(req)
 
@@ -57,7 +59,10 @@ router.post('/geo-context', geoLimiter, async (req: Request, res: Response) => {
       longitude: null,
     })
   }
-})
+}
+
+router.get('/geo-context', geoLimiter, geoContextHandler)
+router.post('/geo-context', geoLimiter, geoContextHandler)
 
 export default router
 
