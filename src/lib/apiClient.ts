@@ -59,7 +59,13 @@ function invalidateStaleApiBaseCache() {
   const cached = window.localStorage.getItem('api_base_url');
   if (!cached) return;
   try {
-    if (new URL(cached).host !== window.location.host) {
+    const cachedHost = new URL(cached).host;
+    if (cachedHost !== window.location.host) {
+      window.localStorage.removeItem('api_base_url');
+      return;
+    }
+    // Apex-only deployments: never keep a www-preferring base if the page is on apex
+    if (!host.startsWith('www.') && cachedHost.startsWith('www.')) {
       window.localStorage.removeItem('api_base_url');
     }
   } catch {
@@ -84,8 +90,15 @@ function buildCandidates() {
       // Production: same-origin first — SPA + /api on one deployment avoids CORS "Failed to fetch"
       if (origin) candidates.push(origin);
       if (primary && primary !== origin) candidates.push(stripTrailingSlashes(primary));
-      candidates.push('https://vibeaccessbd.shop');
-      candidates.push('https://www.vibeaccessbd.shop');
+      // Legacy hardcoded fallbacks — do NOT probe www when the user is on apex only (common on Coolify:
+      // no DNS for www → "Failed to fetch" for every /api call).
+      const h = window.location.hostname;
+      if (h === 'vibeaccessbd.shop' || h === 'www.vibeaccessbd.shop') {
+        candidates.push('https://vibeaccessbd.shop');
+        if (h.startsWith('www.')) {
+          candidates.push('https://www.vibeaccessbd.shop');
+        }
+      }
     }
   } else {
     if (primary) candidates.push(stripTrailingSlashes(primary));
@@ -134,8 +147,9 @@ async function resolveBaseUrl() {
     }
   }
 
-  // If none passed health, fall back to first candidate.
-  const fallback = buildCandidates()[0] || '';
+  // If none passed health, prefer same-origin (never guess www on apex-only hosts).
+  const origin = typeof window !== 'undefined' ? getSameOriginBase() : '';
+  const fallback = origin || buildCandidates()[0] || '';
   if (typeof window !== 'undefined' && fallback) window.localStorage.setItem('api_base_url', fallback);
   return fallback;
 }
@@ -222,6 +236,15 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
         msg.includes('405') ||
         msg.includes('method not allowed') ||
         msg.includes('not allowed');
+
+      // Network failure on a different host than the page — drop cached base so we don't keep preferring www/dead hosts
+      if (isNetwork && typeof window !== 'undefined') {
+        const pageOrigin = getSameOriginBase();
+        if (pageOrigin && base !== pageOrigin) {
+          const cached = window.localStorage.getItem('api_base_url');
+          if (cached === base) window.localStorage.removeItem('api_base_url');
+        }
+      }
 
       // If method is not supported on this base, continue trying the next candidate.
       if (!isNetwork && !isMethodMismatch) break;
