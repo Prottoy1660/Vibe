@@ -19,6 +19,21 @@ export const AdminCoupons = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Coupon usage modal state
+  const [usesOpen, setUsesOpen] = useState(false);
+  const [usesLoading, setUsesLoading] = useState(false);
+  const [activeCoupon, setActiveCoupon] = useState<Coupon | null>(null);
+  const [usesByUser, setUsesByUser] = useState<
+    Array<{
+      user_id: string;
+      name: string;
+      email: string;
+      phone?: string | null;
+      order_count: number;
+      last_used_at: string;
+    }>
+  >([]);
+
   // Form state
   const [formData, setFormData] = useState<Partial<Coupon>>({
     code: '',
@@ -99,12 +114,148 @@ export const AdminCoupons = () => {
     return c.code.toLowerCase().includes(q);
   });
 
+  const openCouponUses = async (coupon: Coupon) => {
+    setActiveCoupon(coupon);
+    setUsesOpen(true);
+    setUsesLoading(true);
+    setUsesByUser([]);
+
+    try {
+      const { data: orders, error: ordersErr } = await supabase
+        .from('orders')
+        .select('id, user_id, created_at, status')
+        .eq('coupon_id', coupon.id)
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      if (ordersErr) throw ordersErr;
+
+      const userIds = Array.from(new Set((orders || []).map((o: any) => o.user_id).filter(Boolean)));
+
+      const { data: usersRows, error: usersErr } =
+        userIds.length > 0
+          ? await supabase
+              .from('users')
+              .select('id, name, email, phone')
+              .in('id', userIds)
+          : ({ data: [], error: null } as any);
+
+      if (usersErr) throw usersErr;
+
+      const userById: Record<string, any> = {};
+      for (const u of usersRows || []) userById[u.id] = u;
+
+      const byUser = new Map<
+        string,
+        {
+          user_id: string;
+          name: string;
+          email: string;
+          phone?: string | null;
+          order_count: number;
+          last_used_at: string;
+        }
+      >();
+
+      for (const o of orders || []) {
+        const uid = o.user_id;
+        if (!uid) continue;
+        const existing = byUser.get(uid);
+        const user = userById[uid] || {};
+
+        if (!existing) {
+          byUser.set(uid, {
+            user_id: uid,
+            name: user.name || 'Unknown',
+            email: user.email || 'Unknown',
+            phone: user.phone ?? null,
+            order_count: 1,
+            last_used_at: o.created_at,
+          });
+        } else {
+          existing.order_count += 1;
+        }
+      }
+
+      const list = Array.from(byUser.values()).sort((a, b) => Number(b.order_count) - Number(a.order_count));
+      setUsesByUser(list);
+    } catch (e: any) {
+      console.error('fetch coupon usage error:', e);
+      alert(e?.message || 'Failed to fetch coupon usage');
+      setUsesByUser([]);
+    } finally {
+      setUsesLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
   }
 
   return (
     <div className="space-y-6">
+      {usesOpen && activeCoupon && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setUsesOpen(false)} />
+          <div className="relative bg-white dark:bg-[#151518] border border-gray-100 dark:border-[#26262d] rounded-2xl w-full max-w-2xl overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-[#26262d] flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                  Coupon uses: <span className="font-mono">{activeCoupon.code}</span>
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Shows which customers used this coupon (grouped by user).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUsesOpen(false)}
+                className="px-3 py-2 rounded-xl border border-gray-200 dark:border-[#26262d] text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              {usesLoading ? (
+                <div className="flex items-center gap-3 text-gray-600 dark:text-gray-300">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Loading usage...
+                </div>
+              ) : usesByUser.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 dark:text-gray-400 font-medium">No orders found for this coupon yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {usesByUser.map((u) => (
+                    <div
+                      key={u.user_id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-gray-100 dark:border-white/5 bg-gray-50/40 dark:bg-white/5 rounded-xl p-4"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                          {u.name}
+                        </p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 truncate">{u.email}</p>
+                        {u.phone ? <p className="text-[11px] text-gray-500 dark:text-gray-500 truncate">{u.phone}</p> : null}
+                      </div>
+                      <div className="flex items-start sm:items-center justify-between sm:justify-end gap-4">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 whitespace-nowrap">
+                          Used {u.order_count} time{u.order_count !== 1 ? 's' : ''}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                          Last: {u.last_used_at ? format(new Date(u.last_used_at), 'MMM d, HH:mm') : '—'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
         <div className="relative flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
@@ -272,7 +423,16 @@ export const AdminCoupons = () => {
             <tbody>
               {filteredCoupons.map(coupon => (
                 <tr key={coupon.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
-                  <td className="py-3 px-4 font-bold text-gray-900 dark:text-gray-100 font-mono tracking-wider">{coupon.code}</td>
+                  <td className="py-3 px-4 font-bold text-gray-900 dark:text-gray-100 font-mono tracking-wider">
+                    <button
+                      type="button"
+                      onClick={() => openCouponUses(coupon)}
+                      className="hover:underline underline-offset-2"
+                      title="View who used this coupon"
+                    >
+                      {coupon.code}
+                    </button>
+                  </td>
                   <td className="py-3 px-4 text-emerald-500 dark:text-emerald-400 font-semibold">{coupon.discount_percentage}%</td>
                   <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
                     {coupon.used_count} / {coupon.usage_limit}

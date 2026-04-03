@@ -84,6 +84,13 @@ export const AdminUsers = () => {
   };
 
   const deleteUser = async (userId: string) => {
+    // Admins are protected from deletion.
+    const target = users.find((u) => u.id === userId);
+    if (target?.role === 'admin') {
+      alert('Admins cannot be deleted.');
+      return;
+    }
+
     if (!window.confirm('Are you sure you want to PERMANENTLY delete this user? This action cannot be undone and will delete all their data.')) return;
 
     try {
@@ -112,6 +119,23 @@ export const AdminUsers = () => {
       console.error(`Error trying to delete user:`, error);
       alert(`Failed to delete user: ${error.message}`);
     }
+  };
+
+  const deleteUserInternal = async (userId: string) => {
+    // Caller controls confirmation already.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const API_URL = import.meta.env.VITE_API_URL || '';
+    const response = await fetch(`${API_URL}/api/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Failed to delete user');
   };
 
   if (loading) {
@@ -153,6 +177,32 @@ export const AdminUsers = () => {
 
     return matchesSearch && matchesRole && matchesStatus && matchesSignup;
   });
+
+  const handleAllDelete = async () => {
+    const idsToDelete = filteredUsers.filter((u) => u.role !== 'admin').map((u) => u.id);
+    const protectedAdmins = filteredUsers.filter((u) => u.role === 'admin');
+
+    if (idsToDelete.length === 0) {
+      alert(protectedAdmins.length ? 'No deletable users found. Admins are protected.' : 'No users to delete.');
+      return;
+    }
+
+    const confirmMsg = `Delete ALL ${idsToDelete.length} user(s)? (Admins protected: ${protectedAdmins.length}). This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      // Sequential to avoid rate-limit spikes.
+      for (const id of idsToDelete) {
+        // eslint-disable-next-line no-await-in-loop
+        await deleteUserInternal(id);
+      }
+      await fetchUsers();
+      setSelectedUserId(null);
+    } catch (error: any) {
+      console.error('All delete failed:', error);
+      alert(`All delete failed: ${error.message || 'Unknown error'}`);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -319,6 +369,17 @@ export const AdminUsers = () => {
               <RotateCcw className="w-4 h-4" />
               Reset
             </button>
+
+            <button
+              type="button"
+              onClick={handleAllDelete}
+              className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-red-200 dark:border-red-900/30 bg-red-50/40 dark:bg-red-900/10 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Permanently delete all matching users (admins protected)"
+              disabled={filteredUsers.filter((u) => u.role !== 'admin').length === 0}
+            >
+              <Trash2 className="w-4 h-4" />
+              All delete
+            </button>
           </div>
         </div>
       </div>
@@ -440,8 +501,11 @@ export const AdminUsers = () => {
 
                     <button
                       onClick={() => deleteUser(u.id)}
-                      className="inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
-                      title="Delete user"
+                      disabled={u.role === 'admin'}
+                      className={`inline-flex items-center justify-center w-9 h-9 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors ${
+                        u.role === 'admin' ? 'opacity-40 cursor-not-allowed' : ''
+                      }`}
+                      title={u.role === 'admin' ? 'Admins cannot be deleted' : 'Delete user'}
                       type="button"
                     >
                       <Trash2 className="w-4 h-4" />

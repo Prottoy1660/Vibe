@@ -58,6 +58,21 @@ router.delete('/users/:id', verifyAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
 
+    // Prevent deleting admins for safety/security.
+    const { data: userRow, error: userRowErr } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    if (userRowErr) {
+      return res.status(500).json({ error: 'Failed to read user role before delete' });
+    }
+
+    if (userRow?.role === 'admin') {
+      return res.status(403).json({ error: 'Admins cannot be deleted' });
+    }
+
     // Delete from auth.users (This cascades to public.users if FK is setup, otherwise we delete manually)
     const { error: authError } = await supabase.auth.admin.deleteUser(userId);
     
