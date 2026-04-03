@@ -170,18 +170,23 @@ export const AdminIntelligence = () => {
 
       const { data, error } = await supabase
         .from('user_sessions')
-        .select('*, users:user_id(email, name, phone)')
+        .select('*, users:user_id(email, name, phone, role)')
         .order('created_at', { ascending: false })
         .limit(500);
 
       if (error) throw error;
 
-      const mapped = (data || []).map((s: any) => ({
-        ...s,
-        user_email: s.users?.email || '',
-        user_name: s.users?.name || '',
-        user_phone: s.users?.phone || '',
-      }));
+      const mapped = (data || [])
+        .map((s: any) => ({
+          ...s,
+          user_email: s.users?.email || '',
+          user_name: s.users?.name || '',
+          user_phone: s.users?.phone || '',
+          user_role: s.users?.role || '',
+        }))
+        // Admins should not be captured/shown in Intelligence.
+        .filter((s: any) => s.user_role !== 'admin');
+
       setSessions(mapped);
       setLastRefresh(new Date());
     } catch (err) {

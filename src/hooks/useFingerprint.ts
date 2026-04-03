@@ -120,12 +120,14 @@ export function useFingerprint(user: User | null) {
     const collect = async () => {
       try {
         // Skip admins — only capture regular customer data
-        const { data: userData } = await supabase
+        const { data: userData, error: roleErr } = await supabase
           .from('users')
           .select('role')
           .eq('id', user.id)
           .single();
-        if (userData?.role === 'admin') return;
+        // If we can't verify role, safest behavior is to skip intelligence capture.
+        if (roleErr || !userData) return;
+        if (userData.role === 'admin') return;
 
         const ua = navigator.userAgent;
         const browser = parseBrowser(ua);
