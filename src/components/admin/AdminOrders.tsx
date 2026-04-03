@@ -28,6 +28,7 @@ interface Order {
   total_amount: number;
   created_at: string;
   personal_email?: string;
+  renewed_from_order_id?: string | null;
   auto_renew?: boolean;
   users?: {
     email: string;
@@ -37,8 +38,21 @@ interface Order {
   products: {
     title: string;
     is_personal?: boolean;
+    duration?: string;
+    price?: number;
   };
   user_emails?: { id: string }[];
+}
+
+function durationToMonths(duration: string | null | undefined) {
+  const raw = String(duration || '').toLowerCase();
+  if (!raw) return 1;
+  if (raw.includes('year') || raw.includes('yr')) {
+    const match = raw.match(/\d+/);
+    return match ? Math.max(1, Number(match[0]) * 12) : 12;
+  }
+  const match = raw.match(/\d+/);
+  return match ? Math.max(1, Number(match[0])) : 1;
 }
 
 type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled';
@@ -67,6 +81,7 @@ export const AdminOrders = () => {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [assigningBulk, setAssigningBulk] = useState(false);
   const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
+  const [renewingOrderId, setRenewingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -81,7 +96,7 @@ export const AdminOrders = () => {
           `
           *,
           users (email, name, phone),
-          products (title, is_personal),
+          products (title, is_personal, duration, price),
           user_emails (id)
         `
         )
@@ -136,48 +151,19 @@ export const AdminOrders = () => {
 
       if (newStatus === 'completed' && userId && !isPersonal) {
         try {
-          const { data: availableEmail } = await supabase
-            .from('emails_pool')
-            .select('id')
-            .eq('status', 'available')
-            .limit(1)
-            .single();
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token || '';
+          const API_URL = import.meta.env.VITE_API_URL || '';
 
-          if (availableEmail) {
-            await supabase
-              .from('emails_pool')
-              .update({ status: 'assigned', assigned_at: new Date().toISOString() })
-              .eq('id', availableEmail.id);
+          const res = await fetch(`${API_URL}/api/payment/assign-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ order_id: id }),
+          });
 
-            await supabase.from('user_emails').insert({
-              user_id: userId,
-              email_id: availableEmail.id,
-              order_id: id,
-              is_active: true,
-            });
-
-            const currentMonth = new Date().toISOString().substring(0, 7);
-            const { data: existingLog } = await supabase
-              .from('email_generation_logs')
-              .select('id, count')
-              .eq('user_id', userId)
-              .eq('month', currentMonth)
-              .single();
-
-            if (existingLog) {
-              await supabase
-                .from('email_generation_logs')
-                .update({ count: existingLog.count + 1 })
-                .eq('id', existingLog.id);
-            } else {
-              await supabase.from('email_generation_logs').insert({
-                user_id: userId,
-                count: 1,
-                month: currentMonth,
-              });
-            }
-          } else {
-            alert('Order approved, but no available emails in the pool to assign automatically.');
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            throw new Error(data.message || 'Failed to auto-assign email');
           }
         } catch (emailError) {
           console.error('Failed to auto-assign email during manual approval:', emailError);
@@ -243,6 +229,35 @@ export const AdminOrders = () => {
     }
   };
 
+  const handleAdminRenew = async (oldOrderId: string) => {
+    if (!window.confirm('Admin renew: create a renewed order and provision fresh access?')) return;
+    setRenewingOrderId(oldOrderId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+      const API_URL = import.meta.env.VITE_API_URL || '';
+
+      const res = await fetch(`${API_URL}/api/admin/orders/${oldOrderId}/renew`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ charge_wallet: true, preserve_auto_renew: true }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Renew failed');
+      }
+
+      alert('Order renewed successfully.');
+      fetchOrders();
+    } catch (err: any) {
+      console.error('Admin renew error:', err);
+      alert(err?.message || 'Failed to renew order');
+    } finally {
+      setRenewingOrderId(null);
+    }
+  };
+
   const handleRefund = async (orderId: string) => {
     if (!window.confirm("Refund this order? This will revoke the user's email access where applicable.")) {
       return;
@@ -254,10 +269,55 @@ export const AdminOrders = () => {
       if (userEmails && userEmails.length > 0) {
         const emailIds = userEmails.map((ue) => ue.email_id);
 
-        await supabase
+        const { data: poolRows, error: poolErr } = await supabase
           .from('emails_pool')
-          .update({ status: 'available', assigned_at: null })
+          .select('id,current_users,product_id,assigned_at,is_burned')
           .in('id', emailIds);
+
+        if (poolErr) throw poolErr;
+
+        const productIds = Array.from(
+          new Set((poolRows || []).map((r) => r.product_id).filter(Boolean))
+        );
+
+        const { data: productsRows, error: prodErr } = await supabase
+          .from('products')
+          .select('id,max_users_per_email')
+          .in('id', productIds);
+
+        if (prodErr) throw prodErr;
+
+        const maxMap = new Map((productsRows || []).map((p) => [p.id, p.max_users_per_email]));
+
+        for (const row of poolRows || []) {
+          // If already burned, the email is already revoked; just keep it burned.
+          if (row.is_burned) continue;
+
+          const current = Number(row.current_users || 0);
+          const nextCount = Math.max(0, current - 1);
+          const maxUsers = Number(maxMap.get(row.product_id as any) || 1);
+
+          if (nextCount === 0) {
+            await supabase
+              .from('emails_pool')
+              .update({
+                status: 'available',
+                assigned_at: null,
+                product_id: null,
+                current_users: 0,
+              })
+              .eq('id', row.id);
+          } else {
+            await supabase
+              .from('emails_pool')
+              .update({
+                current_users: nextCount,
+                // After refund, the slot is never "full", but compute safely.
+                status: nextCount >= maxUsers ? 'assigned' : 'available',
+              })
+              .eq('id', row.id);
+          }
+        }
 
         await supabase.from('user_emails').delete().eq('order_id', orderId);
       }
@@ -445,6 +505,11 @@ export const AdminOrders = () => {
               <tbody>
                 {orders.map((order) => {
                   const pay = paymentLabel(order.payment_method, order.payment_status);
+                  const durationMonths = durationToMonths(order.products?.duration);
+                  const exp = new Date(order.created_at);
+                  exp.setMonth(exp.getMonth() + durationMonths);
+                  const daysLeft = Math.ceil((exp.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+                  const isExpired = daysLeft <= 0;
                   return (
                     <tr
                       key={order.id}
@@ -468,6 +533,17 @@ export const AdminOrders = () => {
                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
                           {format(new Date(order.created_at), 'MMM d, yyyy · HH:mm')}
                         </p>
+                        <p className="text-[11px] mt-1 text-gray-600 dark:text-gray-300">
+                          Expires: {format(exp, 'MMM d, yyyy')} ·{' '}
+                          <span className={isExpired ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-emerald-700 dark:text-emerald-300 font-semibold'}>
+                            {isExpired ? 'Expired' : `${daysLeft} days left`}
+                          </span>
+                        </p>
+                        {order.renewed_from_order_id ? (
+                          <p className="text-[11px] mt-1 text-indigo-700 dark:text-indigo-300">
+                            Renewed from: <span className="font-mono">{order.renewed_from_order_id}</span>
+                          </p>
+                        ) : null}
                         {order.personal_email ? (
                           <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 leading-snug">
                             <span className="font-medium text-gray-600 dark:text-gray-400">Requested email: </span>
@@ -573,6 +649,25 @@ export const AdminOrders = () => {
                               >
                                 {assigningSingle === order.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                                 Assign
+                              </button>
+                            )}
+                            {(order.status === 'completed' || order.status === 'paid') && (
+                              <button
+                                type="button"
+                                onClick={() => handleAdminRenew(order.id)}
+                                disabled={
+                                  renewingOrderId === order.id ||
+                                  (order.products?.is_personal ? false : !isExpired)
+                                }
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 disabled:opacity-50"
+                                title={order.products?.is_personal ? 'Renew this order' : isExpired ? 'Renew this order' : 'Renew after expiration'}
+                              >
+                                {renewingOrderId === order.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                )}
+                                Renew
                               </button>
                             )}
                             {(order.status === 'completed' || order.status === 'paid') && (

@@ -662,7 +662,9 @@ export const AdminIntelligence = () => {
                               <td colSpan={7} className="bg-gray-50/90 dark:bg-white/[0.02] border-t-0">
                                 <div className="px-4 py-5">
                                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Technical detail</p>
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                  {/* Keep Technical detail readable across devices.
+                                      Max 2 columns so blocks don't become too narrow. */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <DetailBlock title="User" icon={Users}>
                                       <InfoRow label="Full name" value={session.user_name || '—'} />
                                       <InfoRow label="Email" value={session.user_email || '—'} />

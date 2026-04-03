@@ -14,147 +14,26 @@
 export async function assignEmailForOrder(
   supabase: any,
   orderId: string,
-  userId: string,
-  productId: string
+  _userId: string,
+  _productId: string
 ): Promise<{ success: boolean; emailId?: string; error?: string }> {
   try {
-    const applyCloudAccessFilter = (query: any, withCloudAccess: boolean) => {
-      if (withCloudAccess) {
-        return query.in('cloud_access_type', ['api', 'manual']);
-      }
-
-      // "No Access" has appeared in mixed legacy forms; accept all equivalent values.
-      return query.or(
-        'cloud_access_type.is.null,cloud_access_type.eq.none,cloud_access_type.eq.NO ACCESS,cloud_access_type.eq.no access,cloud_access_type.eq.no_access'
-      );
-    };
-
-    // Fetch product config
-    const { data: product } = await supabase
-      .from('products')
-      .select('email_slots, max_users_per_email, with_cloud_access')
-      .eq('id', productId)
-      .single();
-
-    const maxUsersPerEmail = product?.max_users_per_email ?? 1;
-    const withCloudAccess = product?.with_cloud_access ?? false;
-
-    let emailId: string | null = null;
-
-    if (maxUsersPerEmail <= 1) {
-      // ── EXCLUSIVE MODE ──────────────────────────────────────────────────
-      // Pick any fresh available email (no product_id set, current_users = 0)
-      let query = supabase
-        .from('emails_pool')
-        .select('id')
-        .eq('status', 'available')
-        .is('product_id', null);
-
-      query = applyCloudAccessFilter(query, withCloudAccess);
-
-      const { data: available } = await query.limit(1).single();
-
-      if (!available) {
-        // Fallback: any 'available' email even if product_id was set (legacy rows), but respecting cloud access if required
-        let fallbackQuery = supabase
-          .from('emails_pool')
-          .select('id')
-          .eq('status', 'available');
-
-        fallbackQuery = applyCloudAccessFilter(fallbackQuery, withCloudAccess);
-        
-        const { data: fallback } = await fallbackQuery.limit(1).single();
-        if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
-        emailId = fallback.id;
-      } else {
-        emailId = available.id;
-      }
-
-      // Mark as exclusively assigned
-      await supabase.from('emails_pool').update({
-        status: 'assigned',
-        assigned_at: new Date().toISOString(),
-        current_users: 1,
-        product_id: productId,
-      }).eq('id', emailId);
-
-    } else {
-      // ── SHARED SLOT MODE ────────────────────────────────────────────────
-      // 1. Try to find an existing partially-filled slot for this product
-      let partialQuery = supabase
-        .from('emails_pool')
-        .select('id, current_users')
-        .eq('status', 'available')      // still open (not 'assigned' yet)
-        .eq('product_id', productId)    // belongs to this product's shared pool
-        .gt('current_users', 0)         // already has someone in it
-        .lt('current_users', maxUsersPerEmail) // still has room
-        .order('current_users', { ascending: false });
-
-      partialQuery = applyCloudAccessFilter(partialQuery, withCloudAccess);
-
-      const { data: partialEmail } = await partialQuery.limit(1).single();
-
-      if (partialEmail) {
-        // ✅ Found a slot — join it
-        const newCount = (partialEmail.current_users ?? 0) + 1;
-        await supabase.from('emails_pool').update({
-          current_users: newCount,
-          // When slot is now full, flip to 'assigned' so no one else joins
-          status: newCount >= maxUsersPerEmail ? 'assigned' : 'available',
-        }).eq('id', partialEmail.id);
-
-        emailId = partialEmail.id;
-        console.log(`[assignEmailForOrder] Shared slot joined: email ${emailId}, users ${newCount}/${maxUsersPerEmail}`);
-
-      } else {
-        // No existing partial slot — take a fresh email and open a new shared slot
-        let freshQuery = supabase
-          .from('emails_pool')
-          .select('id')
-          .eq('status', 'available')
-          .is('product_id', null);
-
-        freshQuery = applyCloudAccessFilter(freshQuery, withCloudAccess);
-
-        const { data: freshEmail } = await freshQuery.limit(1).single();
-
-        if (!freshEmail) {
-          // Fallback: any available email matching requirements
-          let fallbackQuery = supabase.from('emails_pool').select('id').eq('status', 'available');
-          fallbackQuery = applyCloudAccessFilter(fallbackQuery, withCloudAccess);
-          const { data: fallback } = await fallbackQuery.limit(1).single();
-          if (!fallback) return { success: false, error: 'No available emails in the pool matching product requirements.' };
-          emailId = fallback.id;
-        } else {
-          emailId = freshEmail.id;
-        }
-
-        // Open this email as a shared slot (status stays 'available' so next user can join)
-        await supabase.from('emails_pool').update({
-          status: 'available',           // keep available so next user can find it
-          product_id: productId,         // tag it to this product's shared pool
-          assigned_at: new Date().toISOString(),
-          current_users: 1,             // first occupant
-        }).eq('id', emailId);
-
-        console.log(`[assignEmailForOrder] New shared slot opened: email ${emailId}, max ${maxUsersPerEmail}`);
-      }
-    }
-
-    // Link email to this user's order
-    const { error: insertError } = await supabase.from('user_emails').insert({
-      user_id: userId,
-      email_id: emailId,
-      order_id: orderId,
-      is_active: true,
+    // All strict shared-slot rules and concurrency protection are enforced inside the DB RPC.
+    const { data, error } = await supabase.rpc('assign_email_for_order_strict_24h', {
+      p_order_id: orderId,
     });
 
-    if (insertError) {
-      console.error('[assignEmailForOrder] Failed to insert user_email relation:', insertError);
-      throw insertError;
+    if (error) {
+      console.error('[assignEmailForOrder] RPC error:', error);
+      return { success: false, error: error.message };
     }
 
-    return { success: true, emailId: emailId! };
+    const payload = data as any;
+    if (!payload?.success) {
+      return { success: false, error: payload?.error || 'Email assignment failed' };
+    }
+
+    return { success: true, emailId: payload?.email_id || payload?.emailId };
   } catch (err: any) {
     console.error('[assignEmailForOrder] Error:', err);
     return { success: false, error: err.message };

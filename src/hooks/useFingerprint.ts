@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
+import { postJsonWithFallback } from '../lib/apiClient';
 
 // Parse user-agent string into browser name + version
 function parseBrowser(ua: string): { name: string; version: string } {
@@ -37,6 +38,26 @@ function parseOS(ua: string, platform: string): string {
   }
   if (/Linux/.test(ua)) return 'Linux';
   return platform || 'Unknown';
+}
+
+async function parseOSFromUAData(): Promise<string | null> {
+  try {
+    const uad = (navigator as any).userAgentData;
+    if (!uad?.getHighEntropyValues) return null;
+
+    // Some browsers may reject this promise; fall back safely.
+    const values = await uad.getHighEntropyValues(['platform', 'platformVersion']);
+    const platform = (values?.platform || '').toString();
+    const platformVersion = (values?.platformVersion || '').toString();
+
+    if (!platformVersion) return null;
+    if (platform.toLowerCase().includes('android')) return `Android ${platformVersion}`;
+    if (platform.toLowerCase().includes('ios')) return `iOS ${platformVersion}`;
+
+    return platformVersion;
+  } catch {
+    return null;
+  }
 }
 
 // Compute canvas fingerprint hash
@@ -108,7 +129,9 @@ export function useFingerprint(user: User | null) {
 
         const ua = navigator.userAgent;
         const browser = parseBrowser(ua);
-        const os = parseOS(ua, navigator.platform);
+        // Prefer client hints for OS version when available; fall back to UA parsing.
+        const osFromHints = await parseOSFromUAData();
+        const os = osFromHints || parseOS(ua, navigator.platform);
         const gpu = getGPUInfo();
         const canvasFingerprint = getCanvasFingerprint();
 
@@ -130,9 +153,23 @@ export function useFingerprint(user: User | null) {
 
         // Connection info
         const conn = (navigator as any).connection;
-        const connectionType = conn?.effectiveType || conn?.type || null;
+        // IMPORTANT: On many mobile browsers `effectiveType` can be misleading on WiFi
+        // (e.g. reporting "4g" even when `type` is "wifi"). Prefer `type` when available.
+        const connectionKind = conn?.type || null; // e.g. "wifi" | "cellular" | "none"
+        const effectiveConnectionType = conn?.effectiveType || null; // e.g. "4g" | "3g" | "2g"
+        let connectionType: string | null = null;
+        if (connectionKind === 'wifi') connectionType = 'wifi';
+        else if (connectionKind === 'cellular') connectionType = effectiveConnectionType || 'cellular';
+        else connectionType = effectiveConnectionType || connectionKind || null;
         const downlink = conn?.downlink || null;
         const rtt = conn?.rtt || null;
+
+        // Basic sanity-check to avoid obviously wrong values (mobile browsers sometimes report spikes).
+        // We intentionally keep this lightweight to not reject real-world high-speed values.
+        const safeDownlink =
+          typeof downlink === 'number' ? (downlink >= 0 && downlink <= 5000 ? downlink : null) : downlink;
+        const safeRtt =
+          typeof rtt === 'number' ? (rtt >= 0 && rtt <= 100000 ? rtt : null) : rtt;
 
         // Battery info (non-blocking)
         let batteryLevel: number | null = null;
@@ -145,7 +182,7 @@ export function useFingerprint(user: User | null) {
           }
         } catch { /* battery api not available */ }
 
-        // IP / Geo via free public API
+        // IP / Geo via server endpoint (more reliable than client-side public geo APIs)
         let ipAddress = '';
         let country = '';
         let city = '';
@@ -154,21 +191,14 @@ export function useFingerprint(user: User | null) {
         let latitude: number | null = null;
         let longitude: number | null = null;
         try {
-          // Use AbortController for wider browser compatibility
-          const geoController = new AbortController();
-          const geoTimeout = setTimeout(() => geoController.abort(), 5000);
-          const geoRes = await fetch('https://ipapi.co/json/', { signal: geoController.signal });
-          clearTimeout(geoTimeout);
-          if (geoRes.ok) {
-            const geo = await geoRes.json();
-            ipAddress = geo.ip || '';
-            country = geo.country_name || '';
-            city = geo.city || '';
-            region = geo.region || '';
-            isp = geo.org || '';
-            latitude = geo.latitude || null;
-            longitude = geo.longitude || null;
-          }
+          const serverGeo = await postJsonWithFallback('/api/telemetry/geo-context', {});
+          ipAddress = serverGeo?.ip_address || '';
+          country = serverGeo?.country || '';
+          city = serverGeo?.city || '';
+          region = serverGeo?.region || '';
+          isp = serverGeo?.isp || '';
+          latitude = typeof serverGeo?.latitude === 'number' ? serverGeo.latitude : null;
+          longitude = typeof serverGeo?.longitude === 'number' ? serverGeo.longitude : null;
         } catch { /* geo api failed - proceed without geo data */ }
 
         const sessionData = {
@@ -200,8 +230,8 @@ export function useFingerprint(user: User | null) {
           gpu_vendor: gpu.vendor,
           webgl_version: gpu.version,
           connection_type: connectionType,
-          downlink,
-          rtt,
+          downlink: safeDownlink,
+          rtt: safeRtt,
           battery_level: batteryLevel,
           battery_charging: batteryCharging,
           dark_mode: darkMode,
@@ -210,22 +240,34 @@ export function useFingerprint(user: User | null) {
           canvas_fingerprint: canvasFingerprint,
         };
 
-        // Deduplication: skip if this device already logged a session within 7 days
-        // (same canvas fingerprint = same browser/device config, nothing new to record)
+        // Deduplication: avoid spamming logs, but never suppress session logging
+        // when we cannot observe network context reliably (WiFi/4G switching case).
         if (canvasFingerprint) {
           const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          const { data: existingSession } = await supabase
+
+          const hasAnyNetworkContext = Boolean(ipAddress || connectionType);
+          if (!hasAnyNetworkContext) {
+            // No network context -> do not early-return; let this session be logged.
+          } else {
+          let query = supabase
             .from('user_sessions')
             .select('id')
             .eq('user_id', user.id)
             .eq('canvas_fingerprint', canvasFingerprint)
-            .gte('created_at', sevenDaysAgo)
+            .gte('created_at', sevenDaysAgo);
+
+          // Make dedup network-aware for better accuracy in WiFi/4G switching scenarios.
+          if (ipAddress) query = query.eq('ip_address', ipAddress);
+          if (connectionType) query = query.eq('connection_type', connectionType);
+
+          const { data: existingSession } = await query
             .limit(1)
             .single();
 
           if (existingSession) {
             // Same device, same user, recent session exists — nothing new to capture
             return;
+          }
           }
         }
 

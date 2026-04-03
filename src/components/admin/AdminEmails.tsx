@@ -32,6 +32,7 @@ interface EmailPool {
   email: string;
   password: string;
   status: 'available' | 'assigned' | 'shared' | 'used';
+  is_burned?: boolean | null;
   created_at: string;
   assigned_at: string | null;
   current_users?: number;
@@ -62,7 +63,7 @@ type TabId = 'overview' | 'generate' | 'inventory';
 export const AdminEmails = () => {
   const [emails, setEmails] = useState<EmailPool[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [activeTab, setActiveTab] = useState<TabId | 'burned'>('overview');
   const [unfulfilledCount, setUnfulfilledCount] = useState(0);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -292,10 +293,12 @@ export const AdminEmails = () => {
     }
   };
 
-  const availableCount = emails.filter((e) => e.status === 'available').length;
-  const assignedCount = emails.filter((e) => e.status === 'assigned' || e.status === 'shared').length;
-  const todayCount = emails.filter((e) => isToday(parseISO(e.created_at))).length;
-  const grouped = groupByDate(emails);
+  const burnedEmails = emails.filter((e) => e.is_burned);
+  const activeEmails = emails.filter((e) => !e.is_burned);
+  const availableCount = activeEmails.filter((e) => e.status === 'available').length;
+  const assignedCount = activeEmails.filter((e) => e.status === 'assigned' || e.status === 'shared').length;
+  const todayCount = activeEmails.filter((e) => isToday(parseISO(e.created_at))).length;
+  const grouped = groupByDate(activeEmails);
 
   const statusStyles: Record<string, string> = {
     available: 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300',
@@ -304,10 +307,11 @@ export const AdminEmails = () => {
     used: 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300',
   };
 
-  const tabs: { id: TabId; label: string; sub: string; icon: React.ElementType }[] = [
+  const tabs: { id: TabId | 'burned'; label: string; sub: string; icon: React.ElementType }[] = [
     { id: 'overview', label: 'Overview', sub: 'Stats & exports', icon: LayoutDashboard },
     { id: 'generate', label: 'Add emails', sub: 'cPanel generator', icon: Wand2 },
     { id: 'inventory', label: 'Inventory', sub: 'Browse & manage', icon: Table2 },
+    { id: 'burned', label: 'Burned', sub: 'Expired / banned', icon: Trash2 },
   ];
 
   return (
@@ -794,6 +798,142 @@ export const AdminEmails = () => {
                 </div>
               );
             })
+          )}
+        </div>
+      )}
+
+      {/* Burned / discarded inventory */}
+      {activeTab === 'burned' && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-red-100 dark:border-red-900/40 bg-red-50/60 dark:bg-red-950/20 p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-red-900 dark:text-red-100">
+                  Burned / discarded Adobe emails
+                </p>
+                <p className="text-xs text-red-800/80 dark:text-red-200/90 mt-0.5 max-w-2xl">
+                  These inboxes are no longer assigned to customers. Export them for Adobe removal, or delete mailbox +
+                  row once fully revoked from cloud.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (!burnedEmails.length) return;
+                const rows = burnedEmails.map((e) => [e.email, e.password, e.status].join(','));
+                const csv = ['Email,Password,Status', ...rows].join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `burned_emails_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={!burnedEmails.length}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-40"
+            >
+              <Download className="w-4 h-4" />
+              Export burned CSV
+            </button>
+          </div>
+
+          {burnedEmails.length === 0 ? (
+            <div className="bg-white dark:bg-[#151518] rounded-2xl border border-dashed border-gray-200 dark:border-[#303038] py-14 text-center">
+              <Trash2 className="w-10 h-10 text-gray-200 dark:text-gray-700 mx-auto mb-3" />
+              <p className="text-gray-700 dark:text-gray-300 font-medium">No burned emails yet</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                Once subscriptions fully expire, burned inboxes will show up here for removal from Adobe and cPanel.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d]">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5">
+                    <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Email</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                      Password
+                    </th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                      Created
+                    </th>
+                    <th className="py-3 px-4 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {burnedEmails.map((email) => (
+                    <tr
+                      key={email.id}
+                      className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-red-50/40 dark:hover:bg-red-500/5"
+                    >
+                      <td className="py-2.5 px-4">
+                        <span className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {email.email}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <span className="font-mono text-xs text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/10 px-2 py-0.5 rounded">
+                          {email.password}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300">
+                          burned
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-4 text-xs text-gray-400">
+                        {format(parseISO(email.created_at), 'yyyy-MM-dd HH:mm')}
+                      </td>
+                      <td className="py-2.5 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Permanently remove ${email.email} from the system and cPanel? This cannot be undone.`
+                              )
+                            )
+                              return;
+                            try {
+                              const {
+                                data: { session },
+                              } = await supabase.auth.getSession();
+                              const API_URL = import.meta.env.VITE_API_URL || '';
+                              const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  Authorization: `Bearer ${session?.access_token}`,
+                                },
+                                body: JSON.stringify({ email: email.email }),
+                              });
+                              const out = await res.json();
+                              if (!res.ok || !out.success) {
+                                throw new Error(out.error || 'Failed to delete email');
+                              }
+                              setEmails((prev) => prev.filter((e) => e.id !== email.id));
+                              alert('Mailbox and database row deleted.');
+                            } catch (err: any) {
+                              alert(err.message || 'Failed to delete burned email');
+                            }
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete from system &amp; cPanel
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

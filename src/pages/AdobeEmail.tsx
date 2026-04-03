@@ -31,6 +31,7 @@ interface UserEmail {
   is_active: boolean;
   order_id: string;
   email_slots: number;
+  is_personal: boolean;
   single_device_warning: boolean;
   order_auto_renew?: boolean;
   email_details: {
@@ -51,6 +52,7 @@ export const AdobeEmail = () => {
   
   const [emails, setEmails] = useState<UserEmail[]>([]);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
+  const [hasSharedSubscription, setHasSharedSubscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -165,7 +167,7 @@ export const AdobeEmail = () => {
             created_at,
             status,
             auto_renew,
-            products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning)
+            products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
           )
         `)
         .eq('user_id', user.id)
@@ -221,6 +223,7 @@ export const AdobeEmail = () => {
             assigned_at: item.assigned_at,
             is_active: item.is_active,
             email_slots: item.orders?.products?.email_slots ?? 3,
+            is_personal: item.orders?.products?.is_personal ?? false,
             single_device_warning: item.orders?.products?.single_device_warning ?? false,
             order_auto_renew: item.orders?.auto_renew ?? false,
             email_details: {
@@ -270,9 +273,13 @@ export const AdobeEmail = () => {
                 // 4. Provision fresh email access immediately
                 if (newOrder) {
                   try {
+                    const { data: { session } } = await supabase.auth.getSession();
                     await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
                       method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${session?.access_token}`,
+                      },
                       body: JSON.stringify({ order_id: newOrder.id })
                     });
                   } catch (e) { console.error('Auto renew assign err:', e); }
@@ -296,11 +303,21 @@ export const AdobeEmail = () => {
         }
         // ------------------------------------- //
 
-        setEmails(validFormattedEmails);
+        // UI isolation: hide revoked/inactive emails, but keep them in-memory for auto-renew evaluation above.
+        const displayEmails = validFormattedEmails.filter((e: any) => e.is_active === true);
+        setEmails(displayEmails);
       }
       
       // Determine if there is at least one active order based on the valid emails
-      setHasActiveSubscription(validFormattedEmails.length > 0 || (orders && orders.length > 0));
+      // Active subscription = at least one currently active email row.
+      setHasActiveSubscription(
+        (validFormattedEmails || []).some((e: any) => e.is_active === true) || (orders && orders.length > 0)
+      );
+
+      // Shared subscription = at least one active email row coming from a non-personal product.
+      setHasSharedSubscription(
+        (validFormattedEmails || []).some((e: any) => e.is_active === true && e.is_personal === false)
+      );
 
       // Fetch generation logs for the latest order
       if (userEmails && userEmails.length > 0) {
@@ -389,9 +406,13 @@ export const AdobeEmail = () => {
       }
 
       // Use the secure centralized backend to assign the email
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify({ order_id: orderId }),
       });
       const data = await res.json();
@@ -559,6 +580,15 @@ export const AdobeEmail = () => {
             </>
           )}
         </p>
+        {hasSharedSubscription && activeTab === 'emails' && (
+          <div className="mt-3 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2.5 flex gap-2 items-start max-w-xl">
+            <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
+              This is a shared team Adobe account. Always save important projects locally. Files stored in Adobe cloud
+              may be visible to your shared partner or removed during maintenance.
+            </p>
+          </div>
+        )}
       </div>
 
       {!hasActiveSubscription && (
@@ -734,9 +764,10 @@ export const AdobeEmail = () => {
                 <div className="mx-5 sm:mx-6 mt-2 mb-4 flex items-start gap-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/25 p-4">
                   <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">One device at a time</p>
-                    <p className="text-sm text-amber-800 dark:text-amber-300/90 mt-1 leading-relaxed">
-                      Sign out of Adobe on other devices before using this login. Simultaneous use can revoke access.
+                    <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">One device only</p>
+                    <p className="text-sm text-amber-800 dark:text-amber-300/90 mt-1 leading-relaxed font-semibold">
+                      You are strictly allowed 1 device only. Do not click &quot;Sign out other devices&quot; inside Adobe.
+                      Any violation or device hopping can trigger a permanent ban on this shared slot.
                     </p>
                   </div>
                 </div>

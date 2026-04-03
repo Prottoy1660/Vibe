@@ -699,8 +699,9 @@ router.post('/webhook', async (req, res) => {
   }
 });
 
-router.post('/assign-email', async (req, res) => {
+router.post('/assign-email', requireUser, async (req, res) => {
   try {
+    const user = (req as any).user;
     const { order_id } = req.body;
     if (!order_id) {
       return res.status(400).json({ success: false, message: 'Order ID is required' });
@@ -715,6 +716,19 @@ router.post('/assign-email', async (req, res) => {
 
     if (orderError || !order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    // Authorization: allow only the order owner, or an admin.
+    const { data: profile, error: profileErr } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+    if (profileErr) throw profileErr;
+
+    const callerIsAdmin = profile?.role === 'admin';
+    if (!callerIsAdmin && order.user_id !== user.id) {
+      return res.status(403).json({ success: false, message: 'Forbidden' });
     }
 
     // Ensure order is paid/completed before generating/assigning

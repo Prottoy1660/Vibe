@@ -235,7 +235,7 @@ export const Dashboard = () => {
       </div>
 
       {/* Welcome Card */}
-      <div className="bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex items-center justify-between transition-colors duration-300">
+      <div className="bg-white dark:bg-[#151518] rounded-2xl p-4 sm:p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-colors duration-300">
         <div className="flex items-center space-x-4">
           <div className="w-12 h-12 rounded-full bg-primary/10 text-primary dark:bg-slate-800 dark:text-white flex items-center justify-center font-bold text-lg transition-colors duration-300">
             {userInitials}
@@ -247,7 +247,7 @@ export const Dashboard = () => {
         </div>
         <button 
           onClick={signOut}
-          className="flex items-center space-x-2 px-4 py-2 border border-gray-200 dark:border-[#26262d] rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+          className="flex items-center justify-center space-x-2 w-full sm:w-auto px-4 py-2 border border-gray-200 dark:border-[#26262d] rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
         >
           <LogOut className="w-4 h-4" />
           <span>Sign out</span>
@@ -435,7 +435,7 @@ export const Dashboard = () => {
 
       {/* Notices Panel */}
       <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-        <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
+        <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
           <div>
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <span className="bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400 p-1.5 rounded-lg mr-2">
@@ -450,11 +450,11 @@ export const Dashboard = () => {
           </span>
         </div>
         
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {notices.length > 0 ? (
             <div className="space-y-4">
               {notices.map((notice) => (
-                <div key={notice.id} className="border border-blue-100 dark:border-blue-900/30 rounded-xl p-5 bg-blue-50/50 dark:bg-blue-500/5 transition-colors">
+                <div key={notice.id} className="border border-blue-100 dark:border-blue-900/30 rounded-xl p-4 sm:p-5 bg-blue-50/50 dark:bg-blue-500/5 transition-colors">
                   <div className="flex justify-between items-start mb-3">
                     <h4 className="font-semibold text-blue-900 dark:text-blue-100 flex items-center">
                       <Info className="w-4 h-4 mr-2 text-blue-500 dark:text-blue-400" />
@@ -467,7 +467,7 @@ export const Dashboard = () => {
                   
                   <div className="text-sm text-blue-800 dark:text-blue-200/80 space-y-2 mb-4">
                     {notice.content.split('\n').map((paragraph, i) => (
-                      <p key={i}>{paragraph}</p>
+                      <p key={i} className="break-words leading-relaxed">{paragraph}</p>
                     ))}
                   </div>
                   

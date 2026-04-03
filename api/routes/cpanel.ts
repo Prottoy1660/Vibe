@@ -136,6 +136,72 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
   }
 });
 
+// Endpoint to delete an email mailbox in cPanel and remove from emails_pool
+router.post('/delete-email', verifyAdmin, async (req, res) => {
+  try {
+    const { email } = req.body as { email?: string };
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, error: 'Email is required' });
+    }
+
+    if (!CPANEL_HOST || !CPANEL_USERNAME || !CPANEL_API_TOKEN) {
+      return res.status(500).json({ success: false, error: 'cPanel credentials not configured' });
+    }
+
+    const [emailUser, domain] = email.split('@');
+    if (!emailUser || !domain) {
+      return res.status(400).json({ success: false, error: 'Invalid email format' });
+    }
+
+    const apiUrl = `${CPANEL_HOST}/execute/Email/delete_pop`;
+    const params = new URLSearchParams();
+    params.append('email', emailUser);
+    params.append('domain', domain);
+
+    try {
+      const response = await fetch(`${apiUrl}?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `cpanel ${CPANEL_USERNAME}:${CPANEL_API_TOKEN}`
+        },
+        signal: AbortSignal.timeout(20000)
+      });
+
+      const responseText = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch (e) {
+        console.error(`cPanel delete non-JSON response for ${email}:`, responseText);
+        return res.status(502).json({ success: false, error: 'Invalid response from cPanel while deleting mailbox' });
+      }
+
+      if (data.status !== 1) {
+        console.error(`cPanel delete error for ${email}:`, data.errors);
+        return res.status(502).json({
+          success: false,
+          error: data.errors?.[0] || 'Failed to delete mailbox from cPanel',
+        });
+      }
+    } catch (err: any) {
+      console.error(`Network error deleting mailbox ${email}:`, err);
+      return res.status(502).json({ success: false, error: err.message || 'Network error deleting mailbox' });
+    }
+
+    // Best-effort cleanup in Supabase pool
+    try {
+      await supabase.from('emails_pool').delete().eq('email', email);
+    } catch (dbErr) {
+      console.error(`Failed to delete emails_pool row for ${email}:`, dbErr);
+    }
+
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error in delete-email:', error);
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
 // Endpoint to read inbox for a specific email
 router.post('/inbox', verifyUser, async (req, res) => {
   try {

@@ -978,4 +978,141 @@ router.post('/ops/process-notification-queue', verifyAdmin, async (req, res) => 
   }
 });
 
+// Admin renew (Option A)
+// Creates a new order linked to `renewed_from_order_id` and provisions fresh access.
+// Body:
+// - charge_wallet?: boolean (default true)
+// - preserve_auto_renew?: boolean (default true)
+router.post('/orders/:orderId/renew', verifyAdmin, async (req, res) => {
+  try {
+    const oldOrderId = req.params.orderId;
+    const { charge_wallet = true, preserve_auto_renew = true } = req.body || {};
+
+    if (!oldOrderId) return res.status(400).json({ success: false, error: 'orderId required' });
+
+    const { data: oldOrder, error: oldErr } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        user_id,
+        product_id,
+        status,
+        payment_status,
+        auto_renew,
+        personal_email,
+        created_at,
+        renewed_from_order_id,
+        products:product_id (
+          id,
+          is_personal,
+          duration,
+          price
+        )
+      `)
+      .eq('id', oldOrderId)
+      .single();
+
+    if (oldErr || !oldOrder) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    const product = (oldOrder as any).products;
+    if (!product) return res.status(400).json({ success: false, error: 'Missing product' });
+
+    const isPersonal = !!product.is_personal;
+    const price = Number(product.price || 0);
+
+    if (charge_wallet && price <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid product price for wallet charge' });
+    }
+
+    if (!['paid', 'completed'].includes(oldOrder.status)) {
+      return res.status(400).json({ success: false, error: 'Order must be paid/completed to renew' });
+    }
+
+    // Create the new order first to know the ID for provisioning.
+    // (If provisioning fails, we refund best-effort.)
+    if (charge_wallet) {
+      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+        p_user_id: oldOrder.user_id,
+        p_amount: price,
+      });
+      if (deductErr) {
+        return res.status(400).json({ success: false, error: 'Insufficient wallet balance' });
+      }
+    }
+
+    const { data: created, error: createErr } = await supabase
+      .from('orders')
+      .insert({
+        user_id: oldOrder.user_id,
+        product_id: oldOrder.product_id,
+        payment_method: charge_wallet ? 'wallet' : 'admin_renew',
+        total_amount: price,
+        status: 'completed',
+        payment_status: 'paid',
+        auto_renew: preserve_auto_renew ? !!oldOrder.auto_renew : false,
+        personal_email: isPersonal ? oldOrder.personal_email : null,
+        renewed_from_order_id: oldOrder.id,
+      })
+      .select()
+      .single();
+
+    if (createErr || !created) {
+      // Refund best-effort if we already charged
+      if (charge_wallet) {
+        try {
+          const { data: uRow } = await supabase.from('users').select('wallet_balance').eq('id', oldOrder.user_id).single();
+          const current = Number((uRow as any)?.wallet_balance || 0);
+          await supabase.from('users').update({ wallet_balance: current + price }).eq('id', oldOrder.user_id);
+        } catch {}
+      }
+      return res.status(500).json({ success: false, error: 'Failed to create renewed order' });
+    }
+
+    // Prevent duplicate renewals from the old order auto-renew flag.
+    await supabase.from('orders').update({ auto_renew: false }).eq('id', oldOrder.id);
+
+    // Provision fresh access
+    if (isPersonal) {
+      const months = durationToMonths(product.duration);
+      const email = oldOrder.personal_email;
+      const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
+      const out = await grantAdobeCloudAccess(email, months);
+      if (!out?.success) {
+        if (charge_wallet) {
+          try {
+            const { data: uRow } = await supabase.from('users').select('wallet_balance').eq('id', oldOrder.user_id).single();
+            const current = Number((uRow as any)?.wallet_balance || 0);
+            await supabase.from('users').update({ wallet_balance: current + price }).eq('id', oldOrder.user_id);
+          } catch {}
+        }
+        await supabase.from('orders').update({ status: 'refunded', payment_status: 'refunded' }).eq('id', created.id);
+        return res.status(500).json({ success: false, error: out?.error || 'Personal provisioning failed' });
+      }
+    } else {
+      const { data: assignRes, error: assignErr } = await supabase.rpc('assign_email_for_order_strict_24h', {
+        p_order_id: created.id,
+      });
+
+      if (assignErr || !(assignRes as any)?.success) {
+        if (charge_wallet) {
+          try {
+            const { data: uRow } = await supabase.from('users').select('wallet_balance').eq('id', oldOrder.user_id).single();
+            const current = Number((uRow as any)?.wallet_balance || 0);
+            await supabase.from('users').update({ wallet_balance: current + price }).eq('id', oldOrder.user_id);
+          } catch {}
+        }
+        await supabase.from('orders').update({ status: 'refunded', payment_status: 'refunded' }).eq('id', created.id);
+        return res.status(500).json({ success: false, error: (assignRes as any)?.error || assignErr?.message || 'Provisioning failed' });
+      }
+    }
+
+    return res.json({ success: true, renewed_order_id: created.id });
+  } catch (error: any) {
+    console.error('Admin renew error:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Internal server error' });
+  }
+});
+
 export default router;

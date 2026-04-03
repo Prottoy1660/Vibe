@@ -22,12 +22,13 @@ interface UserEmailRecord {
     created_at: string;
     status: string;
     auto_renew?: boolean;
+    renewed_from_order_id?: string | null;
     products: {
       duration: string;
     };
   };
   // Computed fields
-  computed_status: 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked';
+  computed_status: 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked' | 'Renewed';
   days_left: number;
   expires_at: Date | null;
 }
@@ -37,7 +38,9 @@ export const AdminUserEmails = () => {
   const [personalSubs, setPersonalSubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filter, setFilter] = useState<'All' | 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked'>('All');
+  const [filter, setFilter] = useState<
+    'All' | 'Active' | 'Expiring Soon' | 'Expired' | 'Replaced' | 'Revoked' | 'Renewed'
+  >('All');
   const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
   const [showCredentials, setShowCredentials] = useState(false);
 
@@ -58,6 +61,7 @@ export const AdminUserEmails = () => {
             created_at,
             status,
             auto_renew,
+            renewed_from_order_id,
             products:product_id (duration)
           )
         `)
@@ -81,6 +85,7 @@ export const AdminUserEmails = () => {
           orderGroup.forEach((item: any, index: number) => {
             const isReplaced = index > 0; // Since sorted by assigned_at DESC, index 0 is the latest
             const isRevoked = item.orders?.status === 'refunded' || item.orders?.status === 'cancelled';
+            const isRenewed = !!item.orders?.renewed_from_order_id;
             
             let expiresAt = null;
             let daysLeft = 0;
@@ -116,6 +121,11 @@ export const AdminUserEmails = () => {
               }
             } else {
                computedStatus = isRevoked ? 'Revoked' : (isReplaced ? 'Replaced' : 'Active');
+            }
+
+            // Mark freshly provisioned renewed orders, but not revoked/replaced rows.
+            if (!isRevoked && !isReplaced && isRenewed) {
+              computedStatus = 'Renewed';
             }
 
             // Handle pool mapping robustly
@@ -154,6 +164,7 @@ export const AdminUserEmails = () => {
           created_at,
           status,
           auto_renew,
+          renewed_from_order_id,
           personal_email,
           users:user_id (name, email, phone),
           products:product_id (title, duration, is_personal)
@@ -171,9 +182,10 @@ export const AdminUserEmails = () => {
         
         const processedPersonal = validPersonalSubs.map(item => {
           const isRevoked = item.status === 'refunded' || item.status === 'cancelled';
+                const isRenewed = !!item.renewed_from_order_id;
           let expiresAt = null;
           let daysLeft = 0;
-          let computedStatus = 'Active';
+                let computedStatus = 'Active';
           const prod = Array.isArray(item.products) ? item.products[0] : item.products;
           
           if (prod) {
@@ -204,6 +216,10 @@ export const AdminUserEmails = () => {
             } else {
               computedStatus = 'Active';
             }
+
+                  if (!isRevoked && isRenewed) {
+                    computedStatus = 'Renewed';
+                  }
           }
           
           return {
@@ -261,6 +277,62 @@ export const AdminUserEmails = () => {
     
     return matchesSearch && matchesFilter;
   });
+
+  const escapeCsv = (value: any) => {
+    const s = value === null || value === undefined ? '' : String(value);
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
+  const handleExportCSV = () => {
+    const activeRows = activeTab === 'regular' ? filteredEmails : filteredPersonalSubs;
+    if (!activeRows.length) return;
+    if (!showCredentials) {
+      alert('Enable "Show credentials" first, then export CSV.');
+      return;
+    }
+
+    const rows =
+      activeTab === 'regular'
+        ? (activeRows as UserEmailRecord[]).map((e) => {
+            const renewedFrom = e.orders?.renewed_from_order_id ?? '';
+            return [
+              e.users.email,
+              e.users.name,
+              e.emails_pool.email,
+              e.emails_pool.password,
+              e.order_id,
+              renewedFrom,
+              e.computed_status,
+            ].map(escapeCsv);
+          })
+        : (activeRows as any[]).map((sub) => {
+            // personal subscriptions: we don't have mailbox password in this query
+            // so export only high-level fields
+            return [
+              sub.users?.email || '',
+              sub.users?.name || '',
+              sub.personal_email || '',
+              '',
+              sub.id,
+              sub.renewed_from_order_id || '',
+              sub.computed_status,
+            ].map(escapeCsv);
+          });
+
+    const csvHeader =
+      activeTab === 'regular'
+        ? ['Customer Email', 'Customer Name', 'Adobe Email', 'Password', 'Order ID', 'Renewed From', 'Status']
+        : ['Customer Email', 'Customer Name', 'Personal Email', 'Password', 'Order ID', 'Renewed From', 'Status'];
+
+    const csv = [csvHeader.map(escapeCsv).join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `admin_user_emails_${activeTab}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) {
     return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
@@ -401,6 +473,7 @@ export const AdminUserEmails = () => {
               <option value="Expiring Soon">Expiring Soon</option>
               <option value="Expired">Expired</option>
               {activeTab === 'regular' && <option value="Replaced">Replaced</option>}
+              <option value="Renewed">Renewed Only</option>
               <option value="Revoked">Revoked</option>
               {activeTab === 'personal' && <option value="Pending">Pending</option>}
             </select>
@@ -415,6 +488,20 @@ export const AdminUserEmails = () => {
               Show credentials
             </label>
           </div>
+        </div>
+
+        <div className="px-6 py-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between border-b border-gray-100 dark:border-[#26262d]">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            Export uses current search + filter. Credentials included only when <span className="font-medium">Show credentials</span> is ON.
+          </div>
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            disabled={loading || (activeTab === 'regular' ? filteredEmails.length === 0 : filteredPersonalSubs.length === 0)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+          >
+            Export CSV
+          </button>
         </div>
 
         <div className="overflow-x-auto">

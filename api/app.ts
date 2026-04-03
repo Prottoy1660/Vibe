@@ -19,6 +19,8 @@ import adminRoutes from './routes/admin.js'
 import redeemRoutes from './routes/redeem.js'
 import platformRoutes from './routes/platform.js'
 import rateLimit from 'express-rate-limit'
+import cronRoutes from './routes/cron.js'
+import telemetryRoutes from './routes/telemetry.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -134,6 +136,8 @@ app.use('/api/payment', paymentLimiter, paymentRoutes)
 app.use('/api/cpanel', strictLimiter, cpanelRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/redeem', redeemLimiter, redeemRoutes)
+app.use('/api/cron', cronRoutes)
+app.use('/api/telemetry', telemetryRoutes)
 
 /**
  * health
