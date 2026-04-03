@@ -57,6 +57,7 @@ export const Dashboard = () => {
   });
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isAdminUser, setIsAdminUser] = useState<boolean | null>(null);
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [recharging, setRecharging] = useState(false);
@@ -83,10 +84,12 @@ export const Dashboard = () => {
           .single();
 
         if (userData?.role === 'admin') {
+          setIsAdminUser(true);
           didRedirect = true;
           navigate('/admin', { replace: true });
           return;
         }
+        setIsAdminUser(false);
 
         // Fetch orders for stats
         const { data: orders } = await supabase
@@ -214,19 +217,11 @@ export const Dashboard = () => {
     },
   ];
 
-  if (loading) {
+  // Show a clean loading spinner while checking role — prevents customer dashboard from flashing for admins
+  if (loading || isAdminUser === null || isAdminUser === true) {
     return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard</h1>
-        <div className="animate-pulse space-y-6">
-          <div className="h-24 bg-gray-200 rounded-xl"></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map(i => (
-              <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
-            ))}
-          </div>
-          <div className="h-64 bg-gray-200 rounded-xl"></div>
-        </div>
+      <div className="flex justify-center items-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
