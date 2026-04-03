@@ -609,7 +609,7 @@ export const AdobeEmail = () => {
             </>
           )}
         </p>
-        {hasSharedSubscription && activeTab === 'emails' && (
+        {emails.some(e => e.single_device_warning && e.is_active) && activeTab === 'emails' && (
           <div className="mt-3 rounded-xl border border-amber-200/80 dark:border-amber-900/60 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2.5 flex gap-2 items-start max-w-xl">
             <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <p className="text-xs text-amber-900 dark:text-amber-100 leading-relaxed">
