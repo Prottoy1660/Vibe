@@ -21,9 +21,12 @@ import {
   Sparkles,
   ExternalLink,
   Info,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
 import { getApiBaseUrl } from '../lib/apiBase';
+import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
 
 interface UserEmail {
   id: string;
@@ -44,8 +47,26 @@ interface UserEmail {
     expires_at: Date;
     is_expired: boolean;
     days_left: number;
+    total_days?: number;
   };
 }
+
+const PasswordDisplay = ({ password }: { password: string }) => {
+  const [isVisible, setIsVisible] = useState(false);
+  return (
+    <div className="mt-1 flex items-center justify-between rounded-lg border border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-950 px-3 py-2.5 font-mono text-sm text-zinc-900 dark:text-zinc-100 transition-all">
+      <span>{isVisible ? password : '••••••••••••'}</span>
+      <button 
+        type="button" 
+        onClick={() => setIsVisible(!isVisible)} 
+        className="ml-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        title={isVisible ? "Hide password" : "Show password"}
+      >
+        {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+};
 
 export const AdobeEmail = () => {
   const { user } = useAuth();
@@ -91,7 +112,7 @@ export const AdobeEmail = () => {
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [togglingAutoRenewOrderId, setTogglingAutoRenewOrderId] = useState<string | null>(null);
 
-  const fetchEmailData = async () => {
+  const fetchEmailData = async (retryCount = 0) => {
     if (!user) return;
     setLoading(true);
 
@@ -123,18 +144,12 @@ export const AdobeEmail = () => {
           let daysLeft = 0;
           let expiresAt = null;
           let isExpired = false;
+          let totalDays = 30; // For progress bar
 
           if (order.status === 'completed' || order.status === 'paid') {
-            const durationStr = order.products?.duration?.toLowerCase() || '';
-            let monthsToAdd = 1;
-            
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) : 1;
-            }
+            const durationStr = order.products?.duration || '';
+            const monthsToAdd = parseDurationToMonths(durationStr);
+            totalDays = parseDurationToDays(durationStr);
 
             const orderDate = parseISO(order.created_at);
             expiresAt = addMonths(orderDate, monthsToAdd);
@@ -145,6 +160,7 @@ export const AdobeEmail = () => {
           return {
             ...order,
             daysLeft,
+            totalDays,
             expiresAt,
             isExpired
           };
@@ -220,16 +236,9 @@ export const AdobeEmail = () => {
           let subscription_details = undefined;
           
           if (item.orders && item.orders.products) {
-            const durationStr = item.orders.products.duration.toLowerCase();
-            let monthsToAdd = 1; // Default to 1 month
-            
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) : 1;
-            }
+            const durationStr = item.orders.products.duration;
+            const monthsToAdd = parseDurationToMonths(durationStr);
+            const totalDays = parseDurationToDays(durationStr);
 
             const orderDate = parseISO(item.orders.created_at);
             const expiresAt = addMonths(orderDate, monthsToAdd);
@@ -240,7 +249,8 @@ export const AdobeEmail = () => {
               duration: item.orders.products.duration,
               expires_at: expiresAt,
               is_expired: isExpired,
-              days_left: daysLeft
+              days_left: daysLeft,
+              total_days: totalDays
             };
           }
 
@@ -277,68 +287,45 @@ export const AdobeEmail = () => {
           if (subData?.is_expired && orderData?.auto_renew === true) {
             console.log(`Evaluating Auto-Renew for expired order: ${orderData.id}`);
             try {
-              const productPrice = Number(orderData.products?.price || 0);
+              const { data: { session } } = await supabase.auth.getSession();
+              const res = await fetch(`${getApiBaseUrl()}/api/payment/process-auto-renew`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({ old_order_id: orderData.id })
+              });
               
-              const { data: uData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
-              const currentBalance = Number(uData?.wallet_balance) || 0;
-              
-              if (currentBalance >= productPrice && productPrice > 0) {
-                console.log(`Wallet sufficient (${currentBalance}), processing renewal for ${productPrice}...`);
-                
-                // 1. Deduct wallet
-                await supabase.from('users').update({ wallet_balance: currentBalance - productPrice }).eq('id', user.id);
-                
-                // 2. Shut off auto-renew on the old order so it doesn't duplicate
-                await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
-                
-                // 3. Create new completed order perfectly inheriting context
-                const { data: newOrder } = await supabase.from('orders').insert({
-                  user_id: user.id,
-                  product_id: orderData.products.id,
-                  payment_method: 'wallet',
-                  total_amount: productPrice,
-                  status: 'completed',
-                  payment_status: 'paid',
-                  auto_renew: true // Propagate the setting forwards!
-                }).select().single();
-                
-                // 4. Provision fresh email access immediately
-                if (newOrder) {
-                  try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    await fetch(`${getApiBaseUrl()}/api/payment/assign-email`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${session?.access_token}`,
-                      },
-                      body: JSON.stringify({ order_id: newOrder.id })
-                    });
-                  } catch (e) { console.error('Auto renew assign err:', e); }
-                  needsRefetch = true;
-                }
+              if (res.ok) {
+                console.log(`Auto-Renew succeeded for order: ${orderData.id}. Refetching state...`);
+                needsRefetch = true;
               } else {
-                console.log(`Insufficient wallet balance (${currentBalance} < ${productPrice}). Suspending Auto-Renew.`);
-                await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
+                const retryData = await res.json();
+                console.warn(`Auto-Renew failed or suspended on server:`, retryData.message);
               }
-            } catch (renewalErr) {
-              console.error('Lazy auto-renewal failed:', renewalErr);
-              // Fail safe: turn off auto-renew to prevent infinite error loops
-              await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
+            } catch (err) {
+               console.error('Lazy auto-renewal fetch failed:', err);
+               // Failsafe fallback
+               await supabase.from('orders').update({ auto_renew: false }).eq('id', orderData.id);
             }
           }
         }
         
         if (needsRefetch) {
-          console.log('Renewal complete, refetching fresh email state...');
-          return fetchEmailData(); // Restart the loop completely
+          if (retryCount < 2) {
+            console.log('Renewal complete, refetching fresh email state...');
+            return fetchEmailData(retryCount + 1); // Maximum of 2 retries to prevent infinite recursion
+          } else {
+            console.warn('Max renewal retries reached to prevent recursion loop.');
+          }
         }
         // ------------------------------------- //
-
-        // UI isolation: hide revoked/inactive emails, but keep them in-memory for auto-renew evaluation above.
-        const displayEmails = validFormattedEmails.filter((e: any) => e.is_active === true);
-        setEmails(displayEmails);
       }
+
+      // UI isolation: hide revoked/inactive emails, but keep them in-memory for auto-renew evaluation above.
+      const displayEmails = validFormattedEmails.filter((e: any) => e.is_active === true);
+      setEmails(displayEmails);
       
       // Determine if there is at least one active order based on the valid emails
       // Active subscription = at least one currently active email row.
@@ -398,7 +385,11 @@ export const AdobeEmail = () => {
       const latestActiveEmailItem = emails.find(e => e.subscription_details && !e.subscription_details.is_expired);
       orderId = latestActiveEmailItem?.order_id;
     }
-    
+    if (!orderId) {
+      alert('Could not find a valid active order to link the new email to.');
+      return;
+    }
+
     // Calculate how many emails have been generated for this specific order
     const orderEmailCount = emails.filter(e => e.order_id === orderId).length;
 
@@ -849,9 +840,7 @@ export const AdobeEmail = () => {
                             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
                               Password
                             </p>
-                            <div className="mt-1 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-zinc-100 dark:bg-zinc-950 px-3 py-2.5 font-mono text-sm text-zinc-900 dark:text-zinc-100">
-                              {email.email_details.password}
-                            </div>
+                            <PasswordDisplay password={email.email_details.password} />
                           </div>
 
                           <div className="flex flex-wrap gap-6 text-sm">
@@ -880,7 +869,7 @@ export const AdobeEmail = () => {
                                     <div
                                       className={`h-full rounded-full ${sub.is_expired ? 'bg-red-500' : 'bg-emerald-500'}`}
                                       style={{
-                                        width: `${Math.min(100, Math.max(0, (sub.days_left / 30) * 100))}%`,
+                                        width: `${Math.min(100, Math.max(0, (sub.days_left / (sub.total_days || 30)) * 100))}%`,
                                       }}
                                     />
                                   </div>
@@ -1111,7 +1100,7 @@ export const AdobeEmail = () => {
                                   <div
                                     className={`h-full rounded-full ${order.isExpired ? 'bg-red-500' : 'bg-emerald-500'}`}
                                     style={{
-                                      width: `${Math.min(100, Math.max(0, (order.daysLeft / 30) * 100))}%`,
+                                      width: `${Math.min(100, Math.max(0, (order.daysLeft / (order.totalDays || 30)) * 100))}%`,
                                     }}
                                   />
                                 </div>

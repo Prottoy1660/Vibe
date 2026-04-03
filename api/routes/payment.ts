@@ -848,4 +848,69 @@ router.post('/toggle-auto-renew', requireUser, async (req, res) => {
   }
 });
 
+router.post('/process-auto-renew', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { old_order_id } = req.body;
+    
+    if (!old_order_id) return res.status(400).json({ success: false, message: 'Missing old_order_id' });
+    
+    const { data: order, error: fetchErr } = await supabase
+      .from('orders')
+      .select('*, products(id, price, is_personal, email_slots)')
+      .eq('id', old_order_id)
+      .eq('user_id', user.id)
+      .single();
+      
+    if (fetchErr || !order) return res.status(404).json({ success: false, message: 'Order not found' });
+    if (!order.auto_renew) return res.status(400).json({ success: false, message: 'Auto-renew is disabled for this order' });
+    
+    const productPrice = Number(order.products?.price) || 0;
+    
+    if (productPrice > 0) {
+      // 1. Atomic Wallet Deduction using existing RPC
+      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+        p_user_id: user.id,
+        p_amount: productPrice,
+      });
+      
+      if (deductErr) {
+        // Suspend auto-renew
+        await supabase.from('orders').update({ auto_renew: false }).eq('id', old_order_id);
+        return res.status(400).json({ success: false, message: 'Insufficient wallet balance. Auto-renew disabled.', suspended: true });
+      }
+    }
+    
+    // 2. Shut off auto-renew on the old order 
+    await supabase.from('orders').update({ auto_renew: false }).eq('id', old_order_id);
+    
+    // 3. Create fresh order perfectly inheriting context
+    const { data: newOrder, error: insertErr } = await supabase.from('orders').insert({
+      user_id: user.id,
+      product_id: order.products.id,
+      payment_method: 'wallet',
+      total_amount: productPrice,
+      status: 'completed',
+      payment_status: 'paid',
+      auto_renew: true
+    }).select().single();
+    
+    if (insertErr || !newOrder) throw insertErr || new Error('Failed to create renewed order');
+    
+    // 4. Provision fresh email access immediately
+    if (!order.products?.is_personal) {
+      const assignment = await assignEmailForOrder(supabase, newOrder.id, newOrder.user_id, newOrder.product_id);
+      if (!assignment.success) {
+        console.error('AutoRenew Email assignment failed:', assignment.error);
+        // Fail-safe logic can just log it since the order is paid
+      }
+    }
+    
+    res.json({ success: true, message: 'Auto-renewed successfully' });
+  } catch (err: any) {
+    console.error('process-auto-renew error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Internal server error' });
+  }
+});
+
 export default router;
