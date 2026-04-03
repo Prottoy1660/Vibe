@@ -102,7 +102,7 @@ export const AdminDashboard = () => {
 
         if (userError || userData?.role !== 'admin') {
           setIsAdmin(false);
-          navigate('/app', { replace: true });
+          navigate('/', { replace: true });
           return;
         }
 

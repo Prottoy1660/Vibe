@@ -82,7 +82,7 @@ export const Register = () => {
       });
 
       if (error) throw error;
-      navigate('/app');
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'An error occurred during registration');
     } finally {

@@ -48,14 +48,13 @@ function AppRoutes() {
   return (
     <React.Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/" element={<Landing />} />
-        <Route path="/login" element={!user ? <Login /> : <Navigate to="/app" replace />} />
-        <Route path="/register" element={!user ? <Register /> : <Navigate to="/app" replace />} />
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
+        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
         <Route path="/status" element={<Status />} />
         <Route path="/landing" element={<Landing />} />
         
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="/app" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard />} />
           <Route path="/store" element={<Store />} />
           <Route path="/checkout/:id" element={<Checkout />} />
           <Route path="/orders" element={<Orders />} />
