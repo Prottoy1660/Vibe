@@ -5,6 +5,7 @@ import { Search, ShoppingBag, Loader2, Gift, CheckCircle2, AlertCircle, Sparkles
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { getStoredLanguage, pickLocalized } from '../lib/language';
+import { getApiBaseUrl } from '../lib/apiBase';
 
 interface Product {
   id: string;
@@ -156,7 +157,7 @@ export const Store = () => {
     setRedeemInfo(null);
     setRedeemSuccess('');
     try {
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/redeem/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -184,7 +185,7 @@ export const Store = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/redeem/apply`, {
         method: 'POST',
         headers: {

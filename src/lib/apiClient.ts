@@ -46,32 +46,52 @@ export function getLastApiDebug(): ApiDebug | null {
   }
 }
 
+function getSameOriginBase(): string {
+  if (typeof window === 'undefined') return '';
+  return stripTrailingSlashes(window.location.origin);
+}
+
+/** Drop stale api_base_url when user switched apex ↔ www or host changed */
+function invalidateStaleApiBaseCache() {
+  if (typeof window === 'undefined') return;
+  const host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return;
+  const cached = window.localStorage.getItem('api_base_url');
+  if (!cached) return;
+  try {
+    if (new URL(cached).host !== window.location.host) {
+      window.localStorage.removeItem('api_base_url');
+    }
+  } catch {
+    window.localStorage.removeItem('api_base_url');
+  }
+}
+
 function buildCandidates() {
   const candidates: string[] = [];
-
   const primary = getApiBaseUrl();
-  if (primary) candidates.push(stripTrailingSlashes(primary));
+  const origin = getSameOriginBase();
 
-  // Always try same-origin as a fallback.
-  if (typeof window !== 'undefined') {
-    candidates.push(stripTrailingSlashes(window.location.origin));
-  }
-
-  // Legacy hardcoded fallback (in case backend is hosted here).
-  candidates.push('https://vibeaccessbd.shop');
-  candidates.push('https://www.vibeaccessbd.shop');
-
-  // Local dev fallback only when running locally.
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+
+    if (isLocal) {
+      if (primary) candidates.push(stripTrailingSlashes(primary));
       candidates.push('http://localhost:3001');
+      if (origin) candidates.push(origin);
+    } else {
+      // Production: same-origin first — SPA + /api on one deployment avoids CORS "Failed to fetch"
+      if (origin) candidates.push(origin);
+      if (primary && primary !== origin) candidates.push(stripTrailingSlashes(primary));
+      candidates.push('https://vibeaccessbd.shop');
+      candidates.push('https://www.vibeaccessbd.shop');
     }
   } else {
+    if (primary) candidates.push(stripTrailingSlashes(primary));
     candidates.push('http://localhost:3001');
   }
 
-  // Unique only, preserve order.
   return [...new Set(candidates.filter(Boolean))];
 }
 
@@ -85,6 +105,7 @@ async function healthCheck(base: string) {
 }
 
 async function resolveBaseUrl() {
+  invalidateStaleApiBaseCache();
   const cached = typeof window !== 'undefined' ? window.localStorage.getItem('api_base_url') : null;
   if (cached) {
     // Guard against stale dev cache in production browsers.
@@ -120,6 +141,7 @@ async function resolveBaseUrl() {
 }
 
 export async function postJsonWithFallback<T = any>(path: string, body: Json): Promise<T> {
+  invalidateStaleApiBaseCache();
   const candidates = buildCandidates();
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;

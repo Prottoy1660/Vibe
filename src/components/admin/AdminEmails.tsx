@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { getApiBaseUrl } from '../../lib/apiBase';
 import {
   Loader2,
   Mail,
@@ -200,7 +201,7 @@ export const AdminEmails = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
@@ -241,7 +242,7 @@ export const AdminEmails = () => {
         cloud_access_type: genCloudAccess,
       }));
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const {
         data: { session },
       } = await supabase.auth.getSession();
@@ -904,7 +905,7 @@ export const AdminEmails = () => {
                               const {
                                 data: { session },
                               } = await supabase.auth.getSession();
-                              const API_URL = import.meta.env.VITE_API_URL || '';
+                              const API_URL = getApiBaseUrl();
                               const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
                                 method: 'POST',
                                 headers: {

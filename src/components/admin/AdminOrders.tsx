@@ -17,6 +17,7 @@ import {
   Package,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 interface Order {
   id: string;
@@ -153,7 +154,7 @@ export const AdminOrders = () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token || '';
-          const API_URL = import.meta.env.VITE_API_URL || '';
+          const API_URL = getApiBaseUrl();
 
           const res = await fetch(`${API_URL}/api/payment/assign-email`, {
             method: 'POST',
@@ -183,7 +184,7 @@ export const AdminOrders = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
@@ -208,7 +209,7 @@ export const AdminOrders = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/assign-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -235,7 +236,7 @@ export const AdminOrders = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
 
       const res = await fetch(`${API_URL}/api/admin/orders/${oldOrderId}/renew`, {
         method: 'POST',

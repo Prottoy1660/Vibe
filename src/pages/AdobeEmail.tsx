@@ -23,6 +23,7 @@ import {
   Info,
 } from 'lucide-react';
 import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
+import { getApiBaseUrl } from '../lib/apiBase';
 
 interface UserEmail {
   id: string;
@@ -274,7 +275,7 @@ export const AdobeEmail = () => {
                 if (newOrder) {
                   try {
                     const { data: { session } } = await supabase.auth.getSession();
-                    await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
+                    await fetch(`${getApiBaseUrl()}/api/payment/assign-email`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
@@ -407,7 +408,7 @@ export const AdobeEmail = () => {
 
       // Use the secure centralized backend to assign the email
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/payment/assign-email`, {
+      const res = await fetch(`${getApiBaseUrl()}/api/payment/assign-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -445,7 +446,7 @@ export const AdobeEmail = () => {
     const closeOnError = options?.closeOnError ?? false;
     setInboxLoading(true);
     try {
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const { data: { session } } = await supabase.auth.getSession();
 
       const response = await fetch(`${API_URL}/api/cpanel/inbox`, {
@@ -507,7 +508,7 @@ export const AdobeEmail = () => {
       setTogglingAutoRenewOrderId(orderId);
       const nextValue = !currentValue;
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const { data: { session } } = await supabase.auth.getSession();
       
       const res = await fetch(`${API_URL}/api/payment/toggle-auto-renew`, {

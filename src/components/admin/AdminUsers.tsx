@@ -4,6 +4,7 @@ import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Sea
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 interface User {
   id: string;
@@ -100,7 +101,7 @@ export const AdminUsers = () => {
         throw new Error('Not authenticated');
       }
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/admin/users/${userId}`, {
         method: 'DELETE',
         headers: {
@@ -126,7 +127,7 @@ export const AdminUsers = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) throw new Error('Not authenticated');
 
-    const API_URL = import.meta.env.VITE_API_URL || '';
+    const API_URL = getApiBaseUrl();
     const response = await fetch(`${API_URL}/api/admin/users/${userId}`, {
       method: 'DELETE',
       headers: {

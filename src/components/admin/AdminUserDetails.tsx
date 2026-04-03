@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 interface AdminUserDetailsProps {
   userId: string;
@@ -262,7 +263,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Not authenticated');
 
-      const API_URL = import.meta.env.VITE_API_URL || '';
+      const API_URL = getApiBaseUrl();
       const response = await fetch(`${API_URL}/api/admin/users/${userId}`, {
         method: 'PUT',
         headers: {
