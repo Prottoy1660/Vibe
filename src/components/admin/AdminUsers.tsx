@@ -24,7 +24,7 @@ export const AdminUsers = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
-  const [signupFilter, setSignupFilter] = useState<'all' | 'email' | 'google' | 'facebook'>('all');
+  const [signupFilter, setSignupFilter] = useState<'all' | 'email' | 'google' | 'facebook' | 'azure'>('all');
 
   const fetchUsers = async () => {
     try {
@@ -132,6 +132,7 @@ export const AdminUsers = () => {
     email: users.filter((u) => (u.signup_auth_provider || 'email') === 'email').length,
     google: users.filter((u) => u.signup_auth_provider === 'google').length,
     facebook: users.filter((u) => u.signup_auth_provider === 'facebook').length,
+    azure: users.filter((u) => u.signup_auth_provider === 'azure').length,
   };
 
   const filteredUsers = users.filter((u) => {
@@ -213,7 +214,7 @@ export const AdminUsers = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Signup: email</p>
@@ -242,6 +243,16 @@ export const AdminUsers = () => {
             </div>
           </div>
           <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{signupBreakdown.facebook}</div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">OAuth at account creation</p>
+        </div>
+        <div className="bg-white dark:bg-[#151518] rounded-2xl p-5 border border-gray-100 dark:border-[#26262d]">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Signup: Microsoft</p>
+            <div className="p-2 rounded-xl bg-cyan-50 dark:bg-white/5 text-cyan-600 dark:text-cyan-400">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2 tabular-nums">{signupBreakdown.azure}</div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">OAuth at account creation</p>
         </div>
       </div>
@@ -291,6 +302,7 @@ export const AdminUsers = () => {
               <option value="email">Email / password</option>
               <option value="google">Google</option>
               <option value="facebook">Facebook</option>
+              <option value="azure">Microsoft</option>
             </select>
 
             <button

@@ -18,15 +18,17 @@ export const Login = () => {
 
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
+  const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
   const isDark = theme === 'dark';
 
   useEffect(() => {
     const fetchSettings = async () => {
       const { data } = await supabase.from('system_settings').select('value').eq('key', 'auth_settings').single();
       if (data && data.value) {
-        const v = data.value as { enable_google_login?: boolean; enable_facebook_login?: boolean };
+        const v = data.value as { enable_google_login?: boolean; enable_facebook_login?: boolean; enable_microsoft_login?: boolean };
         setGoogleLoginEnabled(v.enable_google_login !== false);
         setFacebookLoginEnabled(v.enable_facebook_login !== false);
+        setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
       }
     };
     fetchSettings();
@@ -117,6 +119,21 @@ export const Login = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: { redirectTo: oauthRedirect },
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      setError(error.message);
+    }
+  };
+
+  const handleMicrosoftLogin = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: oauthRedirect,
+          scopes: 'email profile openid',
+        },
       });
       if (error) throw error;
     } catch (error: any) {
@@ -273,7 +290,7 @@ export const Login = () => {
             </motion.button>
           </form>
 
-          {(googleLoginEnabled || facebookLoginEnabled) && (
+          {(googleLoginEnabled || facebookLoginEnabled || microsoftLoginEnabled) && (
             <div className="mt-6">
               <div className="relative mb-6">
                 <div className="absolute inset-0 flex items-center">
@@ -328,6 +345,23 @@ export const Login = () => {
                       />
                     </svg>
                     Sign in with Facebook
+                  </motion.button>
+                )}
+                {microsoftLoginEnabled && (
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleMicrosoftLogin}
+                    className={`w-full flex items-center justify-center gap-3 py-4 px-4 rounded-2xl text-sm font-bold transition-all group ${isDark ? 'text-white bg-[#00A4EF]/10 hover:bg-[#00A4EF]/20 border border-[#00A4EF]/25' : 'text-slate-800 bg-white/80 hover:bg-white border border-slate-200 shadow-sm'}`}
+                  >
+                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 21 21" aria-hidden>
+                      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+                      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+                      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+                      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+                    </svg>
+                    Sign in with Microsoft
                   </motion.button>
                 )}
               </div>
