@@ -47,6 +47,7 @@ import { AdminPlatformSettings } from '../components/admin/AdminPlatformSettings
 import { AdminWaitlist } from '../components/admin/AdminWaitlist';
 import { AdminUserNotifications } from '../components/admin/AdminUserNotifications';
 import { AdminLobbyMusic } from '../components/admin/AdminLobbyMusic';
+import { AdminLandingPage } from '../components/admin/AdminLandingPage';
 export const AdminDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -328,6 +329,7 @@ export const AdminDashboard = () => {
                 Support tickets
               </span>
             )}
+            {activeTab === 'landing_page' && 'Landing Page Settings'}
             {activeTab === 'lobby_music' && (
               <span className="flex items-center gap-2">
                 <Music2 className="w-6 h-6" />
@@ -360,6 +362,7 @@ export const AdminDashboard = () => {
       {activeTab === 'lobby_music' && <AdminLobbyMusic />}
       {activeTab === 'user_notifications' && <AdminUserNotifications />}
       {activeTab === 'waitlist' && <AdminWaitlist />}
+      {activeTab === 'landing_page' && <AdminLandingPage />}
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
