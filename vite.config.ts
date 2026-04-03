@@ -15,6 +15,8 @@ export default defineConfig({
     tsconfigPaths(),
   ],
   build: {
+    // Modern browsers only — smaller, faster output than legacy ES5-style polyfills
+    target: 'es2020',
     rollupOptions: {
       output: {
         manualChunks: {

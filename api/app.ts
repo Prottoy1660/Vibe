@@ -7,6 +7,7 @@ import express, {
   type Response,
   type NextFunction,
 } from 'express'
+import compression from 'compression'
 import cors from 'cors'
 import path from 'path'
 import dotenv from 'dotenv'
@@ -69,6 +70,7 @@ app.use(cors({
   },
   credentials: true,
 }))
+app.use(compression())
 // Basic hardening headers (kept lightweight to avoid dependency overhead)
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')

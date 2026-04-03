@@ -1,17 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
   Users,
-  ShoppingBag,
   Mail,
-  Upload,
   AlertCircle,
   Loader2,
   CheckCircle2,
-  Ticket,
-  Package,
-  ArrowLeft,
   Info,
   XCircle,
   Fingerprint,
@@ -20,33 +15,37 @@ import {
   ShieldAlert,
   LayoutDashboard,
   LifeBuoy,
-  Settings,
-  Bell,
   Megaphone,
   Music2,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 
-import { AdminProducts } from '../components/admin/AdminProducts';
-import { AdminOrders } from '../components/admin/AdminOrders';
-import { AdminUsers } from '../components/admin/AdminUsers';
-import { AdminCoupons } from '../components/admin/AdminCoupons';
-import { AdminNotices } from '../components/admin/AdminNotices';
-import { AdminEmails } from '../components/admin/AdminEmails';
-import { AdminUserEmails } from '../components/admin/AdminUserEmails';
-import { AdminAnalytics } from '../components/admin/AdminAnalytics';
-import { AdminBulkUpload } from '../components/admin/AdminBulkUpload';
-import { AdminIntelligence } from '../components/admin/AdminIntelligence';
-import { AdminRedeemCodes } from '../components/admin/AdminRedeemCodes';
-import { AdminTutorialHelp } from '../components/admin/AdminTutorialHelp';
-import { AdminOpsCenter } from '../components/admin/AdminOpsCenter';
-import { AdminGrowthOps } from '../components/admin/AdminGrowthOps';
-import { AdminSupport } from '../components/admin/AdminSupport';
-import { AdminPlatformSettings } from '../components/admin/AdminPlatformSettings';
-import { AdminWaitlist } from '../components/admin/AdminWaitlist';
-import { AdminUserNotifications } from '../components/admin/AdminUserNotifications';
-import { AdminLobbyMusic } from '../components/admin/AdminLobbyMusic';
+/** Tab panels load on demand — avoids shipping recharts + heavy admin UI on first /admin paint */
+const AdminProducts = React.lazy(() => import('../components/admin/AdminProducts').then((m) => ({ default: m.AdminProducts })));
+const AdminOrders = React.lazy(() => import('../components/admin/AdminOrders').then((m) => ({ default: m.AdminOrders })));
+const AdminUsers = React.lazy(() => import('../components/admin/AdminUsers').then((m) => ({ default: m.AdminUsers })));
+const AdminCoupons = React.lazy(() => import('../components/admin/AdminCoupons').then((m) => ({ default: m.AdminCoupons })));
+const AdminNotices = React.lazy(() => import('../components/admin/AdminNotices').then((m) => ({ default: m.AdminNotices })));
+const AdminEmails = React.lazy(() => import('../components/admin/AdminEmails').then((m) => ({ default: m.AdminEmails })));
+const AdminUserEmails = React.lazy(() => import('../components/admin/AdminUserEmails').then((m) => ({ default: m.AdminUserEmails })));
+const AdminAnalytics = React.lazy(() => import('../components/admin/AdminAnalytics').then((m) => ({ default: m.AdminAnalytics })));
+const AdminIntelligence = React.lazy(() => import('../components/admin/AdminIntelligence').then((m) => ({ default: m.AdminIntelligence })));
+const AdminRedeemCodes = React.lazy(() => import('../components/admin/AdminRedeemCodes').then((m) => ({ default: m.AdminRedeemCodes })));
+const AdminTutorialHelp = React.lazy(() => import('../components/admin/AdminTutorialHelp').then((m) => ({ default: m.AdminTutorialHelp })));
+const AdminOpsCenter = React.lazy(() => import('../components/admin/AdminOpsCenter').then((m) => ({ default: m.AdminOpsCenter })));
+const AdminGrowthOps = React.lazy(() => import('../components/admin/AdminGrowthOps').then((m) => ({ default: m.AdminGrowthOps })));
+const AdminSupport = React.lazy(() => import('../components/admin/AdminSupport').then((m) => ({ default: m.AdminSupport })));
+const AdminPlatformSettings = React.lazy(() => import('../components/admin/AdminPlatformSettings').then((m) => ({ default: m.AdminPlatformSettings })));
+const AdminWaitlist = React.lazy(() => import('../components/admin/AdminWaitlist').then((m) => ({ default: m.AdminWaitlist })));
+const AdminUserNotifications = React.lazy(() => import('../components/admin/AdminUserNotifications').then((m) => ({ default: m.AdminUserNotifications })));
+const AdminLobbyMusic = React.lazy(() => import('../components/admin/AdminLobbyMusic').then((m) => ({ default: m.AdminLobbyMusic })));
+
+const AdminTabFallback = () => (
+  <div className="flex justify-center items-center py-16">
+    <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+  </div>
+);
 export const AdminDashboard = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -69,10 +68,6 @@ export const AdminDashboard = () => {
     replaced: 0
   });
   const [loading, setLoading] = useState(true);
-  
-  const [bulkUploadText, setBulkUploadText] = useState('');
-  const [uploadLoading, setUploadLoading] = useState(false);
-  const [uploadMessage, setUploadMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -207,61 +202,6 @@ export const AdminDashboard = () => {
     checkAdminAndFetchData();
   }, [user, navigate]);
 
-  const handleBulkUpload = async () => {
-    if (!bulkUploadText.trim()) return;
-    
-    setUploadLoading(true);
-    setUploadMessage(null);
-    
-    try {
-      const lines = bulkUploadText.split('\n').filter(line => line.trim() !== '');
-      const newEmails = [];
-      
-      for (const line of lines) {
-        const [email, password] = line.split(',').map(s => s.trim());
-        if (email && password) {
-          newEmails.push({
-            email,
-            password,
-            status: 'available'
-          });
-        }
-      }
-      
-      if (newEmails.length === 0) {
-        setUploadMessage({ type: "error", text: "No valid email, password pairs found." });
-        setUploadLoading(false);
-        return;
-      }
-      
-      const { error } = await supabase
-        .from('emails_pool')
-        .insert(newEmails);
-        
-      if (error) {
-        if (error.code === '23505') {
-          setUploadMessage({ type: 'error', text: 'One or more emails already exist in the database.' });
-        } else {
-          throw error;
-        }
-      } else {
-        setUploadMessage({ type: 'success', text: `Successfully uploaded ${newEmails.length} emails.` });
-        setBulkUploadText('');
-        
-        // Refresh stats
-        setStats(prev => ({
-          ...prev,
-          emailsRemaining: prev.emailsRemaining + newEmails.length
-        }));
-      }
-    } catch (error) {
-      console.error('Error uploading emails:', error);
-      setUploadMessage({ type: 'error', text: 'An error occurred during upload.' });
-    } finally {
-      setUploadLoading(false);
-    }
-  };
-
   if (authLoading || loading || isAdmin === null) {
     return (
       <div className="flex justify-center items-center py-20">
@@ -342,24 +282,26 @@ export const AdminDashboard = () => {
         </div>
       )}
 
-      {activeTab === 'products' && <AdminProducts />}
-      {activeTab === 'orders' && <AdminOrders />}
-      {activeTab === 'users' && <AdminUsers />}
-      {activeTab === 'coupons' && <AdminCoupons />}
-      {activeTab === 'notices' && <AdminNotices />}
-      {activeTab === 'emails' && <AdminEmails />}
-      {activeTab === 'analytics' && <AdminAnalytics />}
-      {activeTab === 'user_emails' && <AdminUserEmails />}
-      {activeTab === 'intelligence' && <AdminIntelligence />}
-      {activeTab === 'redeem' && <AdminRedeemCodes />}
-      {activeTab === 'tutorial_help' && <AdminTutorialHelp />}
-      {activeTab === 'ops' && <AdminOpsCenter />}
-      {activeTab === 'growth_ops' && <AdminGrowthOps />}
-      {activeTab === 'support' && <AdminSupport />}
-      {activeTab === 'platform_settings' && <AdminPlatformSettings />}
-      {activeTab === 'lobby_music' && <AdminLobbyMusic />}
-      {activeTab === 'user_notifications' && <AdminUserNotifications />}
-      {activeTab === 'waitlist' && <AdminWaitlist />}
+      <Suspense fallback={<AdminTabFallback />}>
+        {activeTab === 'products' && <AdminProducts />}
+        {activeTab === 'orders' && <AdminOrders />}
+        {activeTab === 'users' && <AdminUsers />}
+        {activeTab === 'coupons' && <AdminCoupons />}
+        {activeTab === 'notices' && <AdminNotices />}
+        {activeTab === 'emails' && <AdminEmails />}
+        {activeTab === 'analytics' && <AdminAnalytics />}
+        {activeTab === 'user_emails' && <AdminUserEmails />}
+        {activeTab === 'intelligence' && <AdminIntelligence />}
+        {activeTab === 'redeem' && <AdminRedeemCodes />}
+        {activeTab === 'tutorial_help' && <AdminTutorialHelp />}
+        {activeTab === 'ops' && <AdminOpsCenter />}
+        {activeTab === 'growth_ops' && <AdminGrowthOps />}
+        {activeTab === 'support' && <AdminSupport />}
+        {activeTab === 'platform_settings' && <AdminPlatformSettings />}
+        {activeTab === 'lobby_music' && <AdminLobbyMusic />}
+        {activeTab === 'user_notifications' && <AdminUserNotifications />}
+        {activeTab === 'waitlist' && <AdminWaitlist />}
+      </Suspense>
 
       {activeTab === 'overview' && (
         <div className="space-y-6">
@@ -475,7 +417,9 @@ export const AdminDashboard = () => {
             </div>
           </div>
 
-          <AdminAnalytics embedded />
+          <Suspense fallback={<AdminTabFallback />}>
+            <AdminAnalytics embedded />
+          </Suspense>
         </div>
       )}
     </div>
