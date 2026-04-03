@@ -438,18 +438,18 @@ export const Dashboard = () => {
 
       {/* Notices Panel */}
       <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
-        <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
-          <div>
+        <div className="p-4 sm:p-6 border-b border-gray-100 dark:border-[#26262d] flex flex-wrap items-start sm:items-center justify-between gap-2">
+          <div className="min-w-0">
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-              <span className="bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400 p-1.5 rounded-lg mr-2">
+              <span className="bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400 p-1.5 rounded-lg mr-2 shrink-0">
                 <Info className="w-5 h-5" />
               </span>
               Important Notices
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Stay updated with the latest announcements</p>
           </div>
-          <span className="bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 text-xs font-medium px-2.5 py-1 rounded-full">
-            {notices.length} notice{notices.length !== 1 ? 's' : ''}
+          <span className="bg-gray-100 dark:bg-white/5 text-gray-600 dark:text-gray-300 text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap shrink-0">
+            {notices.length} {notices.length === 1 ? 'notice' : 'notices'}
           </span>
         </div>
         
