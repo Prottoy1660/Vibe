@@ -365,7 +365,7 @@ export const Checkout = () => {
                     />
                   </div>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5">
-                    সাপোর্ট ও ডেলিভারি যোগাযোগের জন্য প্রয়োজন।
+                    Required for support and delivery communication.
                   </p>
                 </div>
               )}
