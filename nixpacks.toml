@@ -1,0 +1,9 @@
+# Force Nixpacks to treat this as a Node.js app (not a static site).
+# Without this, Nixpacks detects Vite and serves via Nginx,
+# which returns 405 for POST /api/* requests.
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "SERVE_STATIC_SPA=1 node --import tsx api/server.ts"
