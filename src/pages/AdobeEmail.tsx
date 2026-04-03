@@ -153,26 +153,54 @@ export const AdobeEmail = () => {
         setPersonalProducts(pProducts);
       }
         
-      // Fetch assigned emails with order and product details
-      const { data: userEmails, error: emailsError } = await supabase
-        .from('user_emails')
-        .select(`
-          id,
-          email_id,
-          order_id,
-          assigned_at,
-          is_active,
-          emails_pool:email_id (email, password),
-          orders:order_id (
+      // Fetch assigned emails with order and product details via server-side API
+      // (bypasses RLS on emails_pool so email/password are visible to the user)
+      let userEmails: any[] | null = null;
+      let emailsError: any = null;
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const API_URL = getApiBaseUrl();
+          const res = await fetch(`${API_URL}/api/auth/my-emails`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const json = await res.json();
+          if (res.ok && json.success) {
+            userEmails = json.data;
+          } else {
+            emailsError = json.error || 'API error';
+          }
+        }
+      } catch (apiErr) {
+        console.warn('Server-side my-emails failed, falling back to client query', apiErr);
+      }
+
+      // Fallback: direct Supabase query (will show 'Unknown' if RLS blocks emails_pool)
+      if (!userEmails) {
+        const { data, error } = await supabase
+          .from('user_emails')
+          .select(`
             id,
-            created_at,
-            status,
-            auto_renew,
-            products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
-          )
-        `)
-        .eq('user_id', user.id)
-        .order('assigned_at', { ascending: false });
+            email_id,
+            order_id,
+            assigned_at,
+            is_active,
+            emails_pool:email_id (email, password),
+            orders:order_id (
+              id,
+              created_at,
+              status,
+              auto_renew,
+              products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
+            )
+          `)
+          .eq('user_id', user.id)
+          .order('assigned_at', { ascending: false });
+        userEmails = data;
+        emailsError = error;
+      }
 
       if (emailsError) throw emailsError;
 

@@ -84,4 +84,65 @@ router.post('/signup-intent', signupIntentLimiter, async (req: Request, res: Res
   }
 })
 
+/**
+ * GET /api/auth/my-emails
+ * Returns the authenticated user's assigned emails with pool credentials.
+ * Uses the service-role client so emails_pool RLS doesn't block the join.
+ */
+router.get('/my-emails', async (req: Request, res: Response): Promise<void> => {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Service unavailable' })
+    return
+  }
+
+  try {
+    const authHeader = req.headers.authorization || ''
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+    if (!token) {
+      res.status(401).json({ success: false, error: 'Missing token' })
+      return
+    }
+
+    const { data: authData, error: authErr } = await supabase.auth.getUser(token)
+    if (authErr || !authData?.user) {
+      res.status(401).json({ success: false, error: 'Invalid token' })
+      return
+    }
+
+    const userId = authData.user.id
+
+    // Service-role query — bypasses RLS so emails_pool columns are visible
+    const { data: userEmails, error: emailsError } = await supabase
+      .from('user_emails')
+      .select(`
+        id,
+        email_id,
+        order_id,
+        assigned_at,
+        is_active,
+        emails_pool:email_id (email, password),
+        orders:order_id (
+          id,
+          created_at,
+          status,
+          auto_renew,
+          products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
+        )
+      `)
+      .eq('user_id', userId)
+      .order('assigned_at', { ascending: false })
+
+    if (emailsError) {
+      console.error('[my-emails] query error', emailsError)
+      res.status(500).json({ success: false, error: 'Failed to fetch emails' })
+      return
+    }
+
+    res.json({ success: true, data: userEmails || [] })
+  } catch (e) {
+    console.error('[my-emails]', e)
+    res.status(500).json({ success: false, error: 'Internal error' })
+  }
+})
+
 export default router
