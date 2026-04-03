@@ -96,12 +96,23 @@ export const AdobeEmail = () => {
     setLoading(true);
 
     try {
-      // Check active subscription
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('*, products(*)')
-        .eq('user_id', user.id)
-        .in('status', ['paid', 'completed', 'pending']);
+      // Fetch orders and personal products in parallel (independent queries)
+      const [ordersResult, pProductsResult] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('*, products(*)')
+          .eq('user_id', user.id)
+          .in('status', ['paid', 'completed', 'pending']),
+        supabase
+          .from('products')
+          .select('*')
+          .eq('is_personal', true)
+          .eq('is_active', true)
+          .order('price', { ascending: true }),
+      ]);
+
+      const orders = ordersResult.data;
+      const pProducts = pProductsResult.data;
         
       if (orders) {
         const pOrders = orders
@@ -141,14 +152,6 @@ export const AdobeEmail = () => {
         setPersonalOrders(pOrders);
       }
 
-      // Fetch personal products for modal
-      const { data: pProducts } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_personal', true)
-        .eq('is_active', true)
-        .order('price', { ascending: true });
-        
       if (pProducts) {
         setPersonalProducts(pProducts);
       }

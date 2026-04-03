@@ -47,10 +47,9 @@ const AdminTabFallback = () => (
   </div>
 );
 export const AdminDashboard = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAdmin, role } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   
   // Read activeTab from URL, default to 'overview'
   const activeTab = searchParams.get('tab') || 'overview';
@@ -69,67 +68,54 @@ export const AdminDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
 
+  // Redirect non-admin users (uses cached role from AuthContext — no extra query)
   useEffect(() => {
+    if (authLoading || role === null) return;
+    if (!user) {
+      navigate('/login', { replace: true });
+    } else if (!isAdmin) {
+      navigate('/', { replace: true });
+    }
+  }, [user, isAdmin, role, authLoading, navigate]);
+
+  // Fetch admin stats (skips the role query since AuthContext already has it)
+  useEffect(() => {
+    if (!user || !isAdmin) return;
     let cancelled = false;
 
-    const checkAdminAndFetchData = async () => {
-      if (authLoading) return;
-
-      if (!user) {
-        setIsAdmin(false);
-        setLoading(false);
-        navigate('/login', { replace: true });
-        return;
-      }
-
+    const fetchAdminStats = async () => {
       setLoading(true);
-
       try {
-        // 1. Check if user is admin
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single();
-
-        if (cancelled) return;
-
-        if (userError || userData?.role !== 'admin') {
-          setIsAdmin(false);
-          navigate('/', { replace: true });
-          return;
-        }
-
-        setIsAdmin(true);
         
-        // 2. Fetch stats
-        // Active Users
-        const { count: activeUsers } = await supabase
-          .from('users')
-          .select('*', { count: 'exact', head: true });
-          
-        // Email Stats from Pool
-        const { data: emails } = await supabase
-          .from('emails_pool')
-          .select('status');
-          
+        // 2. Fetch all stats in parallel (2-3x faster than sequential)
+        const [usersResult, emailsResult, userEmailsResult] = await Promise.all([
+          supabase
+            .from('users')
+            .select('*', { count: 'exact', head: true }),
+          supabase
+            .from('emails_pool')
+            .select('status'),
+          supabase
+            .from('user_emails')
+            .select(`
+              id,
+              assigned_at,
+              order_id,
+              orders:order_id (
+                created_at,
+                status,
+                products:product_id (duration)
+              )
+            `)
+            .order('assigned_at', { ascending: false }),
+        ]);
+
+        const activeUsers = usersResult.count;
+        const emails = emailsResult.data;
+        const userEmails = userEmailsResult.data;
+
         const emailsUsed = emails?.filter(e => e.status === 'assigned' || e.status === 'used').length || 0;
         const emailsRemaining = emails?.filter(e => e.status === 'available').length || 0;
-
-        // User Emails Status Stats
-        const { data: userEmails } = await supabase
-          .from('user_emails')
-          .select(`
-            id,
-            assigned_at,
-            order_id,
-            orders:order_id (
-              created_at,
-              status,
-              products:product_id (duration)
-            )
-          `)
-          .order('assigned_at', { ascending: false });
 
         let expiringSoon = 0;
         let expired = 0;
@@ -199,10 +185,11 @@ export const AdminDashboard = () => {
       }
     };
 
-    checkAdminAndFetchData();
-  }, [user, navigate]);
+    fetchAdminStats();
+    return () => { cancelled = true; };
+  }, [user, isAdmin]);
 
-  if (authLoading || loading || isAdmin === null) {
+  if (authLoading || loading || role === null) {
     return (
       <div className="flex justify-center items-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -210,7 +197,7 @@ export const AdminDashboard = () => {
     );
   }
 
-  if (isAdmin === false) {
+  if (!isAdmin) {
     return null; // Will redirect in useEffect
   }
 

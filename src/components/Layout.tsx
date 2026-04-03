@@ -43,26 +43,23 @@ export function cn(...inputs: ClassValue[]) {
 
 export const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const location = useLocation();
   /** User-facing alerts only; admin workspace stays clean */
   const showGlobalBanners = !location.pathname.startsWith('/admin');
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
 
+  // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
-    if (!user) {
-      setIsAdmin(false);
-      return;
-    }
+    if (!user) return;
 
     let cancelled = false;
 
-    const checkAdmin = async () => {
+    const checkUserStatus = async () => {
       const { data } = await supabase
         .from('users')
-        .select('role, is_banned, preferred_language')
+        .select('is_banned, preferred_language')
         .eq('id', user.id)
         .single();
 
@@ -74,8 +71,6 @@ export const Layout = () => {
         return;
       }
 
-      setIsAdmin(data?.role === 'admin');
-
       // Auto language personalization: first-time users inherit browser language.
       if (!data?.preferred_language) {
         const detected = detectBrowserLanguage();
@@ -86,7 +81,7 @@ export const Layout = () => {
       }
     };
 
-    void checkAdmin();
+    void checkUserStatus();
     return () => {
       cancelled = true;
     };

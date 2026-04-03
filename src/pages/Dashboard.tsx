@@ -47,7 +47,7 @@ const TakaIcon = ({ className }: { className?: string }) => (
 );
 
 export const Dashboard = () => {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isAdmin, role } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState<Stats>({
     totalOrders: 0,
@@ -57,10 +57,16 @@ export const Dashboard = () => {
   });
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdminUser, setIsAdminUser] = useState<boolean | null>(null);
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [recharging, setRecharging] = useState(false);
+
+  // Instant admin redirect using cached role from AuthContext (no extra query)
+  useEffect(() => {
+    if (isAdmin) {
+      navigate('/admin', { replace: true });
+    }
+  }, [isAdmin, navigate]);
 
   useEffect(() => {
     // Check for successful recharge redirect
@@ -72,63 +78,44 @@ export const Dashboard = () => {
     }
 
     const fetchDashboardData = async () => {
-      if (!user) return;
+      if (!user || isAdmin) return;
 
-      let didRedirect = false;
       try {
-        // First check if user is an admin
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', user.id)
-          .single();
 
-        if (userData?.role === 'admin') {
-          setIsAdminUser(true);
-          didRedirect = true;
-          navigate('/admin', { replace: true });
-          return;
-        }
-        setIsAdminUser(false);
+        // Fetch orders, wallet, and notices in parallel (2-3x faster than sequential)
+        const [ordersResult, walletResult, noticesResult] = await Promise.all([
+          supabase
+            .from('orders')
+            .select('id, total_amount, status')
+            .eq('user_id', user.id),
+          supabase
+            .from('users')
+            .select('wallet_balance')
+            .eq('id', user.id)
+            .single(),
+          supabase
+            .from('notices')
+            .select('*')
+            .eq('is_active', true)
+            .order('created_at', { ascending: false })
+            .limit(5),
+        ]);
 
-        // Fetch orders for stats
-        const { data: orders } = await supabase
-          .from('orders')
-          .select('id, total_amount, status')
-          .eq('user_id', user.id);
+        const orders = ordersResult.data;
+        const walletData = walletResult.data;
+        const noticesData = noticesResult.data;
 
         if (orders) {
           const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid');
-          
-          setStats(prev => ({
-            ...prev,
+          setStats({
             totalOrders: orders.length,
             totalSpent: completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0),
-            activeSubscriptions: completedOrders.length, // Simplified for now
-          }));
+            activeSubscriptions: completedOrders.length,
+            walletBalance: Number(walletData?.wallet_balance) || 0,
+          });
+        } else if (walletData) {
+          setStats(prev => ({ ...prev, walletBalance: Number(walletData.wallet_balance) || 0 }));
         }
-
-        // Fetch actual wallet balance
-        const { data: walletData } = await supabase
-          .from('users')
-          .select('wallet_balance')
-          .eq('id', user.id)
-          .single();
-          
-        if (walletData) {
-          setStats(prev => ({
-            ...prev,
-            walletBalance: Number(walletData.wallet_balance) || 0,
-          }));
-        }
-
-        // Fetch notices
-        const { data: noticesData } = await supabase
-          .from('notices')
-          .select('*')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false })
-          .limit(5);
 
         if (noticesData) {
           setNotices(noticesData);
@@ -136,8 +123,7 @@ export const Dashboard = () => {
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
-        // If we redirected to admin, keep loading true to avoid showing customer dashboard UI briefly.
-        if (!didRedirect) setLoading(false);
+        setLoading(false);
       }
     };
 
@@ -218,7 +204,7 @@ export const Dashboard = () => {
   ];
 
   // Show a clean loading spinner while checking role — prevents customer dashboard from flashing for admins
-  if (loading || isAdminUser === null || isAdminUser === true) {
+  if (loading || role === null || isAdmin) {
     return (
       <div className="flex justify-center items-center py-20">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>

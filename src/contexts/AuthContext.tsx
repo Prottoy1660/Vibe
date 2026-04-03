@@ -7,6 +7,8 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  role: string | null;
+  isAdmin: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -14,6 +16,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   session: null,
   loading: true,
+  role: null,
+  isAdmin: false,
   signOut: async () => {},
 });
 
@@ -23,9 +27,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<string | null>(null);
 
   // Silently collect device + browser intelligence on login
   useFingerprint(user);
+
+  // Fetch role once when user changes — cached so Dashboard/Layout/Admin don't each query individually
+  useEffect(() => {
+    if (!user) {
+      setRole(null);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        if (!cancelled) setRole(data?.role ?? 'customer');
+      });
+    return () => { cancelled = true; };
+  }, [user]);
 
   useEffect(() => {
     // Check active sessions and sets the user
@@ -53,6 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     user,
     session,
     loading,
+    role,
+    isAdmin: role === 'admin',
     signOut,
   };
 

@@ -1,0 +1,21 @@
+Supabase backup (move to your own Postgres)
+
+1) Add DATABASE_URL to your local .env (see .env.example).
+   Supabase: Project Settings → Database → Connection string → URI (Direct, port 5432).
+
+2) Install PostgreSQL client tools so "pg_dump" exists:
+   Windows: https://www.postgresql.org/download/windows/ (command line tools)
+   Or: winget install PostgreSQL.PostgreSQL.16
+
+3) Run from project root:
+   PowerShell:  .\scripts\backup-database.ps1
+   Git Bash:    bash scripts/backup-database.sh
+
+4) Output: backups/supabase-full-YYYYMMDD-HHMMSS.sql
+   Keep this folder OUT of git (already in .gitignore). Store copies on your PC / external drive.
+
+5) Storage (files in Supabase Storage buckets) are NOT in pg_dump.
+   Download those separately from Dashboard → Storage, or use Supabase CLI / S3-compatible tools.
+
+6) Auth: full DB dump usually includes auth schema if your DB role allows.
+   If pg_dump errors on auth.*, ask Supabase docs for "backup auth users" or export users via Admin API.
