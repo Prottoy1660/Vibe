@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "start": "SERVE_STATIC_SPA=1 tsx api/server.ts",
     "client:dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
@@ -30,6 +31,7 @@
     "react-router-dom": "^7.3.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
+    "tsx": "^4.20.3",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
@@ -55,7 +57,6 @@
     "nodemon": "^3.1.10",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.3",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.30.1",
     "vite": "^6.3.5",
