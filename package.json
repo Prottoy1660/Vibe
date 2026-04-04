@@ -26,12 +26,14 @@
     "imap-simple": "^1.6.3",
     "lucide-react": "^0.511.0",
     "mailparser": "^3.9.6",
+    "node-cron": "^4.2.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.3.0",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
     "tsx": "^4.20.3",
+    "vite-plugin-pwa": "^1.2.0",
     "zustand": "^5.0.3"
   },
   "devDependencies": {
@@ -43,6 +45,7 @@
     "@types/imap-simple": "^4.2.10",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.15.30",
+    "@types/node-cron": "^3.0.11",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vercel/node": "^5.7.0",

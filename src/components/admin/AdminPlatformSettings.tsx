@@ -34,14 +34,12 @@ export const AdminPlatformSettings: React.FC = () => {
         message: form.message.trim(),
         show_banner: form.show_banner,
       };
-      const { error } = await supabase.from('system_settings').upsert(
+      const { error } = await supabase.from('system_settings').update(
         {
-          key: 'platform_status',
           value,
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'key' }
-      );
+        }
+      ).eq('key', 'platform_status');
       if (error) throw error;
       setForm(parsePlatformStatus(value));
       setMessage({ type: 'ok', text: 'Saved. Users see the banner when Show banner is on and the message field is filled.' });

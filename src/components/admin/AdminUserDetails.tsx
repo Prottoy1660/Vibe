@@ -339,7 +339,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
             <div className="relative group shrink-0">
               <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-primary text-white rounded-2xl flex items-center justify-center font-bold text-xl sm:text-2xl shadow-md overflow-hidden ring-2 ring-white dark:ring-[#1a1a1d]">
                 {userProfile.avatar_url ? (
-                  <img src={userProfile.avatar_url} alt="" className="w-full h-full object-cover" />
+                  <img src={userProfile.avatar_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 ) : (
                   userProfile.name?.charAt(0).toUpperCase() || 'U'
                 )}

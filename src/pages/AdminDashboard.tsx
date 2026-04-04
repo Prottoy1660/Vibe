@@ -145,7 +145,7 @@ export const AdminDashboard = () => {
               if (item.orders && item.orders.products) {
                 const durationStr = item.orders.products.duration.toLowerCase();
                 let monthsToAdd = 1;
-                
+
                 if (durationStr.includes('year') || durationStr.includes('yr')) {
                   const match = durationStr.match(/\d+/);
                   monthsToAdd = match ? parseInt(match[0]) * 12 : 12;

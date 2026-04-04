@@ -179,7 +179,7 @@ export const Profile = () => {
             <div className="relative group shrink-0 mx-auto sm:mx-0">
               <div className="w-[5.25rem] h-[5.25rem] sm:w-24 sm:h-24 rounded-2xl border-2 border-white dark:border-[#2a2a32] bg-gray-50 dark:bg-[#1a1a1e] overflow-hidden shadow-md ring-2 ring-gray-100/80 dark:ring-white/5 flex items-center justify-center">
                 {formData.avatar_url ? (
-                  <img src={formData.avatar_url} alt="" className="w-full h-full object-cover" />
+                  <img src={formData.avatar_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-indigo-900/40 dark:to-violet-900/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 text-2xl sm:text-3xl font-semibold">
                     {formData.name?.charAt(0).toUpperCase() || 'U'}

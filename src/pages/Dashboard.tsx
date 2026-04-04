@@ -68,6 +68,55 @@ export const Dashboard = () => {
     }
   }, [isAdmin, navigate]);
 
+  const fetchDashboardData = async () => {
+    if (!user || isAdmin) return;
+
+    try {
+      // Fetch orders, wallet, and notices in parallel (2-3x faster than sequential)
+      const [ordersResult, walletResult, noticesResult] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('id, total_amount, status')
+          .eq('user_id', user.id),
+        supabase
+          .from('users')
+          .select('wallet_balance')
+          .eq('id', user.id)
+          .single(),
+        supabase
+          .from('notices')
+          .select('*')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]);
+
+      const orders = ordersResult.data;
+      const walletData = walletResult.data;
+      const noticesData = noticesResult.data;
+
+      if (orders) {
+        const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid');
+        setStats({
+          totalOrders: orders.length,
+          totalSpent: completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0),
+          activeSubscriptions: completedOrders.length,
+          walletBalance: Number(walletData?.wallet_balance) || 0,
+        });
+      } else if (walletData) {
+        setStats(prev => ({ ...prev, walletBalance: Number(walletData.wallet_balance) || 0 }));
+      }
+
+      if (noticesData) {
+        setNotices(noticesData);
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     // Check for successful recharge redirect
     const searchParams = new URLSearchParams(window.location.search);
@@ -77,57 +126,28 @@ export const Dashboard = () => {
       alert('Wallet recharge successful! Your balance has been updated.');
     }
 
-    const fetchDashboardData = async () => {
-      if (!user || isAdmin) return;
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user, isAdmin]);
 
-      try {
+  // Set up Supabase Realtime Subscriptions
+  useEffect(() => {
+    if (!user) return;
+    
+    // Listen to changes on the user's orders and user profile (wallet balance)
+    const channel = supabase.channel('dashboard_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
+        fetchDashboardData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => {
+        fetchDashboardData();
+      })
+      .subscribe();
 
-        // Fetch orders, wallet, and notices in parallel (2-3x faster than sequential)
-        const [ordersResult, walletResult, noticesResult] = await Promise.all([
-          supabase
-            .from('orders')
-            .select('id, total_amount, status')
-            .eq('user_id', user.id),
-          supabase
-            .from('users')
-            .select('wallet_balance')
-            .eq('id', user.id)
-            .single(),
-          supabase
-            .from('notices')
-            .select('*')
-            .eq('is_active', true)
-            .order('created_at', { ascending: false })
-            .limit(5),
-        ]);
-
-        const orders = ordersResult.data;
-        const walletData = walletResult.data;
-        const noticesData = noticesResult.data;
-
-        if (orders) {
-          const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid');
-          setStats({
-            totalOrders: orders.length,
-            totalSpent: completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0),
-            activeSubscriptions: completedOrders.length,
-            walletBalance: Number(walletData?.wallet_balance) || 0,
-          });
-        } else if (walletData) {
-          setStats(prev => ({ ...prev, walletBalance: Number(walletData.wallet_balance) || 0 }));
-        }
-
-        if (noticesData) {
-          setNotices(noticesData);
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setLoading(false);
-      }
+    return () => {
+      supabase.removeChannel(channel);
     };
-
-    fetchDashboardData();
   }, [user]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';

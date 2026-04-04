@@ -1,0 +1,137 @@
+import cron from 'node-cron';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import { assignEmailForOrder } from './lib/emailAssignment.js';
+
+dotenv.config();
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+/**
+ * Executes the auto-renewal logic securely on the server.
+ * Returns true if renewal succeeded, false otherwise.
+ */
+async function processSingleAutoRenew(order: any): Promise<boolean> {
+  console.log(`Evaluating hourly Auto-Renew for order: ${order.id}`);
+  try {
+    const productPrice = Number(order.products?.price) || 0;
+    
+    // Shut off auto-renew immediately to prevent duplicate runs
+    await supabase.from('orders').update({ auto_renew: false }).eq('id', order.id);
+
+    if (productPrice > 0) {
+      // 1. Atomic Wallet Deduction using existing RPC
+      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+        p_user_id: order.user_id,
+        p_amount: productPrice,
+      });
+      
+      if (deductErr) {
+        console.warn(`CRON: Insufficient wallet balance for user ${order.user_id}. Auto-renew suspended for order ${order.id}.`);
+        return false;
+      }
+    }
+    
+    // 2. Create fresh order perfectly inheriting context
+    const { data: newOrder, error: insertErr } = await supabase.from('orders').insert({
+      user_id: order.user_id,
+      product_id: order.products.id,
+      payment_method: 'wallet',
+      total_amount: productPrice,
+      status: 'completed',
+      payment_status: 'paid',
+      auto_renew: true // Propagate the setting forwards to the new order
+    }).select().single();
+    
+    if (insertErr || !newOrder) {
+      console.error('CRON: Failed to create renewed order', insertErr);
+      return false;
+    }
+    
+    // 3. Provision fresh email access immediately
+    if (!order.products?.is_personal) {
+      const assignment = await assignEmailForOrder(supabase, newOrder.id, newOrder.user_id, newOrder.product_id);
+      if (!assignment.success) {
+        console.error('CRON: AutoRenew Email assignment failed:', assignment.error);
+      }
+    } else if (order.personal_email) { // Personal logic fallback
+      try {
+        const { grantAdobeCloudAccess } = await import('./lib/adobeApi.js');
+        const durationStr = order.products.duration?.toLowerCase() || '';
+        let months = 1;
+        if (durationStr.includes('year') || durationStr.includes('yr')) {
+          const match = durationStr.match(/\d+/);
+          months = match ? parseInt(match[0]) * 12 : 12;
+        } else {
+          const match = durationStr.match(/\d+/);
+          months = match ? parseInt(match[0]) : 1;
+        }
+        await grantAdobeCloudAccess(order.personal_email, months);
+      } catch (e) {
+        console.error('CRON: Personal config failed', e);
+      }
+    }
+    
+    console.log(`CRON: Successfully auto-renewed order ${order.id} -> new order ${newOrder.id}`);
+    return true;
+  } catch (err: any) {
+    console.error('CRON: processSingleAutoRenew error:', err);
+    return false;
+  }
+}
+
+/**
+ * Scheduled job to find and renew expired orders
+ */
+export function initCronJobs() {
+  // Run every hour at minute 0
+  cron.schedule('0 * * * *', async () => {
+    console.log('[CRON] Running hourly subscription renewal check...');
+    try {
+      // Find orders that are active, completed, auto_renew=true, and whose emails have expired
+      // 1. Fetch valid auto-renew orders
+      const { data: recurringOrders } = await supabase
+        .from('orders')
+        .select('*, products(id, price, is_personal, duration)')
+        .eq('status', 'completed')
+        .eq('auto_renew', true);
+        
+      if (!recurringOrders || recurringOrders.length === 0) return;
+
+      // Ensure date-fns is available or do manual date comp
+      const { isPast, parseISO, addMonths } = await import('date-fns');
+      const { parseDurationToMonths } = await import('../src/lib/durationUtils.js'); // Assuming relative path works or write natively
+      
+      const now = new Date();
+
+      for (const order of recurringOrders) {
+        // Calculate expiration manually 
+        const durationStr = order.products?.duration || '';
+        
+        let monthsToAdd = 1;
+        const lower = durationStr.toLowerCase();
+        const numMatch = lower.match(/\d+/);
+        const num = numMatch ? parseInt(numMatch[0], 10) : 1;
+        if (lower.includes('year') || lower.includes('yr')) {
+          monthsToAdd = num * 12;
+        } else {
+          monthsToAdd = num;
+        }
+
+        const expiresAt = addMonths(parseISO(order.created_at), monthsToAdd);
+
+        // If it's expired by now, process auto renewal!
+        if (isPast(expiresAt)) {
+          await processSingleAutoRenew(order);
+        }
+      }
+      
+    } catch (err) {
+      console.error('[CRON] Subscription check failed:', err);
+    }
+  });
+
+  console.log('Cron jobs initialized successfully.');
+}

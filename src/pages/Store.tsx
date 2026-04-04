@@ -274,7 +274,7 @@ export const Store = () => {
               {/* Product Banner */}
               <div className="h-32 bg-gradient-to-r from-primary via-purple-500 to-secondary relative flex items-center justify-center overflow-hidden">
                 {product.image_url ? (
-                  <img src={product.image_url} alt={product.title} className="absolute inset-0 w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
+                  <img src={product.image_url} alt={product.title} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                 ) : (
                   <>
                     <div className="absolute inset-0 bg-white/10 backdrop-blur-sm"></div>

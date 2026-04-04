@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
+import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -11,8 +12,31 @@ export default defineConfig({
         plugins: process.env.NODE_ENV === 'production' ? [] : ['react-dev-locator'],
       },
     }),
- 
     tsconfigPaths(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      manifest: {
+        name: 'Vibe Access',
+        short_name: 'Vibe',
+        description: 'Premium digital accounts management platform',
+        theme_color: '#09090b',
+        background_color: '#09090b',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'https://cdn.discordapp.com/attachments/1315891782298701915/1339893994305814528/vibe_access_logo-removebg-preview.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: 'https://cdn.discordapp.com/attachments/1315891782298701915/1339893994305814528/vibe_access_logo-removebg-preview.png',
+            sizes: '512x512',
+            type: 'image/png'
+          }
+        ]
+      }
+    })
   ],
   build: {
     // Modern browsers only — smaller, faster output than legacy ES5-style polyfills

@@ -44,10 +44,9 @@ export const AdminLobbyMusic: React.FC = () => {
       urls: [...new Set(lines)],
     };
     try {
-      const { error } = await supabase.from('system_settings').upsert(
-        { key: 'lobby_music', value, updated_at: new Date().toISOString() },
-        { onConflict: 'key' }
-      );
+      const { error } = await supabase.from('system_settings').update(
+        { value, updated_at: new Date().toISOString() }
+      ).eq('key', 'lobby_music');
       if (error) throw error;
       setUrlsText(value.urls.join('\n'));
       setMsg({

@@ -376,6 +376,24 @@ export const AdobeEmail = () => {
     fetchEmailData();
   }, [user]);
 
+  // Set up Realtime Subscriptions for Auto-Updating Emails & Orders
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase.channel('adobe_email_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
+        fetchEmailData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails', filter: `user_id=eq.${user.id}` }, () => {
+        fetchEmailData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
   const handleGenerateEmail = async (specificOrderId?: string) => {
     // Determine which order to link to
     let orderId = specificOrderId;
