@@ -4,6 +4,11 @@ import dotenv from 'dotenv';
 import type { ChatTurn } from '../lib/supportChatAi.js';
 import { completeSupportChat } from '../lib/supportChatAi.js';
 import { getSupportChatRuntimeCached } from '../lib/supportChatSettings.js';
+import {
+  isAiQuotaOrBillingErrorMessage,
+  SUPPORT_AI_GENERIC_USER_MESSAGE,
+  SUPPORT_AI_QUOTA_USER_MESSAGE,
+} from '../lib/supportChatPublicErrors.js';
 
 dotenv.config();
 
@@ -146,20 +151,27 @@ router.post('/reply', async (req, res) => {
     return res.json({ success: true, ...result });
   } catch (e: any) {
     console.error('support-chat/reply:', e);
+    let wa: string | null = null;
     try {
-      const runtime = await getSupportChatRuntimeCached(supabase);
-      return res.status(500).json({
-        success: false,
-        message: e?.message || 'Assistant unavailable',
-        whatsapp_e164: runtime.whatsapp_e164,
-      });
+      const rt = await getSupportChatRuntimeCached(supabase);
+      wa = rt.whatsapp_e164;
     } catch {
-      return res.status(500).json({
+      /* ignore */
+    }
+    const raw = String(e?.message || e || '');
+    if (isAiQuotaOrBillingErrorMessage(raw)) {
+      return res.status(200).json({
         success: false,
-        message: e?.message || 'Assistant unavailable',
-        whatsapp_e164: null,
+        error: 'ai_quota',
+        message: SUPPORT_AI_QUOTA_USER_MESSAGE,
+        whatsapp_e164: wa,
       });
     }
+    return res.status(500).json({
+      success: false,
+      message: SUPPORT_AI_GENERIC_USER_MESSAGE,
+      whatsapp_e164: wa,
+    });
   }
 });
 

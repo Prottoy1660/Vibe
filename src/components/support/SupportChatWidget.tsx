@@ -127,7 +127,8 @@ export function SupportChatWidget() {
       if (
         data.success === false ||
         errCode === 'ai_disabled' ||
-        errCode === 'help_chat_disabled'
+        errCode === 'help_chat_disabled' ||
+        errCode === 'ai_quota'
       ) {
         const fallback =
           typeof data.message === 'string'
