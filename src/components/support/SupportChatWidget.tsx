@@ -1,6 +1,16 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageCircle, X, Send, Loader2, Ticket, ExternalLink, Sparkles } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  MessageCircle,
+  MessagesSquare,
+  X,
+  ArrowUp,
+  Loader2,
+  Ticket,
+  ExternalLink,
+  Sparkles,
+} from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getJsonWithFallback, postJsonWithFallback } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
@@ -242,192 +252,281 @@ export function SupportChatWidget() {
 
   return (
     <>
-      <button
+      <motion.button
         type="button"
+        layout
         onClick={() => setOpen((o) => !o)}
+        whileHover={{ scale: 1.06 }}
+        whileTap={{ scale: 0.94 }}
         className={cn(
-          'fixed z-[60] flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-all duration-300',
-          'bg-gradient-to-br from-indigo-600 to-violet-600 text-white hover:from-indigo-500 hover:to-violet-500',
+          'fixed z-[60] flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full text-white shadow-xl',
           'bottom-20 right-4 md:bottom-8 md:right-6',
-          'ring-2 ring-white/20 dark:ring-white/10',
-          open && 'scale-95 opacity-90',
+          'bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600',
+          'shadow-indigo-500/35 dark:shadow-indigo-900/50',
+          'ring-2 ring-white/30 dark:ring-white/15',
+          open && 'ring-white/50',
         )}
         aria-label={open ? 'Close help chat' : 'Open help chat'}
       >
-        {open ? <X className="h-6 w-6" /> : <MessageCircle className="h-7 w-7" />}
-      </button>
-
-      {open && (
-        <div
-          className={cn(
-            'fixed z-[59] flex flex-col overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-2xl dark:border-[#2a2a32] dark:bg-[#121214]',
-            'bottom-36 right-4 h-[min(560px,calc(100vh-8rem))] w-[min(100vw-2rem,400px)] md:bottom-24 md:right-6 md:h-[520px] md:w-[400px]',
+        {!open && (
+          <motion.span
+            className="pointer-events-none absolute inset-0 rounded-full bg-violet-400/35"
+            animate={{ scale: [1, 1.35], opacity: [0.45, 0] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
+            aria-hidden
+          />
+        )}
+        <span className="relative flex items-center justify-center">
+          {open ? (
+            <X className="h-6 w-6 drop-shadow-sm" strokeWidth={2.25} />
+          ) : (
+            <>
+              <MessagesSquare className="h-[1.65rem] w-[1.65rem] drop-shadow-sm" strokeWidth={2.1} />
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/95 text-violet-600 shadow-md dark:bg-violet-100 dark:text-violet-700">
+                <Sparkles className="h-3 w-3" strokeWidth={2.5} />
+              </span>
+            </>
           )}
-          role="dialog"
-          aria-label="Help chat"
-        >
-          <div className="relative shrink-0 border-b border-gray-100 bg-gradient-to-r from-indigo-600 via-violet-600 to-indigo-600 px-4 py-3.5 text-white">
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-                  <Sparkles className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-sm leading-tight">Vibe সহায়তা</p>
-                  <p className="text-xs text-white/85 mt-0.5 line-clamp-2">
-                    সাধারণ প্রশ্নের দ্রুত উত্তর — প্রয়োজনে টিকিট বা WhatsApp
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded-lg p-1.5 hover:bg-white/10 transition-colors shrink-0"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {waLink ? (
-                <a
-                  href={waLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 hover:bg-white/25 px-2.5 py-1.5 text-xs font-medium backdrop-blur transition-colors"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  WhatsApp
-                </a>
-              ) : null}
-              <Link
-                to="/support"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 hover:bg-white/25 px-2.5 py-1.5 text-xs font-medium backdrop-blur transition-colors"
-                onClick={() => setOpen(false)}
-              >
-                <Ticket className="h-3.5 w-3.5" />
-                Support
-              </Link>
-            </div>
-          </div>
+        </span>
+      </motion.button>
 
-          <div
-            ref={listRef}
-            className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-gradient-to-b from-gray-50/80 to-white dark:from-[#161618] dark:to-[#121214]"
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            role="dialog"
+            aria-label="Help chat"
+            initial={{ opacity: 0, y: 28, scale: 0.92 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+            className={cn(
+              'fixed z-[59] flex flex-col overflow-hidden rounded-[1.35rem]',
+              'border border-white/10 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#141416]/95',
+              'shadow-[0_25px_80px_-12px_rgba(79,70,229,0.35)] dark:shadow-[0_25px_80px_-12px_rgba(0,0,0,0.65)]',
+              'bottom-36 right-4 h-[min(560px,calc(100vh-8rem))] w-[min(100vw-2rem,400px)] md:bottom-24 md:right-6 md:h-[520px] md:w-[400px]',
+            )}
           >
-            {panelBusy && (
-              <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-500">
-                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
-                সংযোগ হচ্ছে…
-              </div>
-            )}
-
-            {messages.length === 0 && !loading && !panelBusy && (
-              <div className="rounded-xl border border-indigo-100/80 dark:border-indigo-500/20 bg-indigo-50/40 dark:bg-indigo-950/20 px-3 py-2.5 text-xs text-gray-600 dark:text-gray-400">
-                নিচের একটি টপিক বেছে নিন, অথবা নিজের ভাষায় লিখুন। আমরা আপনার ভাষায় উত্তর দেওয়ার চেষ্টা করব।
-              </div>
-            )}
-
-            {messages.length === 0 &&
-              !panelBusy &&
-              SUGGESTED_PROMPTS.map((c) => (
+            <div className="relative shrink-0 overflow-hidden border-b border-white/10 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 px-4 py-4 text-white">
+              <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+              <div className="pointer-events-none absolute -bottom-6 left-1/4 h-24 w-24 rounded-full bg-fuchsia-400/20 blur-xl" />
+              <div className="relative flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-3">
+                  <motion.div
+                    initial={{ rotate: -8, scale: 0.9 }}
+                    animate={{ rotate: 0, scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-inner backdrop-blur-md ring-1 ring-white/25"
+                  >
+                    <MessageCircle className="h-5 w-5 text-white" strokeWidth={2} />
+                  </motion.div>
+                  <div className="min-w-0">
+                    <p className="text-[15px] font-semibold leading-tight tracking-tight">Vibe সহায়তা</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/90">
+                      সাধারণ প্রশ্নের দ্রুত উত্তর — প্রয়োজনে টিকিট বা WhatsApp
+                    </p>
+                  </div>
+                </div>
                 <button
-                  key={c.label}
                   type="button"
-                  disabled={loading || panelBusy}
-                onClick={() => void handleSend(c.text)}
-                  className="block w-full text-left rounded-xl border border-gray-200 dark:border-[#2e2e36] bg-white dark:bg-[#1a1a1f] px-3 py-2.5 text-xs text-gray-800 dark:text-gray-200 hover:border-indigo-300 dark:hover:border-indigo-500/40 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-colors disabled:opacity-50"
+                  onClick={() => setOpen(false)}
+                  className="shrink-0 rounded-xl p-2 text-white/90 transition-colors hover:bg-white/15"
+                  aria-label="Close"
                 >
-                  <span className="font-medium text-indigo-700 dark:text-indigo-300">{c.label}</span>
-                  <span className="block text-[11px] text-gray-500 dark:text-gray-500 mt-0.5 line-clamp-2">{c.text}</span>
+                  <X className="h-5 w-5" />
                 </button>
+              </div>
+              <div className="relative mt-3.5 flex flex-wrap gap-2">
+                {waLink ? (
+                  <motion.a
+                    href={waLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-white/18 px-3 py-2 text-xs font-semibold shadow-sm backdrop-blur-md ring-1 ring-white/20 transition-colors hover:bg-white/28"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 opacity-90" />
+                    WhatsApp
+                  </motion.a>
+                ) : null}
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                  <Link
+                    to="/support"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-white/18 px-3 py-2 text-xs font-semibold shadow-sm backdrop-blur-md ring-1 ring-white/20 transition-colors hover:bg-white/28"
+                    onClick={() => setOpen(false)}
+                  >
+                    <Ticket className="h-3.5 w-3.5 opacity-90" />
+                    Support
+                  </Link>
+                </motion.div>
+              </div>
+            </div>
+
+            <div
+              ref={listRef}
+              className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-slate-50/90 to-white px-3 py-3 dark:from-[#161618] dark:to-[#121214]"
+            >
+              {panelBusy && (
+                <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-500 dark:text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                  সংযোগ হচ্ছে…
+                </div>
+              )}
+
+              {messages.length === 0 && !loading && !panelBusy && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-indigo-200/50 bg-gradient-to-br from-indigo-50/90 to-violet-50/40 px-3.5 py-3 text-xs leading-relaxed text-gray-600 dark:border-indigo-500/25 dark:from-indigo-950/40 dark:to-violet-950/20 dark:text-gray-300"
+                >
+                  নিচের একটি টপিক বেছে নিন, অথবা নিজের ভাষায় লিখুন। আমরা আপনার ভাষায় উত্তর দেওয়ার চেষ্টা করব।
+                </motion.div>
+              )}
+
+              {messages.length === 0 &&
+                !panelBusy &&
+                SUGGESTED_PROMPTS.map((c, i) => (
+                  <motion.button
+                    key={c.label}
+                    type="button"
+                    disabled={loading || panelBusy}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    whileHover={{ scale: loading || panelBusy ? 1 : 1.02 }}
+                    whileTap={{ scale: loading || panelBusy ? 1 : 0.98 }}
+                    onClick={() => void handleSend(c.text)}
+                    className="block w-full rounded-2xl border border-gray-200/90 bg-white/90 px-3.5 py-2.5 text-left text-xs text-gray-800 shadow-sm transition-[border,box-shadow] hover:border-indigo-300/80 hover:shadow-md dark:border-[#2e2e36] dark:bg-[#1a1a1f] dark:text-gray-200 dark:hover:border-indigo-500/45 disabled:opacity-50"
+                  >
+                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{c.label}</span>
+                    <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500 dark:text-gray-500">
+                      {c.text}
+                    </span>
+                  </motion.button>
+                ))}
+
+              {messages.map((m, idx) => (
+                <motion.div
+                  key={m.id}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: Math.min(idx * 0.02, 0.2) }}
+                  className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
+                >
+                  <div
+                    className={cn(
+                      'max-w-[92%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
+                      m.role === 'user'
+                        ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/25 [border-bottom-right-radius:6px]'
+                        : 'border border-gray-100/90 bg-white text-gray-800 shadow-md dark:border-[#2a2a32] dark:bg-[#1e1e24] dark:text-gray-100 [border-bottom-left-radius:6px]',
+                    )}
+                  >
+                    {m.content}
+                  </div>
+                </motion.div>
               ))}
 
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}
-              >
-                <div
-                  className={cn(
-                    'max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap',
-                    m.role === 'user'
-                      ? 'bg-indigo-600 text-white rounded-br-md shadow-md shadow-indigo-600/20'
-                      : 'bg-white dark:bg-[#1e1e24] text-gray-800 dark:text-gray-100 border border-gray-100 dark:border-[#2a2a32] rounded-bl-md shadow-sm',
-                  )}
+              {loading && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="flex justify-start"
                 >
-                  {m.content}
-                </div>
-              </div>
-            ))}
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-indigo-100/80 bg-white px-4 py-3 shadow-md dark:border-[#2a2a32] dark:bg-[#1e1e24]">
+                    <span className="flex gap-1">
+                      {[0, 1, 2].map((d) => (
+                        <motion.span
+                          key={d}
+                          className="h-2 w-2 rounded-full bg-indigo-400"
+                          animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
+                          transition={{
+                            duration: 0.7,
+                            repeat: Infinity,
+                            delay: d * 0.12,
+                            ease: 'easeInOut',
+                          }}
+                        />
+                      ))}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">লিখছি…</span>
+                  </div>
+                </motion.div>
+              )}
 
-            {loading && (
-              <div className="flex justify-start">
-                <div className="flex items-center gap-2 rounded-2xl rounded-bl-md border border-gray-100 dark:border-[#2a2a32] bg-white dark:bg-[#1e1e24] px-4 py-3 text-sm text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
-                  <span className="text-xs">লিখছি…</span>
-                </div>
-              </div>
-            )}
+              {ticketFlash && (
+                <p className="px-1 text-center text-xs text-amber-700 dark:text-amber-300">{ticketFlash}</p>
+              )}
 
-            {ticketFlash && (
-              <p className="text-xs text-center text-amber-700 dark:text-amber-300 px-1">{ticketFlash}</p>
-            )}
-
-            {pendingTicket && !loading && (
-              <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/25 p-3">
-                <p className="text-xs font-medium text-emerald-900 dark:text-emerald-200 mb-2">
-                  এই বিষয়ে টিমের কাছে টিকিট পাঠাবেন?
-                </p>
-                <button
-                  type="button"
-                  disabled={ticketSubmitting}
-                  onClick={() => void openTicketFromAssistant()}
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2.5 px-3 transition-colors disabled:opacity-60"
+              {pendingTicket && !loading && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-teal-50/50 p-3.5 dark:border-emerald-500/35 dark:from-emerald-950/40 dark:to-teal-950/20"
                 >
-                  {ticketSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ticket className="h-4 w-4" />}
-                  টিকিট খুলুন
-                </button>
-                {!user && (
-                  <p className="text-[11px] text-gray-600 dark:text-gray-400 mt-2 text-center">
-                    <Link to="/login" className="underline font-medium text-indigo-600 dark:text-indigo-400">
-                      লগ ইন
-                    </Link>{' '}
-                    করতে হবে।
+                  <p className="mb-2 text-xs font-medium text-emerald-900 dark:text-emerald-200">
+                    এই বিষয়ে টিমের কাছে টিকিট পাঠাবেন?
                   </p>
-                )}
-              </div>
-            )}
-          </div>
+                  <button
+                    type="button"
+                    disabled={ticketSubmitting}
+                    onClick={() => void openTicketFromAssistant()}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-white shadow-lg shadow-emerald-600/25 transition-colors hover:bg-emerald-500 disabled:opacity-60"
+                  >
+                    {ticketSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Ticket className="h-4 w-4" />
+                    )}
+                    টিকিট খুলুন
+                  </button>
+                  {!user && (
+                    <p className="mt-2 text-center text-[11px] text-gray-600 dark:text-gray-400">
+                      <Link to="/login" className="font-medium text-indigo-600 underline dark:text-indigo-400">
+                        লগ ইন
+                      </Link>{' '}
+                      করতে হবে।
+                    </p>
+                  )}
+                </motion.div>
+              )}
+            </div>
 
-          <div className="shrink-0 border-t border-gray-100 dark:border-[#26262d] p-3 bg-white dark:bg-[#121214]">
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void handleSend();
-              }}
-            >
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="আপনার প্রশ্ন লিখুন…"
-                maxLength={2000}
-                disabled={loading || panelBusy}
-                className="flex-1 rounded-xl border border-gray-200 dark:border-[#2e2e36] bg-gray-50 dark:bg-[#1a1a1f] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none disabled:opacity-60"
-              />
-              <button
-                type="submit"
-                disabled={loading || panelBusy || !input.trim()}
-                className="shrink-0 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-                aria-label="Send"
+            <div className="shrink-0 border-t border-gray-100/90 bg-white/90 p-3 backdrop-blur-md dark:border-[#26262d] dark:bg-[#121214]/95">
+              <form
+                className="flex gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void handleSend();
+                }}
               >
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="আপনার প্রশ্ন লিখুন…"
+                  maxLength={2000}
+                  disabled={loading || panelBusy}
+                  className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/90 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 dark:border-[#2e2e36] dark:bg-[#1a1a1f] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-500/50 disabled:opacity-60"
+                />
+                <motion.button
+                  type="submit"
+                  disabled={loading || panelBusy || !input.trim()}
+                  whileHover={{ scale: loading || panelBusy || !input.trim() ? 1 : 1.05 }}
+                  whileTap={{ scale: loading || panelBusy || !input.trim() ? 1 : 0.95 }}
+                  className={cn(
+                    'inline-flex h-11 min-w-[2.75rem] shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-shadow',
+                    'bg-gradient-to-br from-indigo-600 to-violet-600 shadow-indigo-500/30',
+                    'disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none',
+                  )}
+                  aria-label="Send"
+                >
+                  <ArrowUp className="h-5 w-5" strokeWidth={2.4} />
+                </motion.button>
+              </form>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
