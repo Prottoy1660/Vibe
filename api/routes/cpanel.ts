@@ -48,7 +48,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     if (error || !user) return res.status(401).json({ error: 'Invalid token' });
     
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userData?.role !== 'admin') return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    if (userData?.role !== 'admin' && userData?.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden: Admin access required' });
     
     next();
   } catch (err) {

@@ -82,7 +82,7 @@ router.delete('/users/:id', verifyAdmin, async (req, res) => {
       return res.status(500).json({ error: 'Failed to read user role before delete' });
     }
 
-    if (userRow?.role === 'admin') {
+    if (userRow?.role === 'admin' || userRow?.role === 'super_admin') {
       return res.status(403).json({ error: 'Admins cannot be deleted' });
     }
 

@@ -27,7 +27,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       .single();
 
     if (profileErr) throw profileErr;
-    if (profile?.role !== 'admin') return res.status(403).json({ success: false, error: 'Forbidden' });
+    if (profile?.role !== 'admin' && profile?.role !== 'super_admin') return res.status(403).json({ success: false, error: 'Forbidden' });
 
     next();
   } catch (err: any) {

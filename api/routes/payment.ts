@@ -757,7 +757,7 @@ router.post('/assign-email', requireUser, async (req, res) => {
       .single();
     if (profileErr) throw profileErr;
 
-    const callerIsAdmin = profile?.role === 'admin';
+    const callerIsAdmin = profile?.role === 'admin' || profile?.role === 'super_admin';
     if (!callerIsAdmin && order.user_id !== user.id) {
       return res.status(403).json({ success: false, message: 'Forbidden' });
     }
@@ -788,7 +788,7 @@ router.post('/bulk-assign-emails', requireUser, async (req, res) => {
     
     // Check admin permissions
     const { data: userProfile } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (userProfile?.role !== 'admin') {
+    if (userProfile?.role !== 'admin' && userProfile?.role !== 'super_admin') {
       return res.status(403).json({ success: false, message: 'Forbidden: Admins only' });
     }
 
