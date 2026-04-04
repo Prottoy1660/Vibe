@@ -16,7 +16,13 @@ export async function assignEmailForOrder(
   orderId: string,
   _userId: string,
   _productId: string
-): Promise<{ success: boolean; emailId?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  emailId?: string;
+  error?: string;
+  code?: string;
+  nextEligibleAt?: string;
+}> {
   try {
     // All strict shared-slot rules and concurrency protection are enforced inside the DB RPC.
     const { data, error } = await supabase.rpc('assign_email_for_order_strict_24h', {
@@ -30,7 +36,12 @@ export async function assignEmailForOrder(
 
     const payload = data as any;
     if (!payload?.success) {
-      return { success: false, error: payload?.error || 'Email assignment failed' };
+      return {
+        success: false,
+        error: payload?.error || 'Email assignment failed',
+        code: payload?.code,
+        nextEligibleAt: payload?.next_eligible_at,
+      };
     }
 
     return { success: true, emailId: payload?.email_id || payload?.emailId };

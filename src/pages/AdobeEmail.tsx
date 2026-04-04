@@ -24,9 +24,34 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { format, addMonths, isPast, differenceInDays, parseISO } from 'date-fns';
+import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
+
+function getNextAdobeSlotUnlockAt(
+  orderCreatedAt: string | undefined,
+  intervalDays: number,
+  emailsGenerated: number,
+  slotLimit: number,
+): Date | null {
+  if (!orderCreatedAt || intervalDays <= 0) return null;
+  const nextIndex = emailsGenerated + 1;
+  if (nextIndex < 2 || nextIndex > slotLimit) return null;
+  return addDays(parseISO(orderCreatedAt), intervalDays * (nextIndex - 1));
+}
+
+function isAdobeSlotTimingAllowed(
+  orderCreatedAt: string | undefined,
+  intervalDays: number,
+  emailsGenerated: number,
+  slotLimit: number,
+  emergency: boolean,
+): boolean {
+  if (emergency) return true;
+  const unlockAt = getNextAdobeSlotUnlockAt(orderCreatedAt, intervalDays, emailsGenerated, slotLimit);
+  if (!unlockAt) return true;
+  return new Date() >= unlockAt;
+}
 
 interface UserEmail {
   id: string;
@@ -35,6 +60,10 @@ interface UserEmail {
   is_active: boolean;
   order_id: string;
   email_slots: number;
+  /** Days after order date before 2nd, 3rd… slot; 0 = no enforced spacing */
+  email_slot_interval_days: number;
+  /** Order purchase timestamp (for slot unlock schedule) */
+  order_created_at?: string;
   is_personal: boolean;
   single_device_warning: boolean;
   order_auto_renew?: boolean;
@@ -81,6 +110,8 @@ export const AdobeEmail = () => {
   const [generationCount, setGenerationCount] = useState(0);
   const [generating, setGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** When true, server ignores spacing between Adobe slot generations (admin emergency mode). */
+  const [slotEmergencyUnlock, setSlotEmergencyUnlock] = useState(false);
 
   // Check for successful payment redirect
   useEffect(() => {
@@ -96,6 +127,19 @@ export const AdobeEmail = () => {
       // without webhooks, we could trigger a check or show a success toast here.
       alert('Payment successful! Your order is being processed.');
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase.from('system_settings').select('value').eq('key', 'adobe_email_slots').maybeSingle();
+      if (cancelled) return;
+      const v = (data?.value || {}) as { emergency_unlock?: boolean };
+      setSlotEmergencyUnlock(v.emergency_unlock === true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const [isInboxOpen, setIsInboxOpen] = useState(false);
@@ -212,7 +256,7 @@ export const AdobeEmail = () => {
               created_at,
               status,
               auto_renew,
-              products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
+              products:product_id (id, duration, price, email_slots, email_slot_interval_days, max_users_per_email, single_device_warning, is_personal)
             )
           `)
           .eq('user_id', user.id)
@@ -265,6 +309,10 @@ export const AdobeEmail = () => {
             assigned_at: item.assigned_at,
             is_active: item.is_active,
             email_slots: item.orders?.products?.email_slots ?? 3,
+            email_slot_interval_days: Number(
+              (item.orders?.products as { email_slot_interval_days?: number })?.email_slot_interval_days ?? 0,
+            ),
+            order_created_at: item.orders?.created_at as string | undefined,
             is_personal: item.orders?.products?.is_personal ?? false,
             single_device_warning: item.orders?.products?.single_device_warning ?? false,
             order_auto_renew: item.orders?.auto_renew ?? false,
@@ -463,6 +511,15 @@ export const AdobeEmail = () => {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
+        if (data.code === 'slot_timing' && data.next_eligible_at) {
+          try {
+            const d = parseISO(String(data.next_eligible_at));
+            throw new Error(`Next Adobe email slot unlocks on ${format(d, 'PPP p')}.`);
+          } catch (e) {
+            if (e instanceof Error && e.message.startsWith('Next Adobe')) throw e;
+            throw new Error(data.message || 'Next slot is not available yet.');
+          }
+        }
         throw new Error(data.message || 'Failed to generate email');
       }
 
@@ -705,6 +762,16 @@ export const AdobeEmail = () => {
           const emailsGenerated = orderEmails.length;
           // Dynamic slot limit — 1 means email is auto-assigned, no manual generation needed
           const slotLimit = firstEmail?.email_slots ?? 3;
+          const intervalDays = firstEmail?.email_slot_interval_days ?? 0;
+          const orderCreatedAt = firstEmail?.order_created_at;
+          const slotTimingOk = isAdobeSlotTimingAllowed(
+            orderCreatedAt,
+            intervalDays,
+            emailsGenerated,
+            slotLimit,
+            slotEmergencyUnlock,
+          );
+          const nextSlotAt = getNextAdobeSlotUnlockAt(orderCreatedAt, intervalDays, emailsGenerated, slotLimit);
           const canGenerate = slotLimit > 1;
           const showDeviceWarning = firstEmail?.single_device_warning ?? false;
           const orderAutoRenew = firstEmail?.order_auto_renew ?? false;
@@ -775,6 +842,22 @@ export const AdobeEmail = () => {
                       ? `${emailsGenerated} of ${slotLimit} Adobe addresses used for this plan.`
                       : 'One address is assigned automatically for this plan.'}
                   </p>
+                  {canGenerate &&
+                    intervalDays > 0 &&
+                    emailsGenerated > 0 &&
+                    emailsGenerated < slotLimit &&
+                    nextSlotAt &&
+                    !slotTimingOk && (
+                      <p className="text-sm text-amber-700 dark:text-amber-300/90 mt-1">
+                        Next slot unlocks{' '}
+                        <span className="font-semibold">{format(nextSlotAt, 'PPP')}</span> (based on your purchase date).
+                      </p>
+                    )}
+                  {canGenerate && slotEmergencyUnlock && emailsGenerated < slotLimit && intervalDays > 0 && (
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400/90 mt-1">
+                      Priority access: you can generate remaining slots without waiting.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1 lg:pt-0 shrink-0">
@@ -795,8 +878,13 @@ export const AdobeEmail = () => {
                     <button
                       type="button"
                       onClick={() => handleGenerateEmail(orderId)}
-                      disabled={emailsGenerated >= slotLimit || generating}
-                      className={`${btnPrimary} py-2`}
+                      disabled={emailsGenerated >= slotLimit || generating || !slotTimingOk}
+                      className={`${btnPrimary} py-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      title={
+                        !slotTimingOk && nextSlotAt
+                          ? `Available from ${format(nextSlotAt, 'PPP')}`
+                          : undefined
+                      }
                     >
                       {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                       Add email ({slotLimit - emailsGenerated} left)

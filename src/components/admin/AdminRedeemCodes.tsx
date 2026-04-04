@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
-  RefreshCw, ShieldCheck, Hash, Package, Users, X
+  RefreshCw, ShieldCheck, Hash, Package, Users, X,
+  Download, Layers, Ban,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -52,6 +53,9 @@ export const AdminRedeemCodes = () => {
     note: '',
     is_active: true,
   });
+  const [bulkQuantity, setBulkQuantity] = useState(10);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [showBulkPanel, setShowBulkPanel] = useState(false);
 
   useEffect(() => {
     fetchAll();
@@ -65,7 +69,7 @@ export const AdminRedeemCodes = () => {
           .from('redeem_codes')
           .select('*, products:product_id(title, price)')
           .order('created_at', { ascending: false })
-          .limit(200),
+          .limit(10000),
         supabase.from('products').select('id, title, price').eq('is_active', true),
       ]);
       setCodes(codesData || []);
@@ -99,6 +103,179 @@ export const AdminRedeemCodes = () => {
       await fetchAll();
     } catch (err: any) {
       alert('Error: ' + (err.message || 'Could not create code. It may already exist.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const BULK_MAX = 500;
+
+  const handleBulkCreate = async () => {
+    if (!form.product_id) {
+      alert('Select a product first.');
+      return;
+    }
+    const n = Math.min(BULK_MAX, Math.max(1, Math.floor(Number(bulkQuantity)) || 1));
+    const batchLabel = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    const baseNote = form.note?.trim()
+      ? `${form.note.trim()} · bulk ${batchLabel}`
+      : `Bulk ${batchLabel}`;
+
+    setBulkSaving(true);
+    try {
+      const seen = new Set<string>();
+      const rows: {
+        code: string;
+        product_id: string;
+        max_uses: number;
+        note: string;
+        is_active: boolean;
+        used_count: number;
+        is_used: boolean;
+      }[] = [];
+
+      for (let i = 0; i < n; i++) {
+        let code = '';
+        for (let attempt = 0; attempt < 80; attempt++) {
+          const c = generateCode();
+          if (!seen.has(c)) {
+            seen.add(c);
+            code = c;
+            break;
+          }
+        }
+        if (!code) {
+          alert('Could not generate enough unique codes. Try a smaller batch.');
+          return;
+        }
+        rows.push({
+          code,
+          product_id: form.product_id,
+          max_uses: Math.max(1, Number(form.max_uses) || 1),
+          note: baseNote,
+          is_active: form.is_active,
+          used_count: 0,
+          is_used: false,
+        });
+      }
+
+      const chunk = 100;
+      for (let i = 0; i < rows.length; i += chunk) {
+        const { error } = await supabase.from('redeem_codes').insert(rows.slice(i, i + chunk));
+        if (error) throw error;
+      }
+
+      setShowBulkPanel(false);
+      await fetchAll();
+      alert(`Created ${n} redeem codes.`);
+    } catch (err: any) {
+      alert('Bulk create failed: ' + (err.message || 'Unknown error. Some codes may already exist — try again with a new batch.'));
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const escapeCsvCell = (v: string | number | boolean | undefined | null) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  const downloadCsv = () => {
+    if (filteredCodes.length === 0) {
+      alert('No codes to export. Adjust your search/filter.');
+      return;
+    }
+    const headers = [
+      'code',
+      'product',
+      'price',
+      'max_uses',
+      'used_count',
+      'is_active',
+      'is_used',
+      'status',
+      'created_at',
+      'note',
+    ];
+    const lines = [headers.join(',')];
+    for (const c of filteredCodes) {
+      const badge = getStatusBadge(c).label;
+      lines.push(
+        [
+          escapeCsvCell(c.code),
+          escapeCsvCell(c.products?.title ?? ''),
+          escapeCsvCell(c.products?.price ?? ''),
+          escapeCsvCell(c.max_uses),
+          escapeCsvCell(c.used_count),
+          escapeCsvCell(c.is_active),
+          escapeCsvCell(c.is_used),
+          escapeCsvCell(badge),
+          escapeCsvCell(c.created_at),
+          escapeCsvCell(c.note ?? ''),
+        ].join(','),
+      );
+    }
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `redeem-codes-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkDeleteFiltered = async () => {
+    if (filteredCodes.length === 0) return;
+    if (
+      !window.confirm(
+        `Delete ${filteredCodes.length} code(s) permanently? This cannot be undone. Codes that already have usage history may fail to delete.`,
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const ids = filteredCodes.map((c) => c.id);
+      const chunk = 200;
+      for (let i = 0; i < ids.length; i += chunk) {
+        const { error } = await supabase.from('redeem_codes').delete().in('id', ids.slice(i, i + chunk));
+        if (error) throw error;
+      }
+      setCodes((prev) => prev.filter((c) => !ids.includes(c.id)));
+      await fetchAll();
+    } catch (err: any) {
+      alert('Bulk delete failed: ' + (err.message || 'Some rows may be protected if already used.'));
+      await fetchAll();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBulkDeactivateFiltered = async () => {
+    const activeIds = filteredCodes.filter((c) => c.is_active).map((c) => c.id);
+    if (activeIds.length === 0) {
+      alert('No active codes in the current list.');
+      return;
+    }
+    if (!window.confirm(`Deactivate ${activeIds.length} active code(s) in the current list?`)) return;
+    setSaving(true);
+    try {
+      const chunk = 200;
+      for (let i = 0; i < activeIds.length; i += chunk) {
+        const { error } = await supabase
+          .from('redeem_codes')
+          .update({ is_active: false })
+          .in('id', activeIds.slice(i, i + chunk));
+        if (error) throw error;
+      }
+      setCodes((prev) =>
+        prev.map((c) => (activeIds.includes(c.id) ? { ...c, is_active: false } : c)),
+      );
+    } catch (err: any) {
+      alert('Bulk deactivate failed: ' + (err.message || 'Unknown error'));
+      await fetchAll();
     } finally {
       setSaving(false);
     }
@@ -186,6 +363,14 @@ export const AdminRedeemCodes = () => {
               <Plus className="w-4 h-4" />
               Generate code
             </button>
+            <button
+              onClick={() => setShowBulkPanel((v) => !v)}
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/15 transition-colors"
+            >
+              <Layers className="w-4 h-4" />
+              Bulk generate
+            </button>
           </div>
         </div>
 
@@ -206,6 +391,101 @@ export const AdminRedeemCodes = () => {
           ))}
         </div>
       </div>
+
+      {/* Bulk generate */}
+      {showBulkPanel && (
+        <div className="bg-white dark:bg-[#151518] rounded-2xl border border-emerald-200/50 dark:border-emerald-500/20 shadow-soft overflow-hidden">
+          <div className="p-5 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-center">
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-600" /> Bulk generate codes
+            </h3>
+            <button type="button" onClick={() => setShowBulkPanel(false)} className="text-gray-400 hover:text-gray-600 text-sm">
+              Close
+            </button>
+          </div>
+          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                How many codes (max {BULK_MAX})
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={BULK_MAX}
+                value={bulkQuantity}
+                onChange={(e) => setBulkQuantity(Number(e.target.value))}
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-semibold text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                Product
+              </label>
+              <select
+                value={form.product_id}
+                onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100"
+              >
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} — ৳{p.price}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                Max uses each
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={form.max_uses}
+                onChange={(e) => setForm((f) => ({ ...f, max_uses: Number(e.target.value) }))}
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm"
+              />
+            </div>
+            <div className="flex items-end gap-3 pb-0.5">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                  form.is_active ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-gray-700'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                    form.is_active ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                Note (optional, added to each code)
+              </label>
+              <input
+                value={form.note}
+                onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                placeholder="e.g. January campaign"
+                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm"
+              />
+            </div>
+          </div>
+          <div className="px-5 pb-5 flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              disabled={bulkSaving || !form.product_id || products.length === 0}
+              onClick={() => void handleBulkCreate()}
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-semibold text-sm"
+            >
+              {bulkSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
+              Create {Math.min(BULK_MAX, Math.max(1, Math.floor(Number(bulkQuantity)) || 1))} codes
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create Code Form */}
       {showForm && (
@@ -353,8 +633,43 @@ export const AdminRedeemCodes = () => {
                   <X className="w-4 h-4" />
                   Reset
                 </button>
+
+                <button
+                  type="button"
+                  onClick={downloadCsv}
+                  disabled={filteredCodes.length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/80 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-200 hover:bg-indigo-100/80 dark:hover:bg-indigo-500/15 disabled:opacity-40 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                  Download CSV
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDeactivateFiltered()}
+                  disabled={saving || filteredCodes.filter((c) => c.is_active).length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-500/10 text-amber-900 dark:text-amber-100 hover:bg-amber-100/80 disabled:opacity-40 transition-colors"
+                >
+                  <Ban className="w-4 h-4" />
+                  Deactivate all (list)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDeleteFiltered()}
+                  disabled={saving || filteredCodes.length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50/80 dark:bg-red-500/10 text-red-800 dark:text-red-200 hover:bg-red-100/80 disabled:opacity-40 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete all (list)
+                </button>
               </div>
             </div>
+
+            <p className="text-[11px] text-gray-500 dark:text-gray-500">
+              CSV, deactivate, and delete apply to the <span className="font-semibold">codes currently shown</span> (search + status
+              filter). Use Reset to include everything loaded from the server.
+            </p>
 
             <div className="overflow-x-auto">
             <table className="min-w-full">

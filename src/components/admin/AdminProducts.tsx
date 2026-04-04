@@ -30,6 +30,8 @@ interface Product {
   image_url?: string;
   is_active: boolean;
   email_slots: number;
+  /** Days after purchase before 2nd, 3rd… slot unlocks. 0 = no wait between slots. */
+  email_slot_interval_days: number;
   max_users_per_email: number;
   single_device_warning: boolean;
   with_cloud_access: boolean;
@@ -57,6 +59,7 @@ export const AdminProducts = () => {
     image_url: '',
     is_active: true,
     email_slots: 3,
+    email_slot_interval_days: 0,
     max_users_per_email: 1,
     single_device_warning: false,
     with_cloud_access: false,
@@ -192,6 +195,7 @@ export const AdminProducts = () => {
       image_url: '',
       is_active: true,
       email_slots: 3,
+      email_slot_interval_days: 0,
       max_users_per_email: 1,
       single_device_warning: false,
       with_cloud_access: false,
@@ -212,6 +216,7 @@ export const AdminProducts = () => {
       image_url: '',
       is_active: true,
       email_slots: 1,
+      email_slot_interval_days: 0,
       max_users_per_email: 1,
       single_device_warning: false,
       with_cloud_access: false,
@@ -448,6 +453,21 @@ export const AdminProducts = () => {
                       max={10}
                       value={formData.email_slots ?? 3}
                       onChange={(e) => setFormData({ ...formData, email_slots: Number(e.target.value) })}
+                      className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                    />
+                  </Field>
+                  <Field
+                    label="Days between slot unlocks"
+                    hint="First slot is immediate. 2nd slot unlocks N days after purchase, 3rd after 2×N days, etc. 0 = no spacing (old behavior)."
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={365}
+                      value={formData.email_slot_interval_days ?? 0}
+                      onChange={(e) =>
+                        setFormData({ ...formData, email_slot_interval_days: Number(e.target.value) })
+                      }
                       className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
                     />
                   </Field>

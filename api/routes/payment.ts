@@ -741,7 +741,7 @@ router.post('/assign-email', requireUser, async (req, res) => {
     // Securely lookup the order bypassing RLS to ensure we can read all details
     const { data: order, error: orderError } = await supabase
       .from('orders')
-      .select('*, products(id, email_slots, max_users_per_email)')
+      .select('*, products(id, email_slots, email_slot_interval_days, max_users_per_email)')
       .eq('id', order_id)
       .single();
 
@@ -769,12 +769,17 @@ router.post('/assign-email', requireUser, async (req, res) => {
 
     // Optional: check max generation limits if you want, but the smart backend respects shared slots natively
     const result = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
-    
+
     if (result.success) {
       return res.json({ success: true, message: 'Email assigned successfully' });
-    } else {
-      return res.status(500).json({ success: false, message: result.error || 'Failed to assign email' });
     }
+    const status = result.code === 'slot_timing' ? 400 : 500;
+    return res.status(status).json({
+      success: false,
+      message: result.error || 'Failed to assign email',
+      code: result.code,
+      next_eligible_at: result.nextEligibleAt,
+    });
 
   } catch (error: any) {
     console.error('Manual assign-email error:', error);

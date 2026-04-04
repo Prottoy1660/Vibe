@@ -126,7 +126,7 @@ router.get('/my-emails', async (req: Request, res: Response): Promise<void> => {
           created_at,
           status,
           auto_renew,
-          products:product_id (id, duration, price, email_slots, max_users_per_email, single_device_warning, is_personal)
+          products:product_id (id, duration, price, email_slots, email_slot_interval_days, max_users_per_email, single_device_warning, is_personal)
         )
       `)
       .eq('user_id', userId)
