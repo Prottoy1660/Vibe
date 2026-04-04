@@ -24,7 +24,10 @@ const verifyUser = async (req: express.Request, res: express.Response, next: exp
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No authorization header' });
     
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token || token === 'undefined') {
+      return res.status(401).json({ error: 'Missing Authorization token' });
+    }
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) return res.status(401).json({ error: 'Invalid token' });
@@ -42,7 +45,10 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'No authorization header' });
     
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!token || token === 'undefined') {
+      return res.status(401).json({ error: 'Missing Authorization token' });
+    }
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
     if (error || !user) return res.status(401).json({ error: 'Invalid token' });

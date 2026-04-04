@@ -2,6 +2,7 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { assignEmailForOrder } from '../lib/emailAssignment.js';
+import { productDurationToMonths } from '../lib/productDuration.js';
 import { tryProcessReferralRewardsForOrder } from '../lib/referralEngine.js';
 
 dotenv.config();
@@ -22,8 +23,10 @@ function isValidEmail(email: string) {
 async function requireUser(req: any, res: any, next: any) {
   try {
     const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : '';
-    if (!token) return res.status(401).json({ success: false, message: 'Missing Authorization token' });
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : '';
+    if (!token || token === 'undefined') {
+      return res.status(401).json({ success: false, message: 'Missing Authorization token' });
+    }
 
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) return res.status(401).json({ success: false, message: 'Invalid token' });
@@ -182,6 +185,37 @@ async function logPaymentEvent(orderId: string | null, userId: string | null, ev
   } catch {}
 }
 
+/** Grant reseller Adobe access for personal orders; logs failures to order_events for admin visibility. */
+async function fulfillPersonalAdobeAccess(order: {
+  id: string;
+  user_id: string;
+  personal_email: string | null;
+  products?: { duration?: string | null } | null;
+}) {
+  const email = order.personal_email?.trim();
+  if (!email) return;
+  const months = productDurationToMonths(order.products?.duration ?? null);
+  try {
+    const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
+    const grantOut = await grantAdobeCloudAccess(email, months);
+    if (grantOut.success) {
+      console.log(`Successfully granted Adobe Cloud Access for personal email: ${email}`);
+      await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Personal Adobe access provisioned');
+    } else {
+      console.error(`Failed to grant Adobe Cloud Access: ${grantOut.error}`);
+      await logOrderEvent(order.id, order.user_id, 'provisioning_failed', grantOut.error || 'Adobe API rejected provisioning');
+    }
+  } catch (err) {
+    console.error('Error in personal subscription fulfillment:', err);
+    await logOrderEvent(
+      order.id,
+      order.user_id,
+      'provisioning_failed',
+      err instanceof Error ? err.message : 'Personal Adobe fulfillment error',
+    );
+  }
+}
+
 router.post('/create', requireUser, async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   // Silently destroy all pending/abandoned orders older than 30 minutes
@@ -310,21 +344,7 @@ router.post('/create', requireUser, async (req, res) => {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
         
         if (order.products?.is_personal && order.personal_email) {
-          try {
-            const durationStr = order.products.duration.toLowerCase();
-            let months = 1;
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) : 1;
-            }
-            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
-            await grantAdobeCloudAccess(order.personal_email, months);
-          } catch (err) {
-            console.error('Error in personal subscription fulfillment (free):', err);
-          }
+          await fulfillPersonalAdobeAccess(order);
         } else {
           const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
           if (!assignment.success) {
@@ -366,21 +386,7 @@ router.post('/create', requireUser, async (req, res) => {
         await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
         
         if (order.products?.is_personal && order.personal_email) {
-          try {
-            const durationStr = order.products.duration.toLowerCase();
-            let months = 1;
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) : 1;
-            }
-            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
-            await grantAdobeCloudAccess(order.personal_email, months);
-          } catch (err) {
-            console.error('Error in personal subscription fulfillment (dev):', err);
-          }
+          await fulfillPersonalAdobeAccess(order);
         } else {
           const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
           if (!assignment.success) {
@@ -658,32 +664,7 @@ router.post('/webhook', async (req, res) => {
         await logPaymentEvent(order.id, order.user_id, 'payment_completed', gatewayPaid || expectedGatewayDue, 'Payment webhook completed');
         await logOrderEvent(order.id, order.user_id, 'payment_completed', 'Payment confirmed by webhook');
         if (order.products?.is_personal && order.personal_email) {
-          try {
-            // Calculate duration in months
-            const durationStr = order.products.duration.toLowerCase();
-            let months = 1;
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              months = match ? parseInt(match[0]) : 1;
-            }
-
-            const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
-            const res = await grantAdobeCloudAccess(order.personal_email, months);
-            
-            if (res.success) {
-              console.log(`Successfully granted Adobe Cloud Access for personal email: ${order.personal_email}`);
-              await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Personal Adobe access provisioned');
-            } else {
-              console.error(`Failed to grant Adobe Cloud Access: ${res.error}`);
-              // Note: You could potentially mark order as 'failed' here, but keeping 'completed' 
-              // and letting admin handle retry might be safer depending on business logic.
-            }
-          } catch (err) {
-            console.error('Error in personal subscription fulfillment:', err);
-          }
+          await fulfillPersonalAdobeAccess(order);
         } else {
           // Use product-aware email assignment (respects email_slots & max_users_per_email)
           const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);

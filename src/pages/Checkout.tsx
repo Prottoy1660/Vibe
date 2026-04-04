@@ -23,6 +23,7 @@ interface Product {
   title_bn: string;
   price: number;
   duration: string;
+  is_personal?: boolean;
 }
 
 export const Checkout = () => {
@@ -162,6 +163,13 @@ export const Checkout = () => {
       return;
     }
 
+    if (product.is_personal && !(personalEmail && personalEmail.trim())) {
+      setPaymentError(
+        'Personal Adobe plans need the email you confirmed on the Adobe Email page. Go back, request access with your Adobe ID email, then checkout from that link.',
+      );
+      return;
+    }
+
     if (requirePhone && (!phone || phone.length < 11)) {
       setPaymentError('A valid phone number is required to complete this order.');
       return;
@@ -191,7 +199,7 @@ export const Checkout = () => {
           status: 'pending',
           payment_status: 'pending',
           auto_renew: isAutoRenew,
-          personal_email: personalEmail || null,
+          personal_email: product.is_personal && personalEmail ? personalEmail.trim() : null,
         })
         .select()
         .single();

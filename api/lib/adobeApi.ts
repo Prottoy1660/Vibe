@@ -8,9 +8,14 @@ export async function grantAdobeCloudAccess(email: string, durationMonths: numbe
     return { success: false, error: 'ADOBE_API_KEY is not configured in .env' };
   }
 
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return { success: false, error: 'Invalid email for Adobe provisioning' };
+  }
+
   try {
     const timestamp = Date.now().toString();
-    const body = { email, durationMonths };
+    const body = { email: normalizedEmail, durationMonths };
     const payload = timestamp + JSON.stringify(body);
     const signature = crypto.createHmac('sha256', API_KEY)
       .update(payload).digest('hex');

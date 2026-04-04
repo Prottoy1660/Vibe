@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { assignEmailForOrder } from './lib/emailAssignment.js';
+import { productDurationToMonths } from './lib/productDuration.js';
 import { runSubscriptionExpiryReminders } from './lib/subscriptionExpiryReminders.js';
 
 dotenv.config();
@@ -42,7 +43,8 @@ async function processSingleAutoRenew(order: any): Promise<boolean> {
       total_amount: productPrice,
       status: 'completed',
       payment_status: 'paid',
-      auto_renew: true // Propagate the setting forwards to the new order
+      auto_renew: true,
+      personal_email: order.products?.is_personal ? order.personal_email ?? null : null,
     }).select().single();
     
     if (insertErr || !newOrder) {
@@ -56,19 +58,14 @@ async function processSingleAutoRenew(order: any): Promise<boolean> {
       if (!assignment.success) {
         console.error('CRON: AutoRenew Email assignment failed:', assignment.error);
       }
-    } else if (order.personal_email) { // Personal logic fallback
+    } else if (order.personal_email) {
       try {
         const { grantAdobeCloudAccess } = await import('./lib/adobeApi.js');
-        const durationStr = order.products.duration?.toLowerCase() || '';
-        let months = 1;
-        if (durationStr.includes('year') || durationStr.includes('yr')) {
-          const match = durationStr.match(/\d+/);
-          months = match ? parseInt(match[0]) * 12 : 12;
-        } else {
-          const match = durationStr.match(/\d+/);
-          months = match ? parseInt(match[0]) : 1;
+        const months = productDurationToMonths(order.products?.duration);
+        const grantOut = await grantAdobeCloudAccess(order.personal_email, months);
+        if (!grantOut.success) {
+          console.error('CRON: Personal Adobe API failed:', grantOut.error);
         }
-        await grantAdobeCloudAccess(order.personal_email, months);
       } catch (e) {
         console.error('CRON: Personal config failed', e);
       }

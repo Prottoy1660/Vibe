@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
 import { getApiBaseUrl } from '../lib/apiBase';
+import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
 
 function getNextAdobeSlotUnlockAt(
@@ -222,12 +223,12 @@ export const AdobeEmail = () => {
       let emailsError: any = null;
 
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
+        const token = await getAccessTokenForApi();
+        if (token) {
           const API_URL = getApiBaseUrl();
           const res = await fetch(`${API_URL}/api/auth/my-emails`, {
             method: 'GET',
-            headers: { Authorization: `Bearer ${session.access_token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
           const json = await res.json();
           if (res.ok && json.success) {
@@ -335,12 +336,16 @@ export const AdobeEmail = () => {
           if (subData?.is_expired && orderData?.auto_renew === true) {
             console.log(`Evaluating Auto-Renew for expired order: ${orderData.id}`);
             try {
-              const { data: { session } } = await supabase.auth.getSession();
+              const token = await getAccessTokenForApi();
+              if (!token) {
+                console.warn('Auto-renew skipped: no valid session token');
+                continue;
+              }
               const res = await fetch(`${getApiBaseUrl()}/api/payment/process-auto-renew`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  Authorization: `Bearer ${session?.access_token}`,
+                  Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({ old_order_id: orderData.id })
               });
@@ -498,13 +503,15 @@ export const AdobeEmail = () => {
         return;
       }
 
-      // Use the secure centralized backend to assign the email
-      const { data: { session } } = await supabase.auth.getSession();
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        throw new Error('Session expired. Please sign in again and retry.');
+      }
       const res = await fetch(`${getApiBaseUrl()}/api/payment/assign-email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ order_id: orderId }),
       });
@@ -548,13 +555,16 @@ export const AdobeEmail = () => {
     setInboxLoading(true);
     try {
       const API_URL = getApiBaseUrl();
-      const { data: { session } } = await supabase.auth.getSession();
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        throw new Error('Session expired. Please sign in again.');
+      }
 
       const response = await fetch(`${API_URL}/api/cpanel/inbox`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ email: emailAddress, password }),
       });
@@ -610,13 +620,16 @@ export const AdobeEmail = () => {
       const nextValue = !currentValue;
 
       const API_URL = getApiBaseUrl();
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        throw new Error('Session expired. Please sign in again.');
+      }
+
       const res = await fetch(`${API_URL}/api/payment/toggle-auto-renew`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({ order_id: orderId, auto_renew: nextValue })
       });

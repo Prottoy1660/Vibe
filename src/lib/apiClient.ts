@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './apiBase';
-import { supabase } from './supabase';
+import { getAccessTokenForApi } from './getAccessTokenForApi';
 
 type Json = Record<string, any>;
 
@@ -157,8 +157,7 @@ async function resolveBaseUrl() {
 export async function postJsonWithFallback<T = any>(path: string, body: Json): Promise<T> {
   invalidateStaleApiBaseCache();
   const candidates = buildCandidates();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
+  const token = await getAccessTokenForApi();
 
   const preferred = await resolveBaseUrl();
   const ordered = [preferred, ...candidates.filter(c => c !== preferred)];
@@ -267,8 +266,7 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
 export async function getJsonWithFallback<T = any>(path: string): Promise<T> {
   invalidateStaleApiBaseCache();
   const candidates = buildCandidates();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData?.session?.access_token;
+  const token = await getAccessTokenForApi();
 
   const preferred = await resolveBaseUrl();
   const ordered = [preferred, ...candidates.filter((c) => c !== preferred)];

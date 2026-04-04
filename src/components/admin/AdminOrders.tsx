@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 interface Order {
   id: string;
@@ -152,8 +153,8 @@ export const AdminOrders = () => {
 
       if (newStatus === 'completed' && userId && !isPersonal) {
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token || '';
+          const token = await getAccessTokenForApi();
+          if (!token) throw new Error('Session expired. Please sign in again.');
           const API_URL = getApiBaseUrl();
 
           const res = await fetch(`${API_URL}/api/payment/assign-email`, {
@@ -182,8 +183,11 @@ export const AdminOrders = () => {
     if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
     setAssigningBulk(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
       const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
         method: 'POST',
@@ -207,8 +211,11 @@ export const AdminOrders = () => {
   const handleSingleAssign = async (orderId: string) => {
     setAssigningSingle(orderId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
       const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/assign-email`, {
         method: 'POST',
@@ -234,8 +241,11 @@ export const AdminOrders = () => {
     if (!window.confirm('Admin renew: create a renewed order and provision fresh access?')) return;
     setRenewingOrderId(oldOrderId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
       const API_URL = getApiBaseUrl();
 
       const res = await fetch(`${API_URL}/api/admin/orders/${oldOrderId}/renew`, {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import {
   Loader2,
   Mail,
@@ -199,8 +200,11 @@ export const AdminEmails = () => {
     if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
     setAssigningBulk(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
       const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/payment/bulk-assign-emails`, {
         method: 'POST',
@@ -243,12 +247,14 @@ export const AdminEmails = () => {
       }));
 
       const API_URL = getApiBaseUrl();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
       const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ accounts: newAccounts, cloudAccess: genCloudAccess, durationMonths: genDuration }),
       });
 
@@ -902,15 +908,17 @@ export const AdminEmails = () => {
                             )
                               return;
                             try {
-                              const {
-                                data: { session },
-                              } = await supabase.auth.getSession();
+                              const token = await getAccessTokenForApi();
+                              if (!token) {
+                                alert('Session expired. Please sign in again.');
+                                return;
+                              }
                               const API_URL = getApiBaseUrl();
                               const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
                                 method: 'POST',
                                 headers: {
                                   'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${session?.access_token}`,
+                                  Authorization: `Bearer ${token}`,
                                 },
                                 body: JSON.stringify({ email: email.email }),
                               });
