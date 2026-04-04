@@ -53,6 +53,7 @@ export const Checkout = () => {
     return v != null && v.toLowerCase() === 'true';
   });
   const [walletBalance, setWalletBalance] = useState(0);
+  const [walletPromotional, setWalletPromotional] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
 
@@ -69,7 +70,7 @@ export const Checkout = () => {
         if (user) {
           const { data: userData } = await supabase
             .from('users')
-            .select('phone, wallet_balance, signup_auth_provider')
+            .select('phone, wallet_balance, wallet_promotional_balance, signup_auth_provider')
             .eq('id', user.id)
             .single();
 
@@ -81,6 +82,7 @@ export const Checkout = () => {
             setRequirePhone(true);
           }
           setWalletBalance(Number(userData?.wallet_balance) || 0);
+          setWalletPromotional(Number((userData as any)?.wallet_promotional_balance) || 0);
         }
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -140,8 +142,9 @@ export const Checkout = () => {
   const handlePayment = async () => {
     const priceNum = Number(product!.price) || 0;
     const totalAmount = Math.round(priceNum * (1 - discount / 100) * 100) / 100;
+    const spendableWallet = walletBalance + walletPromotional;
     const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
-    const safeWalletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, totalAmount));
+    const safeWalletDeduction = Math.max(0, Math.min(requestedWallet, spendableWallet, totalAmount));
     const gatewayAmount = Math.max(0, totalAmount - safeWalletDeduction);
 
     if (discount > 0 && !appliedCouponId) {
@@ -245,8 +248,9 @@ export const Checkout = () => {
 
   const originalPrice = Number(product.price) || 0;
   const finalPrice = Math.round(originalPrice * (1 - discount / 100) * 100) / 100;
+  const spendableWallet = walletBalance + walletPromotional;
   const requestedWallet = useWallet ? Number(walletAmount || 0) : 0;
-  const walletDeduction = Math.max(0, Math.min(requestedWallet, walletBalance, finalPrice));
+  const walletDeduction = Math.max(0, Math.min(requestedWallet, spendableWallet, finalPrice));
   const dueNow = Math.max(0, finalPrice - walletDeduction);
 
   const detailsDone = !requirePhone || (phone && phone.length >= 11);
@@ -482,12 +486,17 @@ export const Checkout = () => {
                 </div>
               )}
 
-              {walletBalance > 0 && finalPrice > 0 && (
+              {spendableWallet > 0 && finalPrice > 0 && (
                 <div className="rounded-xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/80 dark:bg-sky-950/25 p-3">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
                       <Wallet className="w-4 h-4 text-sky-600" />
-                      Wallet · ৳{walletBalance.toFixed(2)}
+                      Wallet · ৳{spendableWallet.toFixed(2)}
+                      {walletPromotional > 0 && (
+                        <span className="text-[10px] font-normal text-sky-700 dark:text-sky-300">
+                          (incl. ৳{walletPromotional.toFixed(2)} subscription credits)
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -495,7 +504,7 @@ export const Checkout = () => {
                         const nextUse = !useWallet;
                         setUseWallet(nextUse);
                         if (nextUse) {
-                          setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2));
+                          setWalletAmount(Math.min(spendableWallet, finalPrice).toFixed(2));
                         } else {
                           setWalletAmount('');
                         }
@@ -512,7 +521,7 @@ export const Checkout = () => {
                       <input
                         type="number"
                         min="0"
-                        max={Math.min(walletBalance, finalPrice)}
+                        max={Math.min(spendableWallet, finalPrice)}
                         step="0.01"
                         value={walletAmount}
                         onChange={(e) => setWalletAmount(e.target.value)}
@@ -520,7 +529,7 @@ export const Checkout = () => {
                       />
                       <button
                         type="button"
-                        onClick={() => setWalletAmount(Math.min(walletBalance, finalPrice).toFixed(2))}
+                        onClick={() => setWalletAmount(Math.min(spendableWallet, finalPrice).toFixed(2))}
                         className="text-xs font-medium text-sky-700 dark:text-sky-300"
                       >
                         Use max
@@ -538,7 +547,7 @@ export const Checkout = () => {
               </div>
               {walletDeduction > 0 && (
                 <div className="flex justify-between text-sm text-sky-800 dark:text-sky-200">
-                  <span>From wallet</span>
+                  <span>From wallet (credits used first)</span>
                   <span className="tabular-nums">−৳{walletDeduction.toFixed(2)}</span>
                 </div>
               )}

@@ -10,6 +10,7 @@ import {
   Sparkles,
   Info,
   LineChart,
+  Gift,
 } from 'lucide-react';
 
 async function adminRequest(path: string, method: string = 'GET', body?: any) {
@@ -53,6 +54,9 @@ export const AdminGrowthOps = () => {
   const [ltvRows, setLtvRows] = useState<any[]>([]);
   const [renewalRows, setRenewalRows] = useState<any[]>([]);
   const [referralOrderId, setReferralOrderId] = useState('');
+  const [refSettings, setRefSettings] = useState<Record<string, any> | null>(null);
+  const [refRewards, setRefRewards] = useState<any[]>([]);
+  const [referralAdminLoading, setReferralAdminLoading] = useState(false);
 
   const parseLines = (text: string) => text.split('\n').map((s) => s.trim()).filter(Boolean);
 
@@ -72,6 +76,28 @@ export const AdminGrowthOps = () => {
   useEffect(() => {
     loadCampaigns();
   }, []);
+
+  const loadReferralAdmin = async () => {
+    setReferralAdminLoading(true);
+    try {
+      const [s, r] = await Promise.all([
+        adminRequest('/api/admin/ops/referral/settings'),
+        adminRequest('/api/admin/ops/referral/rewards?limit=250'),
+      ]);
+      setRefSettings(s.settings || {});
+      setRefRewards(r.rows || []);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to load referral admin data');
+    } finally {
+      setReferralAdminLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'insights') void loadReferralAdmin();
+    // loadReferralAdmin is re-created each render; we only need tab changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const runBulkOrderStatus = async () => {
     const ids = parseLines(orderIds);
@@ -199,10 +225,54 @@ export const AdminGrowthOps = () => {
     setRunning(true);
     try {
       const data = await adminRequest(`/api/admin/ops/referral/process-order/${encodeURIComponent(referralOrderId.trim())}`, 'POST', {});
-      if (data.reward_amount) alert(`Referral rewards granted: ৳${data.reward_amount}`);
-      else alert(`Result: ${data.skipped || 'done'}`);
+      if (data.reward_amount) {
+        alert(`Referral processed: ৳${data.reward_amount} (status: ${data.status || 'granted'})`);
+      } else {
+        alert(`Result: ${data.skipped || data.status || 'done'}`);
+      }
+      await loadReferralAdmin();
     } catch (e: any) {
       alert(e?.message || 'Referral process failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const saveReferralSettings = async () => {
+    if (!refSettings) return;
+    setRunning(true);
+    try {
+      const data = await adminRequest('/api/admin/ops/referral/settings', 'PATCH', refSettings);
+      setRefSettings(data.settings || refSettings);
+      alert('Referral settings saved.');
+    } catch (e: any) {
+      alert(e?.message || 'Save failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const approveReferralReward = async (id: string) => {
+    if (!window.confirm('Grant promotional credits for this row?')) return;
+    setRunning(true);
+    try {
+      await adminRequest(`/api/admin/ops/referral/rewards/${encodeURIComponent(id)}/approve`, 'POST', {});
+      await loadReferralAdmin();
+    } catch (e: any) {
+      alert(e?.message || 'Approve failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const rejectReferralReward = async (id: string) => {
+    if (!window.confirm('Reject this referral reward?')) return;
+    setRunning(true);
+    try {
+      await adminRequest(`/api/admin/ops/referral/rewards/${encodeURIComponent(id)}/reject`, 'POST', {});
+      await loadReferralAdmin();
+    } catch (e: any) {
+      alert(e?.message || 'Reject failed');
     } finally {
       setRunning(false);
     }
@@ -560,7 +630,8 @@ export const AdminGrowthOps = () => {
             <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5">
               <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-1">Referral processing</h4>
               <p className="text-xs text-gray-500 mb-3">
-                Enter a completed order ID to credit referrer and referee wallets (subject to limits).
+                Force-run the referral engine on a completed order (ignores auto_process off). Credits go to promotional balance
+                (subscription-only), with fraud scoring and daily caps.
               </p>
               <input
                 value={referralOrderId}
@@ -576,6 +647,152 @@ export const AdminGrowthOps = () => {
               >
                 Process referral
               </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-indigo-200/50 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/5 to-transparent dark:from-indigo-950/30 p-5 md:p-6 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Gift className="w-6 h-6 text-indigo-500" />
+                <div>
+                  <h4 className="font-bold text-gray-900 dark:text-gray-100">Referral program controls</h4>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 max-w-2xl">
+                    Toggle the program, auto-settlement on completed orders, reward bands, and risk thresholds. High-risk referrals create
+                    risk_events and stay pending until you approve. Session fingerprints and IPs are matched between referrer and referee.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadReferralAdmin()}
+                disabled={referralAdminLoading}
+                className="text-sm px-4 py-2 rounded-xl border border-gray-200 dark:border-[#26262d] font-semibold disabled:opacity-50"
+              >
+                {referralAdminLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Refresh'}
+              </button>
+            </div>
+
+            {refSettings && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={refSettings.enabled !== false}
+                    onChange={(e) => setRefSettings({ ...refSettings, enabled: e.target.checked })}
+                  />
+                  Program enabled
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={refSettings.auto_process_on_order_complete !== false}
+                    onChange={(e) => setRefSettings({ ...refSettings, auto_process_on_order_complete: e.target.checked })}
+                  />
+                  Auto-process on order complete
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={refSettings.referee_bonus_matches_referrer !== false}
+                    onChange={(e) => setRefSettings({ ...refSettings, referee_bonus_matches_referrer: e.target.checked })}
+                  />
+                  Referee bonus matches referrer
+                </label>
+                {[
+                  ['referrer_reward_min', 'Referrer min ৳'],
+                  ['referrer_reward_max', 'Referrer max ৳'],
+                  ['referee_bonus_fixed', 'Referee fixed ৳ (if not matching)'],
+                  ['min_order_total_bdt', 'Min order total ৳'],
+                  ['risk_review_from', 'Risk review from (score)'],
+                  ['risk_block_from', 'Auto-block from (score)'],
+                  ['daily_cap_per_referrer_bdt', 'Daily cap / referrer ৳'],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">{label}</label>
+                    <input
+                      type="number"
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-sm"
+                      value={Number(refSettings[key] ?? 0)}
+                      onChange={(e) => setRefSettings({ ...refSettings, [key]: Number(e.target.value) })}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {refSettings && (
+              <button
+                type="button"
+                onClick={() => void saveReferralSettings()}
+                disabled={running}
+                className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold text-sm disabled:opacity-50"
+              >
+                {running ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save referral settings
+              </button>
+            )}
+
+            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-[#26262d]">
+              <table className="min-w-full text-xs sm:text-sm">
+                <thead className="bg-gray-50 dark:bg-white/5 text-left text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">When</th>
+                    <th className="px-3 py-2 font-semibold">Status</th>
+                    <th className="px-3 py-2 font-semibold">Risk</th>
+                    <th className="px-3 py-2 font-semibold">৳</th>
+                    <th className="px-3 py-2 font-semibold">Referrer</th>
+                    <th className="px-3 py-2 font-semibold">Referee</th>
+                    <th className="px-3 py-2 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
+                  {refRewards.map((rw) => (
+                    <tr key={rw.id} className="text-gray-800 dark:text-gray-200">
+                      <td className="px-3 py-2 whitespace-nowrap">{new Date(rw.created_at).toLocaleString()}</td>
+                      <td className="px-3 py-2 font-medium">{rw.status}</td>
+                      <td className="px-3 py-2">{rw.risk_score ?? 0}</td>
+                      <td className="px-3 py-2 tabular-nums">{Number(rw.reward_amount || 0).toFixed(0)}</td>
+                      <td className="px-3 py-2 max-w-[140px] truncate" title={rw.referrer?.email}>
+                        {rw.referrer?.email || rw.referrer_user_id?.slice(0, 8)}
+                      </td>
+                      <td className="px-3 py-2 max-w-[140px] truncate" title={rw.referee?.email}>
+                        {rw.referee?.email || rw.referee_user_id?.slice(0, 8)}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap space-x-1">
+                        {rw.status === 'pending_review' || rw.status === 'blocked' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="text-emerald-600 font-semibold hover:underline disabled:opacity-40"
+                              disabled={running}
+                              onClick={() => void approveReferralReward(rw.id)}
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              className="text-rose-600 font-semibold hover:underline disabled:opacity-40"
+                              disabled={running}
+                              onClick={() => void rejectReferralReward(rw.id)}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {refRewards.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-8 text-center text-gray-500">
+                        No referral rows yet. Complete a referred order or use manual process above.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

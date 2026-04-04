@@ -22,8 +22,7 @@ async function processSingleAutoRenew(order: any): Promise<boolean> {
     await supabase.from('orders').update({ auto_renew: false }).eq('id', order.id);
 
     if (productPrice > 0) {
-      // 1. Atomic Wallet Deduction using existing RPC
-      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+      const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
         p_user_id: order.user_id,
         p_amount: productPrice,
       });

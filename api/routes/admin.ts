@@ -1,6 +1,11 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import {
+  tryProcessReferralRewardsForOrder,
+  loadReferralSettings,
+  adminGrantReferralRewardRow,
+} from '../lib/referralEngine.js';
 
 dotenv.config();
 
@@ -835,70 +840,99 @@ router.get('/ops/renewal-packs', verifyAdmin, async (req, res) => {
   }
 });
 
+router.get('/ops/referral/settings', verifyAdmin, async (_req, res) => {
+  try {
+    const settings = await loadReferralSettings(supabase);
+    return res.json({ success: true, settings });
+  } catch (error: any) {
+    console.error('referral settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/referral/settings', verifyAdmin, async (req, res) => {
+  try {
+    const { data } = await supabase.from('system_settings').select('value').eq('key', 'referral_program').maybeSingle();
+    const merged = { ...((data?.value as any) || {}), ...(req.body || {}) };
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: 'referral_program',
+        value: merged,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+    if (error) throw error;
+    return res.json({ success: true, settings: merged });
+  } catch (error: any) {
+    console.error('referral settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/referral/rewards', verifyAdmin, async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(500, Number(req.query.limit || 200)));
+    const { data: rows, error } = await supabase
+      .from('referral_rewards')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    const ids = new Set<string>();
+    for (const r of rows || []) {
+      ids.add((r as any).referrer_user_id);
+      ids.add((r as any).referee_user_id);
+    }
+    const idList = [...ids].filter(Boolean);
+    let userMap: Record<string, any> = {};
+    if (idList.length) {
+      const { data: users } = await supabase.from('users').select('id,name,email,phone,created_at').in('id', idList);
+      userMap = Object.fromEntries((users || []).map((u: any) => [u.id, u]));
+    }
+    const enriched = (rows || []).map((r: any) => ({
+      ...r,
+      referrer: userMap[r.referrer_user_id] || null,
+      referee: userMap[r.referee_user_id] || null,
+    }));
+    return res.json({ success: true, rows: enriched });
+  } catch (error: any) {
+    console.error('referral rewards list:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/referral/rewards/:id/approve', verifyAdmin, async (req, res) => {
+  try {
+    const out = await adminGrantReferralRewardRow(supabase, req.params.id);
+    if (!out.ok) return res.status(400).json({ error: out.error || 'Approve failed' });
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('referral approve:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/referral/rewards/:id/reject', verifyAdmin, async (req, res) => {
+  try {
+    const { data: row } = await supabase.from('referral_rewards').select('status').eq('id', req.params.id).single();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if ((row as any).status === 'granted') {
+      return res.status(400).json({ error: 'Already granted' });
+    }
+    await supabase.from('referral_rewards').update({ status: 'rejected' }).eq('id', req.params.id);
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('referral reject:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.post('/ops/referral/process-order/:orderId', verifyAdmin, async (req, res) => {
   try {
     const orderId = req.params.orderId;
-    const maxRewardPerOrder = Math.max(10, Math.min(500, Number(req.body?.max_reward || 100)));
-
-    const { data: order } = await supabase
-      .from('orders')
-      .select('id, user_id, total_amount, status')
-      .eq('id', orderId)
-      .single();
-    if (!order || order.status !== 'completed') return res.status(400).json({ error: 'Order not eligible' });
-
-    const { data: userRow } = await supabase
-      .from('users')
-      .select('id, referred_by_code')
-      .eq('id', order.user_id)
-      .single();
-    const refCode = (userRow as any)?.referred_by_code;
-    if (!refCode) return res.json({ success: true, skipped: 'No referred_by_code on user' });
-
-    const { data: ownerCode } = await supabase
-      .from('referral_codes')
-      .select('owner_user_id, code, is_active')
-      .eq('code', refCode)
-      .single();
-    if (!ownerCode?.is_active || !ownerCode.owner_user_id || ownerCode.owner_user_id === order.user_id) {
-      return res.json({ success: true, skipped: 'Invalid referral source' });
-    }
-
-    const rewardAmount = Math.min(maxRewardPerOrder, Math.max(10, Math.round(Number(order.total_amount || 0) * 0.1)));
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const { data: dailyRewards } = await supabase
-      .from('referral_rewards')
-      .select('reward_amount')
-      .eq('referrer_user_id', ownerCode.owner_user_id)
-      .gte('created_at', todayStart.toISOString());
-    const todayTotal = (dailyRewards || []).reduce((acc: number, r: any) => acc + Number(r.reward_amount || 0), 0);
-    if (todayTotal + rewardAmount > 1000) {
-      await supabase.from('risk_events').insert({
-        user_id: ownerCode.owner_user_id,
-        order_id: order.id,
-        risk_type: 'referral_daily_cap_hit',
-        severity: 'medium',
-        message: 'Referral reward blocked by daily cap',
-        meta: { attempted_reward: rewardAmount, daily_total: todayTotal },
-      });
-      return res.json({ success: true, skipped: 'Daily cap exceeded' });
-    }
-
-    const { error: rewardErr } = await supabase.from('referral_rewards').insert({
-      referrer_user_id: ownerCode.owner_user_id,
-      referee_user_id: order.user_id,
-      source_order_id: order.id,
-      reward_amount: rewardAmount,
-      status: 'granted',
-    });
-    if (rewardErr) return res.json({ success: true, skipped: rewardErr.message });
-
-    const { data: refWallet } = await supabase.from('users').select('wallet_balance').eq('id', ownerCode.owner_user_id).single();
-    const { data: newWallet } = await supabase.from('users').select('wallet_balance').eq('id', order.user_id).single();
-    await supabase.from('users').update({ wallet_balance: Number(refWallet?.wallet_balance || 0) + rewardAmount }).eq('id', ownerCode.owner_user_id);
-    await supabase.from('users').update({ wallet_balance: Number(newWallet?.wallet_balance || 0) + rewardAmount }).eq('id', order.user_id);
-
-    return res.json({ success: true, reward_amount: rewardAmount });
+    const result = await tryProcessReferralRewardsForOrder(supabase, orderId, { force: true });
+    return res.json({ success: true, ...result });
   } catch (error: any) {
     console.error('referral process error:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
@@ -1048,7 +1082,7 @@ router.post('/orders/:orderId/renew', verifyAdmin, async (req, res) => {
     // Create the new order first to know the ID for provisioning.
     // (If provisioning fails, we refund best-effort.)
     if (charge_wallet) {
-      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+      const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
         p_user_id: oldOrder.user_id,
         p_amount: price,
       });

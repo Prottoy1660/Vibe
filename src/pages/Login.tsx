@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Lock, AlertCircle, Loader2, User, ArrowRight, Sparkles, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +7,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
 
 export const Login = () => {
+  const [searchParams] = useSearchParams();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,6 +21,14 @@ export const Login = () => {
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
   const isDark = theme === 'dark';
+
+  useEffect(() => {
+    const r = searchParams.get('ref') || searchParams.get('referral');
+    if (r) {
+      const cleaned = r.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (cleaned.length >= 4) sessionStorage.setItem('referral_pending_code', cleaned);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchSettings = async () => {

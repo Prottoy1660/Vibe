@@ -30,6 +30,7 @@ interface Stats {
   totalSpent: number;
   activeSubscriptions: number;
   walletBalance: number;
+  walletPromotional: number;
 }
 
 interface Notice {
@@ -54,6 +55,7 @@ export const Dashboard = () => {
     totalSpent: 0,
     activeSubscriptions: 0,
     walletBalance: 0,
+    walletPromotional: 0,
   });
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export const Dashboard = () => {
           .eq('user_id', user.id),
         supabase
           .from('users')
-          .select('wallet_balance')
+          .select('wallet_balance,wallet_promotional_balance')
           .eq('id', user.id)
           .single(),
         supabase
@@ -102,9 +104,14 @@ export const Dashboard = () => {
           totalSpent: completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0),
           activeSubscriptions: completedOrders.length,
           walletBalance: Number(walletData?.wallet_balance) || 0,
+          walletPromotional: Number((walletData as any)?.wallet_promotional_balance) || 0,
         });
       } else if (walletData) {
-        setStats(prev => ({ ...prev, walletBalance: Number(walletData.wallet_balance) || 0 }));
+        setStats(prev => ({
+          ...prev,
+          walletBalance: Number(walletData.wallet_balance) || 0,
+          walletPromotional: Number((walletData as any).wallet_promotional_balance) || 0,
+        }));
       }
 
       if (noticesData) {
@@ -215,7 +222,10 @@ export const Dashboard = () => {
     {
       title: 'Wallet Balance',
       value: `৳${stats.walletBalance.toFixed(2)}`,
-      caption: 'Available balance',
+      caption:
+        stats.walletPromotional > 0
+          ? `Withdrawable · +৳${stats.walletPromotional.toFixed(2)} subscription credits`
+          : 'Withdrawable balance',
       icon: Wallet,
       color: 'text-blue-500',
       bgColor: 'bg-blue-100',

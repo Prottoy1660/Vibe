@@ -141,6 +141,7 @@ export const Layout = () => {
       name: 'Services',
       items: [
         { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
+        { name: 'Refer & earn', href: '/refer', icon: Gift },
         { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
         { name: 'Support', href: '/support', icon: LifeBuoy },
       ],

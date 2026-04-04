@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useFingerprint } from '../hooks/useFingerprint';
+import { postJsonWithFallback } from '../lib/apiClient';
 
 interface AuthContextType {
   user: User | null;
@@ -67,6 +68,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Apply referral code stored during register/login flow (e.g. email confirmation delayed session).
+  useEffect(() => {
+    if (!user || loading) return;
+    const pending = sessionStorage.getItem('referral_pending_code');
+    if (!pending || pending.length < 4) return;
+    sessionStorage.removeItem('referral_pending_code');
+    void postJsonWithFallback('/api/referral/claim', { code: pending }).catch(() => {
+      sessionStorage.setItem('referral_pending_code', pending);
+    });
+  }, [user, loading]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();

@@ -2,6 +2,7 @@ import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { assignEmailForOrder } from '../lib/emailAssignment.js';
+import { tryProcessReferralRewardsForOrder } from '../lib/referralEngine.js';
 
 dotenv.config();
 
@@ -253,6 +254,19 @@ router.post('/create', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
     }
 
+    if (walletDeduction > 0) {
+      const { data: wb } = await supabase
+        .from('users')
+        .select('wallet_balance, wallet_promotional_balance')
+        .eq('id', user.id)
+        .single();
+      const totalSpendable =
+        Number((wb as any)?.wallet_balance || 0) + Number((wb as any)?.wallet_promotional_balance || 0);
+      if (walletDeduction > totalSpendable + 0.001) {
+        return res.status(400).json({ success: false, message: 'Insufficient wallet balance.' });
+      }
+    }
+
     // Persist normalized payable total (never replace a coupon line with full list price)
     try {
       const paymentMethodResolved =
@@ -282,7 +296,7 @@ router.post('/create', requireUser, async (req, res) => {
 
       // If this order used wallet balance (full wallet payment), deduct it now.
       if (walletDeduction > 0) {
-        const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+        const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
           p_user_id: user.id,
           p_amount: walletDeduction,
         });
@@ -324,6 +338,11 @@ router.post('/create', requireUser, async (req, res) => {
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
         await incrementCouponUsedIfPresent(order);
+        try {
+          await tryProcessReferralRewardsForOrder(supabase, order.id);
+        } catch (e) {
+          console.error('referral processing (wallet-only):', e);
+        }
       }
 
       const payload = {
@@ -374,6 +393,11 @@ router.post('/create', requireUser, async (req, res) => {
         
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
         await incrementCouponUsedIfPresent(order);
+        try {
+          await tryProcessReferralRewardsForOrder(supabase, order.id);
+        } catch (e) {
+          console.error('referral processing (dev sim):', e);
+        }
       }
 
       const payload = {
@@ -605,7 +629,7 @@ router.post('/webhook', async (req, res) => {
 
       // For mixed checkout, deduct wallet part only after gateway confirms completion.
       if (walletDeduction > 0 && orderUserId) {
-        const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+        const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
           p_user_id: orderUserId,
           p_amount: walletDeduction,
         });
@@ -676,6 +700,11 @@ router.post('/webhook', async (req, res) => {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
         await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
         await incrementCouponUsedIfPresent(order);
+        try {
+          await tryProcessReferralRewardsForOrder(supabase, order.id);
+        } catch (e) {
+          console.error('referral processing (webhook):', e);
+        }
       }
       
       // Legacy fallback for order metadata recharge fields.
@@ -868,8 +897,7 @@ router.post('/process-auto-renew', requireUser, async (req, res) => {
     const productPrice = Number(order.products?.price) || 0;
     
     if (productPrice > 0) {
-      // 1. Atomic Wallet Deduction using existing RPC
-      const { error: deductErr } = await supabase.rpc('deduct_wallet_balance', {
+      const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
         p_user_id: user.id,
         p_amount: productPrice,
       });

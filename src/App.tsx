@@ -18,6 +18,7 @@ const Profile = React.lazy(() => import('./pages/Profile').then(module => ({ def
 const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module => ({ default: module.TutorialHelp })));
 const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
+const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -61,6 +62,7 @@ function AppRoutes() {
           <Route path="/tutorial-help" element={<TutorialHelp />} />
           <Route path="/support" element={<Support />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/refer" element={<Referral />} />
           <Route path="/admin" element={<AdminDashboard />} />
         </Route>
       </Routes>
