@@ -287,7 +287,8 @@ export const LobbyMusicPlayer: React.FC<Props> = ({ userId, adminRoute }) => {
         <div id={hostId} />
       </div>
 
-      <div className="fixed bottom-6 right-6 z-[90] flex flex-col items-end gap-2">
+      {/* Sit to the left of SupportChatWidget (h-14 + gutters) so FABs never overlap */}
+      <div className="fixed bottom-6 right-[5.25rem] z-[50] flex flex-col items-end gap-2 md:right-24">
         <div className="flex gap-1.5">
           {fabMode === 'playing' ? (
             <button
