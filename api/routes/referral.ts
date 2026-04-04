@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import { loadReferralSettings } from '../lib/referralEngine.js';
 
 dotenv.config();
 
@@ -73,6 +74,11 @@ router.get('/me', requireUser, async (req, res) => {
 
 router.post('/claim', requireUser, async (req, res) => {
   try {
+    const settings = await loadReferralSettings(supabase);
+    if (!settings.enabled) {
+      return res.status(403).json({ success: false, message: 'Referral program is currently disabled' });
+    }
+
     const user = (req as any).user;
     const raw = String(req.body?.code || '')
       .trim()

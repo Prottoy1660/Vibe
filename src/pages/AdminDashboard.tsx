@@ -17,6 +17,7 @@ import {
   LifeBuoy,
   Megaphone,
   Music2,
+  MessageCircle,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,6 +41,9 @@ const AdminPlatformSettings = React.lazy(() => import('../components/admin/Admin
 const AdminWaitlist = React.lazy(() => import('../components/admin/AdminWaitlist').then((m) => ({ default: m.AdminWaitlist })));
 const AdminUserNotifications = React.lazy(() => import('../components/admin/AdminUserNotifications').then((m) => ({ default: m.AdminUserNotifications })));
 const AdminLobbyMusic = React.lazy(() => import('../components/admin/AdminLobbyMusic').then((m) => ({ default: m.AdminLobbyMusic })));
+const AdminSupportChatSettings = React.lazy(() =>
+  import('../components/admin/AdminSupportChatSettings').then((m) => ({ default: m.AdminSupportChatSettings })),
+);
 
 const AdminTabFallback = () => (
   <div className="flex justify-center items-center py-16">
@@ -255,6 +259,12 @@ export const AdminDashboard = () => {
                 Support tickets
               </span>
             )}
+            {activeTab === 'support_chat_ai' && (
+              <span className="flex items-center gap-2">
+                <MessageCircle className="w-6 h-6" />
+                Help chat (AI)
+              </span>
+            )}
             {activeTab === 'lobby_music' && (
               <span className="flex items-center gap-2">
                 <Music2 className="w-6 h-6" />
@@ -284,6 +294,7 @@ export const AdminDashboard = () => {
         {activeTab === 'ops' && <AdminOpsCenter />}
         {activeTab === 'growth_ops' && <AdminGrowthOps />}
         {activeTab === 'support' && <AdminSupport />}
+        {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}

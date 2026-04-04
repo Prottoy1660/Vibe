@@ -264,3 +264,97 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
   throw lastErr || new Error('Request failed');
 }
 
+export async function getJsonWithFallback<T = any>(path: string): Promise<T> {
+  invalidateStaleApiBaseCache();
+  const candidates = buildCandidates();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+
+  const preferred = await resolveBaseUrl();
+  const ordered = [preferred, ...candidates.filter((c) => c !== preferred)];
+
+  let lastErr: any = null;
+  for (const base of ordered) {
+    try {
+      const res = await fetch(`${base}${path}`, {
+        method: 'GET',
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+
+      const text = await res.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { success: false, message: text || 'Non-JSON response' };
+      }
+
+      if (!res.ok) {
+        if (typeof window !== 'undefined' && res.status !== 405) window.localStorage.setItem('api_base_url', base);
+        const rid = res.headers.get('x-request-id');
+        let message = data?.message || data?.error || `Request failed (${res.status})`;
+        message = `${message} [${path}]`;
+        saveDebug({
+          at: new Date().toISOString(),
+          base,
+          path,
+          ok: false,
+          status: res.status,
+          request_id: rid,
+          message,
+        });
+        const e: any = new Error(message);
+        e.__alreadyLogged = true;
+        throw e;
+      }
+
+      saveDebug({
+        at: new Date().toISOString(),
+        base,
+        path,
+        ok: true,
+        status: res.status,
+        request_id: res.headers.get('x-request-id'),
+      });
+      if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
+      return data as T;
+    } catch (err: any) {
+      lastErr = err;
+      if (!err?.__alreadyLogged) {
+        saveDebug({
+          at: new Date().toISOString(),
+          base,
+          path,
+          ok: false,
+          message: err?.message || 'Unknown error',
+        });
+      }
+      const msg = (err?.message || '').toLowerCase();
+      const isNetwork =
+        msg.includes('fetch failed') ||
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('network error') ||
+        msg.includes('load failed');
+      const isMethodMismatch =
+        msg.includes('405') ||
+        msg.includes('method not allowed') ||
+        msg.includes('not allowed');
+
+      if (isNetwork && typeof window !== 'undefined') {
+        const pageOrigin = getSameOriginBase();
+        if (pageOrigin && base !== pageOrigin) {
+          const cached = window.localStorage.getItem('api_base_url');
+          if (cached === base) window.localStorage.removeItem('api_base_url');
+        }
+      }
+
+      if (!isNetwork && !isMethodMismatch) break;
+    }
+  }
+
+  throw lastErr || new Error('Request failed');
+}
+

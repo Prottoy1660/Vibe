@@ -24,6 +24,7 @@ import rateLimit from 'express-rate-limit'
 import cronRoutes from './routes/cron.js'
 import telemetryRoutes from './routes/telemetry.js'
 import referralRoutes from './routes/referral.js'
+import supportChatRoutes from './routes/supportChat.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -137,6 +138,14 @@ const referralLimiter = rateLimit({
   message: { success: false, error: 'Too many referral requests, please wait and try again' },
 })
 
+const supportChatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many support chat requests, please wait and try again' },
+})
+
 app.use(globalLimiter)
 
 /**
@@ -149,6 +158,7 @@ app.use('/api/cpanel', strictLimiter, cpanelRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/redeem', redeemLimiter, redeemRoutes)
 app.use('/api/referral', referralLimiter, referralRoutes)
+app.use('/api/support-chat', supportChatLimiter, supportChatRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/telemetry', telemetryRoutes)
 

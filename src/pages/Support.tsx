@@ -145,6 +145,10 @@ export const Support = () => {
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
               Describe your issue below. Our team will review it and reply here when there is an update.
             </p>
+            <p className="text-sm text-indigo-800/90 dark:text-indigo-200/90 mt-3 max-w-2xl">
+              Quick answers first? Use the <span className="font-semibold">Help</span> chat bubble (bottom-right) — the
+              assistant can guide you; open a ticket here or use WhatsApp from the chat when you need a person.
+            </p>
           </div>
         </div>
       </div>

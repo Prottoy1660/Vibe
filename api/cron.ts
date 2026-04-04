@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { assignEmailForOrder } from './lib/emailAssignment.js';
+import { runSubscriptionExpiryReminders } from './lib/subscriptionExpiryReminders.js';
 
 dotenv.config();
 
@@ -129,6 +130,17 @@ export function initCronJobs() {
       
     } catch (err) {
       console.error('[CRON] Subscription check failed:', err);
+    }
+  });
+
+  // Daily: inbox reminders 3 days and 1 day before subscription end (calendar days, Asia/Dhaka-friendly UTC slot).
+  cron.schedule('30 2 * * *', async () => {
+    console.log('[CRON] Subscription expiry reminders (d3 / d1)...');
+    try {
+      const r = await runSubscriptionExpiryReminders(supabase);
+      console.log('[CRON] Expiry reminders:', r);
+    } catch (err) {
+      console.error('[CRON] Expiry reminders failed:', err);
     }
   });
 

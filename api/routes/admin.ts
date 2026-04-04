@@ -6,6 +6,14 @@ import {
   loadReferralSettings,
   adminGrantReferralRewardRow,
 } from '../lib/referralEngine.js';
+import {
+  loadSupportChatStored,
+  resolveSupportChatRuntime,
+  mergeSupportChatPatch,
+  toAdminSettingsPayload,
+  invalidateSupportChatRuntimeCache,
+  SUPPORT_CHAT_SETTINGS_KEY,
+} from '../lib/supportChatSettings.js';
 
 dotenv.config();
 
@@ -1161,6 +1169,93 @@ router.post('/orders/:orderId/renew', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('Admin renew error:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/support-chat/settings', verifyAdmin, async (_req, res) => {
+  try {
+    const stored = await loadSupportChatStored(supabase);
+    const runtime = resolveSupportChatRuntime(stored);
+    return res.json({
+      success: true,
+      settings: toAdminSettingsPayload(stored, runtime),
+      effective: {
+        help_chat_enabled: runtime.help_chat_enabled,
+        training_capture_enabled: runtime.training_capture_enabled,
+        ai_configured: runtime.ai_configured,
+        whatsapp_e164: runtime.whatsapp_e164,
+        provider: runtime.provider,
+        openai_model: runtime.openaiModel,
+        gemini_model: runtime.geminiModel,
+      },
+    });
+  } catch (error: any) {
+    console.error('support-chat settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/support-chat/settings', verifyAdmin, async (req, res) => {
+  try {
+    const stored = await loadSupportChatStored(supabase);
+    const merged = mergeSupportChatPatch(stored, (req.body || {}) as Record<string, unknown>);
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: SUPPORT_CHAT_SETTINGS_KEY,
+        value: merged as any,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
+    invalidateSupportChatRuntimeCache();
+    const runtime = resolveSupportChatRuntime(merged);
+    return res.json({
+      success: true,
+      settings: toAdminSettingsPayload(merged, runtime),
+      effective: {
+        help_chat_enabled: runtime.help_chat_enabled,
+        training_capture_enabled: runtime.training_capture_enabled,
+        ai_configured: runtime.ai_configured,
+        whatsapp_e164: runtime.whatsapp_e164,
+        provider: runtime.provider,
+        openai_model: runtime.openaiModel,
+        gemini_model: runtime.geminiModel,
+      },
+    });
+  } catch (error: any) {
+    console.error('support-chat settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/support-chat/training', verifyAdmin, async (req, res) => {
+  try {
+    const limit = Math.max(1, Math.min(2000, Number(req.query.limit || 200)));
+    const { data: rows, error } = await supabase
+      .from('support_chat_training_logs')
+      .select('id, created_at, user_id, session_id, role, content, meta')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return res.json({ success: true, rows: rows || [] });
+  } catch (error: any) {
+    console.error('support-chat training list:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.delete('/ops/support-chat/training', verifyAdmin, async (_req, res) => {
+  try {
+    const { error } = await supabase
+      .from('support_chat_training_logs')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('support-chat training clear:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
 

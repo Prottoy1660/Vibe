@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
+import { isStalePendingOrder, PENDING_CHECKOUT_VISIBLE_MS } from '../lib/orderHistoryVisibility';
 
 interface Order {
   id: string;
@@ -53,12 +54,12 @@ export const Orders = () => {
 
   const getPendingRemainingMs = (createdAt: string) => {
     const created = new Date(createdAt).getTime();
-    return 30 * 60 * 1000 - (nowMs - created);
+    return PENDING_CHECKOUT_VISIBLE_MS - (nowMs - created);
   };
 
   const getEffectiveStatus = (order: Order) => {
     if (order.status !== 'pending') return order.status;
-    return getPendingRemainingMs(order.created_at) <= 0 ? 'expired' : 'pending';
+    return isStalePendingOrder(order.status, order.created_at, nowMs) ? 'expired' : 'pending';
   };
 
   useEffect(() => {

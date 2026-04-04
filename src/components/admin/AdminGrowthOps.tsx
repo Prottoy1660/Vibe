@@ -674,13 +674,18 @@ export const AdminGrowthOps = () => {
 
             {refSettings && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={refSettings.enabled !== false}
-                    onChange={(e) => setRefSettings({ ...refSettings, enabled: e.target.checked })}
-                  />
-                  Program enabled
+                <label className="flex flex-col gap-1 text-sm text-gray-800 dark:text-gray-200 sm:flex-row sm:items-center sm:gap-2">
+                  <span className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={refSettings.enabled !== false}
+                      onChange={(e) => setRefSettings({ ...refSettings, enabled: e.target.checked })}
+                    />
+                    Referral program on
+                  </span>
+                  <span className="text-xs font-normal text-gray-500 dark:text-gray-400 sm:ml-1">
+                    Off = no new invite links accepted, no automatic rewards (admin can still force-process an order if needed).
+                  </span>
                 </label>
                 <label className="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
                   <input

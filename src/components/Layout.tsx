@@ -25,6 +25,7 @@ import {
   Settings,
   Megaphone,
   Music2,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -35,6 +36,7 @@ import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
 import { PlatformBanner } from './PlatformBanner';
 import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
+import { SupportChatWidget } from './support/SupportChatWidget';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -115,6 +117,7 @@ export const Layout = () => {
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
         { name: 'Tutorial & Help Page', href: '/admin?tab=tutorial_help', icon: CircleHelp },
         { name: 'Support tickets', href: '/admin?tab=support', icon: LifeBuoy },
+        { name: 'Help chat (AI)', href: '/admin?tab=support_chat_ai', icon: MessageCircle },
         { name: 'Platform status', href: '/admin?tab=platform_settings', icon: Settings },
         { name: 'Lobby music', href: '/admin?tab=lobby_music', icon: Music2 },
         { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
@@ -328,6 +331,8 @@ export const Layout = () => {
       )}
 
       <LobbyMusicPlayer userId={user?.id ?? null} adminRoute={location.pathname.startsWith('/admin')} />
+
+      {showGlobalBanners ? <SupportChatWidget /> : null}
     </div>
   );
 };

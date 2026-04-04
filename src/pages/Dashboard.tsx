@@ -24,6 +24,7 @@ import {
   LightroomMark,
 } from '../components/auth/AdobeCreativeSuiteIcons';
 import { postJsonWithFallback } from '../lib/apiClient';
+import { isStalePendingOrder } from '../lib/orderHistoryVisibility';
 
 interface Stats {
   totalOrders: number;
@@ -78,7 +79,7 @@ export const Dashboard = () => {
       const [ordersResult, walletResult, noticesResult] = await Promise.all([
         supabase
           .from('orders')
-          .select('id, total_amount, status')
+          .select('id, total_amount, status, created_at')
           .eq('user_id', user.id),
         supabase
           .from('users')
@@ -98,9 +99,13 @@ export const Dashboard = () => {
       const noticesData = noticesResult.data;
 
       if (orders) {
+        const now = Date.now();
+        const ordersForStats = orders.filter(
+          (o) => !isStalePendingOrder(o.status, o.created_at, now)
+        );
         const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'paid');
         setStats({
-          totalOrders: orders.length,
+          totalOrders: ordersForStats.length,
           totalSpent: completedOrders.reduce((sum, order) => sum + Number(order.total_amount), 0),
           activeSubscriptions: completedOrders.length,
           walletBalance: Number(walletData?.wallet_balance) || 0,
@@ -136,6 +141,15 @@ export const Dashboard = () => {
     if (user) {
       fetchDashboardData();
     }
+  }, [user, isAdmin]);
+
+  // Recompute order counts when pending checkouts pass the 30m visibility window (no DB row change until cleanup).
+  useEffect(() => {
+    if (!user || isAdmin) return;
+    const id = window.setInterval(() => {
+      void fetchDashboardData();
+    }, 30 * 1000);
+    return () => window.clearInterval(id);
   }, [user, isAdmin]);
 
   // Set up Supabase Realtime Subscriptions
@@ -195,7 +209,7 @@ export const Dashboard = () => {
     {
       title: 'Total Orders',
       value: stats.totalOrders.toString(),
-      caption: 'Your lifetime orders',
+      caption: 'Matches Orders page (old unpaid checkouts hidden after 30 min)',
       icon: ShoppingBag,
       color: 'text-primary',
       bgColor: 'bg-primary/10',

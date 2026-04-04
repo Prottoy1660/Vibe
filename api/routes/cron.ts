@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { runSubscriptionExpiryReminders } from '../lib/subscriptionExpiryReminders.js';
 
 dotenv.config();
 
@@ -48,6 +49,17 @@ router.post('/burn-expired-emails', verifyAdmin, async (_req, res) => {
   } catch (err: any) {
     console.error('burn-expired-emails error:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Failed to burn expired emails' });
+  }
+});
+
+/** Host cron / manual run: same logic as daily node-cron job. */
+router.post('/subscription-expiry-reminders', verifyAdmin, async (_req, res) => {
+  try {
+    const r = await runSubscriptionExpiryReminders(supabase);
+    return res.json({ success: true, ...r });
+  } catch (err: any) {
+    console.error('subscription-expiry-reminders error:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Failed to run expiry reminders' });
   }
 });
 
