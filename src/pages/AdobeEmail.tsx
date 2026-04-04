@@ -401,22 +401,9 @@ export const AdobeEmail = () => {
     if (!orderId) {
       // Find the latest active order ID to link this email to.
       const latestActiveEmailItem = emails.find(e => e.subscription_details && !e.subscription_details.is_expired);
-      orderId = latestActiveEmailItem?.order_id;
-    }
-    if (!orderId) {
-      alert('Could not find a valid active order to link the new email to.');
-      return;
-    }
-
-    // Calculate how many emails have been generated for this specific order
-    const orderEmailCount = emails.filter(e => e.order_id === orderId).length;
-
-    // Get slot limit from the product config (falls back to 3 if not set)
-    const slotLimit = emails.find(e => e.order_id === orderId)?.email_slots ?? 3;
-
-    if (orderEmailCount >= slotLimit) {
-      alert(`You have reached the maximum limit of ${slotLimit} email${slotLimit !== 1 ? 's' : ''} for this order.`);
-      return;
+      if (latestActiveEmailItem) {
+        orderId = latestActiveEmailItem.order_id;
+      }
     }
 
     if (!user) return;
@@ -428,9 +415,10 @@ export const AdobeEmail = () => {
         // Fallback to checking the database directly
         const { data: latestOrder } = await supabase
           .from('orders')
-          .select('id')
+          .select('id, products!inner(is_personal)')
           .eq('user_id', user.id)
           .in('status', ['paid', 'completed'])
+          .eq('products.is_personal', false) // Only link to team pooled products
           .order('created_at', { ascending: false })
           .limit(1)
           .single();
@@ -442,6 +430,22 @@ export const AdobeEmail = () => {
       
       if (!orderId) {
         alert('Could not find a valid active order to link the new email to.');
+        setGenerating(false);
+        return;
+      }
+
+      // Calculate how many emails have been generated for this specific order
+      const orderEmailCount = emails.filter(e => e.order_id === orderId).length;
+
+      // Get slot limit from the product config (falls back to 3 if not set)
+      let slotLimit = emails.find(e => e.order_id === orderId)?.email_slots;
+      if (slotLimit === undefined) {
+          const { data: ord_data } = await supabase.from('orders').select('products(email_slots)').eq('id', orderId).single();
+          slotLimit = (ord_data?.products as any)?.email_slots ?? 3;
+      }
+
+      if (orderEmailCount >= slotLimit) {
+        alert(`You have reached the maximum limit of ${slotLimit} email${slotLimit !== 1 ? 's' : ''} for this order.`);
         setGenerating(false);
         return;
       }
