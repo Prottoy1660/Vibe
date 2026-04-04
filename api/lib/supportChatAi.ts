@@ -77,7 +77,10 @@ export async function completeSupportChatOpenAI(turns: ChatTurn[], runtime: Supp
 
   const data = (await res.json()) as any;
   if (!res.ok) {
-    throw new Error(data?.error?.message || `OpenAI error ${res.status}`);
+    const err = data?.error;
+    const code = err?.code ?? res.status;
+    const msg = err?.message || `HTTP ${res.status}`;
+    throw new Error(`[OpenAI ${code}] ${msg}`);
   }
 
   const text = data?.choices?.[0]?.message?.content || '{}';
@@ -113,7 +116,11 @@ export async function completeSupportChatGemini(turns: ChatTurn[], runtime: Supp
 
   const data = (await res.json()) as any;
   if (!res.ok) {
-    throw new Error(data?.error?.message || `Gemini error ${res.status}`);
+    const err = data?.error;
+    const code = err?.code ?? res.status;
+    const status = err?.status ? String(err.status) : '';
+    const msg = err?.message || `HTTP ${res.status}`;
+    throw new Error(`[Gemini ${code}${status ? ` ${status}` : ''}] ${msg}`);
   }
 
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';

@@ -265,9 +265,9 @@ export const AdminSupportChatSettings: React.FC = () => {
         <div className="flex items-start gap-2 rounded-xl border border-amber-200/80 dark:border-amber-900/40 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-200">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
-            API keys stored here live in <code className="text-[11px]">system_settings</code> (admin-only). Prefer server{' '}
-            <code className="text-[11px]">.env</code> for production if you do not want keys in the database. Env keys
-            still work as fallback when DB keys are empty.
+            API keys stored here live in <code className="text-[11px]">system_settings</code> (admin-only). On the server,{' '}
+            <strong className="font-semibold">if both .env and DB have a key, .env is used first</strong> — so new keys in
+            Coolify/.env apply without clearing admin. If only one place has a key, that one is used.
           </span>
         </div>
 

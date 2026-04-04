@@ -65,17 +65,20 @@ export function resolveSupportChatRuntime(stored: SupportChatStoredValue): Suppo
   const waStored = typeof stored.whatsapp_e164 === 'string' ? digits(stored.whatsapp_e164) : null;
   const whatsapp_e164 = waStored || envWhatsapp();
 
+  // Server .env wins over DB so rotating keys in deployment does not stay stuck on an old admin-saved key.
   const openaiKey =
+    process.env.OPENAI_API_KEY?.trim() ||
     (typeof stored.openai_api_key === 'string' && stored.openai_api_key.trim()
       ? stored.openai_api_key.trim()
-      : null) || process.env.OPENAI_API_KEY?.trim() || null;
+      : null) ||
+    null;
 
   const geminiKey =
+    process.env.GOOGLE_AI_API_KEY?.trim() ||
+    process.env.GEMINI_API_KEY?.trim() ||
     (typeof stored.gemini_api_key === 'string' && stored.gemini_api_key.trim()
       ? stored.gemini_api_key.trim()
       : null) ||
-    process.env.GOOGLE_AI_API_KEY?.trim() ||
-    process.env.GEMINI_API_KEY?.trim() ||
     null;
 
   const provider: SupportChatProvider =
