@@ -185,6 +185,13 @@ async function logPaymentEvent(orderId: string | null, userId: string | null, ev
   } catch {}
 }
 
+/** When false, new personal-plan purchases and wallet auto-renew for personal products are blocked (system_settings.personal_subscriptions). */
+async function isPersonalSubscriptionsEnabled(): Promise<boolean> {
+  const { data } = await supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle();
+  const v = (data?.value || {}) as { enabled?: boolean };
+  return v.enabled !== false;
+}
+
 /** Grant reseller Adobe access for personal orders; logs failures to order_events for admin visibility. */
 async function fulfillPersonalAdobeAccess(order: {
   id: string;
@@ -241,6 +248,15 @@ router.post('/create', requireUser, async (req, res) => {
     const { order, productPrice } = await computeOrderPricing(order_id);
     if (order.user_id !== user.id) {
       return res.status(403).json({ success: false, message: 'Order does not belong to user' });
+    }
+
+    const personalOk = await isPersonalSubscriptionsEnabled();
+    if ((order as any).products?.is_personal && !personalOk) {
+      await supabase.from('orders').delete().eq('id', order_id);
+      return res.status(400).json({
+        success: false,
+        message: 'Personal Adobe subscriptions are not available right now. Please choose a team plan or try again later.',
+      });
     }
 
     // Dynamically get the base URL:
@@ -881,7 +897,14 @@ router.post('/process-auto-renew', requireUser, async (req, res) => {
       
     if (fetchErr || !order) return res.status(404).json({ success: false, message: 'Order not found' });
     if (!order.auto_renew) return res.status(400).json({ success: false, message: 'Auto-renew is disabled for this order' });
-    
+
+    if (order.products?.is_personal && !(await isPersonalSubscriptionsEnabled())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Personal subscription renewals are paused. Enable personal plans in admin or renew manually when available.',
+      });
+    }
+
     const productPrice = Number(order.products?.price) || 0;
     
     if (productPrice > 0) {

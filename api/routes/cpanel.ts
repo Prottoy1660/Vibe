@@ -67,13 +67,21 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
 router.post('/create-emails', verifyAdmin, async (req, res) => {
   try {
     const { accounts, cloudAccess, durationMonths } = req.body; // Array of { email, password }
-    
+    const wantAdobeAccess = String(cloudAccess || '').toLowerCase() === 'api';
+    const durationMonthsResolved = Math.max(1, Math.min(120, Math.floor(Number(durationMonths) || 1)));
+
     if (!CPANEL_HOST || !CPANEL_USERNAME || !CPANEL_API_TOKEN) {
       return res.status(500).json({ error: 'cPanel credentials not configured' });
     }
 
-    const results = [];
-    
+    const results: Array<{
+      email: string;
+      success: boolean;
+      error?: string;
+      adobeError?: string;
+      adobeSuccess?: boolean;
+    }> = []; // one entry per requested account, same order as `accounts`
+
     // Create accounts one by one
     for (const acc of accounts) {
       const [emailUser, domain] = acc.email.split('@');
@@ -107,13 +115,17 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
         }
         
         if (data.status === 1) {
-          // If cPanel creation succeeded, and admin selected 'api' for cloud access
-          if (cloudAccess === 'api') {
-            const adobeResult = await grantAdobeCloudAccess(acc.email, durationMonths || 1);
+          if (wantAdobeAccess) {
+            const adobeResult = await grantAdobeCloudAccess(acc.email, durationMonthsResolved);
             if (!adobeResult.success) {
               console.error(`Adobe API error for ${acc.email}:`, adobeResult.error);
-              results.push({ email: acc.email, success: true, adobeError: adobeResult.error });
+              results.push({
+                email: acc.email,
+                success: true,
+                adobeError: adobeResult.error || 'Adobe provisioning failed',
+              });
             } else {
+              console.log(`Adobe API OK for ${acc.email}`, adobeResult.data ?? '');
               results.push({ email: acc.email, success: true, adobeSuccess: true });
             }
           } else {
@@ -134,7 +146,22 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
        return res.status(500).json({ error: 'Failed to create any email accounts', details: failed });
     }
 
-    res.json({ success: true, results });
+    const adobeAttempted = wantAdobeAccess ? results.filter(r => r.success).length : 0;
+    const adobeOk = results.filter(r => r.success && r.adobeSuccess).length;
+    const adobeFailed = results.filter(r => r.success && r.adobeError).length;
+
+    res.json({
+      success: true,
+      results,
+      adobeProvisioning: wantAdobeAccess
+        ? {
+            attempted: adobeAttempted,
+            succeeded: adobeOk,
+            failed: adobeFailed,
+            durationMonths: durationMonthsResolved,
+          }
+        : { attempted: 0, succeeded: 0, failed: 0, durationMonths: durationMonthsResolved },
+    });
 
   } catch (error) {
     console.error('Error in create-emails:', error);

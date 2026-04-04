@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, Settings, Info, Mail } from 'lucide-react';
+import { Loader2, Save, Settings, Info, Mail, UserCircle } from 'lucide-react';
 import { DEFAULT_PLATFORM_STATUS, parsePlatformStatus, type PlatformLevel, type PlatformStatusValue } from '../../lib/platformStatus';
 
 export const AdminPlatformSettings: React.FC = () => {
@@ -11,18 +11,24 @@ export const AdminPlatformSettings: React.FC = () => {
   const [slotEmergency, setSlotEmergency] = useState(false);
   const [slotSaving, setSlotSaving] = useState(false);
   const [slotMessage, setSlotMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [personalSubsEnabled, setPersonalSubsEnabled] = useState(true);
+  const [personalSaving, setPersonalSaving] = useState(false);
+  const [personalMessage, setPersonalMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [ps, adobe] = await Promise.all([
+        const [ps, adobe, personal] = await Promise.all([
           supabase.from('system_settings').select('value').eq('key', 'platform_status').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'adobe_email_slots').maybeSingle(),
+          supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
         ]);
         if (ps.error) throw ps.error;
         setForm(parsePlatformStatus(ps.data?.value));
         const v = (adobe.data?.value || {}) as { emergency_unlock?: boolean };
         setSlotEmergency(v.emergency_unlock === true);
+        const pv = (personal.data?.value || {}) as { enabled?: boolean };
+        setPersonalSubsEnabled(pv.enabled !== false);
       } catch (e) {
         console.error(e);
         setMessage({ type: 'err', text: 'Could not load platform settings.' });
@@ -79,6 +85,33 @@ export const AdminPlatformSettings: React.FC = () => {
       setSlotMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
     } finally {
       setSlotSaving(false);
+    }
+  };
+
+  const savePersonalSubs = async () => {
+    setPersonalSaving(true);
+    setPersonalMessage(null);
+    try {
+      const value = { enabled: personalSubsEnabled };
+      const { data, error } = await supabase
+        .from('system_settings')
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq('key', 'personal_subscriptions')
+        .select('key');
+      if (error) throw error;
+      if (!data?.length) {
+        throw new Error('Setting row missing. Apply migration 048_personal_subscriptions_setting.sql in Supabase.');
+      }
+      setPersonalMessage({
+        type: 'ok',
+        text: personalSubsEnabled
+          ? 'Personal Adobe plans are visible to customers on the Adobe Email page.'
+          : 'Personal Adobe plans are hidden; new purchases and wallet auto-renew for personal products are blocked.',
+      });
+    } catch (e: unknown) {
+      setPersonalMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
+    } finally {
+      setPersonalSaving(false);
     }
   };
 
@@ -197,6 +230,46 @@ export const AdminPlatformSettings: React.FC = () => {
         >
           {slotSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save slot policy
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none">
+        <div className="flex items-center gap-2 mb-4">
+          <UserCircle className="w-5 h-5 text-violet-500" />
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Personal Adobe subscriptions</h2>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 flex gap-2">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          Lets customers buy Adobe on <span className="font-medium text-gray-800 dark:text-gray-200">their own email</span> from
+          the Adobe Email page (personal tab and checkout). Turn off to hide that flow and block new personal orders and wallet
+          renewals for personal products. Existing personal customers can still see their plans if you turn this off.
+        </p>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={personalSubsEnabled}
+            onChange={(e) => setPersonalSubsEnabled(e.target.checked)}
+            className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+          />
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
+            Offer personal plans (customer&apos;s own Adobe email)
+          </span>
+        </label>
+        {personalMessage && (
+          <p
+            className={`text-sm mt-3 ${personalMessage.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+          >
+            {personalMessage.text}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => void savePersonalSubs()}
+          disabled={personalSaving}
+          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
+        >
+          {personalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save personal plans setting
         </button>
       </div>
     </div>

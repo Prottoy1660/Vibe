@@ -268,10 +268,53 @@ export const AdminEmails = () => {
 
       if (!response.ok) throw new Error(data.error || 'cPanel creation failed');
 
-      const { error } = await supabase.from('emails_pool').insert(newAccounts);
+      const apiResults: Array<{
+        email: string;
+        success: boolean;
+        error?: string;
+        adobeError?: string;
+        adobeSuccess?: boolean;
+      }> = Array.isArray(data.results) ? data.results : [];
+
+      const rowsToInsert = newAccounts
+        .map((acc, i) => {
+          const r = apiResults[i];
+          if (!r?.success) return null;
+          let cloud: 'none' | 'api' = genCloudAccess;
+          if (genCloudAccess === 'api' && r.adobeError) cloud = 'none';
+          return { ...acc, cloud_access_type: cloud };
+        })
+        .filter(Boolean) as typeof newAccounts;
+
+      if (rowsToInsert.length === 0) {
+        const failed = apiResults.filter((r) => !r.success);
+        const detail =
+          failed.length > 0
+            ? failed.map((r) => `${r.email}: ${r.error || 'cPanel failed'}`).join('\n')
+            : 'No mailboxes were created.';
+        throw new Error(`Nothing to save.\n${detail}`);
+      }
+
+      const { error } = await supabase.from('emails_pool').insert(rowsToInsert);
       if (error) throw error;
 
-      alert(`${genCount} emails created and saved.`);
+      const cpanelFailed = apiResults.filter((r) => !r.success);
+      const adobeFailed = apiResults.filter((r) => r.success && r.adobeError);
+      const adobeOk = apiResults.filter((r) => r.success && r.adobeSuccess);
+      const summaryLines = [
+        `cPanel: ${rowsToInsert.length} mailbox(es) created and saved to pool.`,
+        cpanelFailed.length ? `cPanel failed (${cpanelFailed.length}): ${cpanelFailed.map((r) => r.email).join(', ')}` : '',
+        genCloudAccess === 'api'
+          ? `Adobe API: ${adobeOk.length} OK, ${adobeFailed.length} failed${
+              data.adobeProvisioning ? ` (attempted ${data.adobeProvisioning.attempted})` : ''
+            }.`
+          : '',
+        adobeFailed.length
+          ? `Adobe errors:\n${adobeFailed.map((r) => `${r.email}: ${r.adobeError}`).join('\n')}`
+          : '',
+      ].filter(Boolean);
+
+      alert(summaryLines.join('\n\n'));
       fetchEmails();
       setActiveTab('inventory');
     } catch (error: any) {

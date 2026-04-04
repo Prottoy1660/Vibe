@@ -96,6 +96,26 @@ export const Checkout = () => {
     fetchProductAndUser();
   }, [id, navigate, user]);
 
+  useEffect(() => {
+    if (!product?.is_personal || loading) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'personal_subscriptions')
+        .maybeSingle();
+      if (cancelled) return;
+      const enabled = ((data?.value || {}) as { enabled?: boolean }).enabled !== false;
+      if (!enabled) {
+        navigate('/adobe-email', { replace: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [product?.is_personal, product?.id, loading, navigate]);
+
   const handleApplyCoupon = async () => {
     if (!couponCode.trim()) return;
 

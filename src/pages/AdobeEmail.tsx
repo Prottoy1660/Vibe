@@ -150,6 +150,8 @@ export const AdobeEmail = () => {
 
   // Personal Subscriptions state
   const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
+  /** Admin can disable new personal sales; default true if setting row missing */
+  const [personalSubscriptionsEnabled, setPersonalSubscriptionsEnabled] = useState(true);
   const [personalOrders, setPersonalOrders] = useState<any[]>([]);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [personalProducts, setPersonalProducts] = useState<any[]>([]);
@@ -162,20 +164,26 @@ export const AdobeEmail = () => {
     setLoading(true);
 
     try {
-      // Fetch orders and personal products in parallel (independent queries)
-      const [ordersResult, pProductsResult] = await Promise.all([
+      const [settingsRes, ordersResult] = await Promise.all([
+        supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
         supabase
           .from('orders')
           .select('*, products(*)')
           .eq('user_id', user.id)
           .in('status', ['paid', 'completed', 'pending']),
-        supabase
-          .from('products')
-          .select('*')
-          .eq('is_personal', true)
-          .eq('is_active', true)
-          .order('price', { ascending: true }),
       ]);
+
+      const personalEnabled = ((settingsRes.data?.value || {}) as { enabled?: boolean }).enabled !== false;
+      setPersonalSubscriptionsEnabled(personalEnabled);
+
+      const pProductsResult = personalEnabled
+        ? await supabase
+            .from('products')
+            .select('*')
+            .eq('is_personal', true)
+            .eq('is_active', true)
+            .order('price', { ascending: true })
+        : { data: [] as any[] | null };
 
       const orders = ordersResult.data;
       const pProducts = pProductsResult.data;
@@ -428,6 +436,16 @@ export const AdobeEmail = () => {
   useEffect(() => {
     fetchEmailData();
   }, [user]);
+
+  const showPersonalTab = personalSubscriptionsEnabled || personalOrders.length > 0;
+
+  useEffect(() => {
+    if (!showPersonalTab && activeTab === 'personal') setActiveTab('emails');
+  }, [showPersonalTab, activeTab]);
+
+  useEffect(() => {
+    if (!personalSubscriptionsEnabled) setIsRequestModalOpen(false);
+  }, [personalSubscriptionsEnabled]);
 
   // Set up Realtime Subscriptions for Auto-Updating Emails & Orders
   useEffect(() => {
@@ -737,18 +755,20 @@ export const AdobeEmail = () => {
             <Mail className="w-4 h-4" />
             Team / pooled emails
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('personal')}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-              activeTab === 'personal'
-                ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
-            }`}
-          >
-            <CreditCard className="w-4 h-4" />
-            Personal subscriptions
-          </button>
+          {showPersonalTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab('personal')}
+              className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                activeTab === 'personal'
+                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
+              }`}
+            >
+              <CreditCard className="w-4 h-4" />
+              Personal subscriptions
+            </button>
+          )}
         </div>
         {activeTab === 'emails' && emails.length > 0 && (
           <div className="relative w-full sm:max-w-xs sm:ml-auto">
@@ -1107,16 +1127,18 @@ export const AdobeEmail = () => {
                   — not the shared team pool. Order date and renewal are shown in plain language.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsRequestModalOpen(true)}
-                className={`${btnPersonalPlanCta} w-full sm:w-auto shrink-0`}
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 shadow-inner">
-                  <CreditCard className="w-4 h-4" aria-hidden />
-                </span>
-                New personal plan
-              </button>
+              {personalSubscriptionsEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setIsRequestModalOpen(true)}
+                  className={`${btnPersonalPlanCta} w-full sm:w-auto shrink-0`}
+                >
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 shadow-inner">
+                    <CreditCard className="w-4 h-4" aria-hidden />
+                  </span>
+                  New personal plan
+                </button>
+              )}
             </div>
 
             <div className="p-4 sm:p-6">
@@ -1270,18 +1292,22 @@ export const AdobeEmail = () => {
                   </div>
                   <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">No personal plans yet</h3>
                   <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-2 max-w-md mx-auto leading-relaxed">
-                    Request a plan with your own email, pay at checkout, then track renewal and auto-renew here.
+                    {personalSubscriptionsEnabled
+                      ? 'Request a plan with your own email, pay at checkout, then track renewal and auto-renew here.'
+                      : 'New personal plans are not available right now. Team plans are still offered from the store.'}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => setIsRequestModalOpen(true)}
-                    className={`${btnPersonalPlanCta} mt-6 px-6 py-3 text-[15px]`}
-                  >
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 shadow-inner">
-                      <Sparkles className="w-4 h-4" aria-hidden />
-                    </span>
-                    Start a personal plan
-                  </button>
+                  {personalSubscriptionsEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => setIsRequestModalOpen(true)}
+                      className={`${btnPersonalPlanCta} mt-6 px-6 py-3 text-[15px]`}
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 shadow-inner">
+                        <Sparkles className="w-4 h-4" aria-hidden />
+                      </span>
+                      Start a personal plan
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1290,7 +1316,7 @@ export const AdobeEmail = () => {
       )}
 
       {/* Personal Subscription Request Modal */}
-      {isRequestModalOpen && (
+      {personalSubscriptionsEnabled && isRequestModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
             role="dialog"
