@@ -44,6 +44,9 @@ const AdminLobbyMusic = React.lazy(() => import('../components/admin/AdminLobbyM
 const AdminSupportChatSettings = React.lazy(() =>
   import('../components/admin/AdminSupportChatSettings').then((m) => ({ default: m.AdminSupportChatSettings })),
 );
+const AdminSidebarConfig = React.lazy(() =>
+  import('../components/admin/AdminSidebarConfig').then((m) => ({ default: m.AdminSidebarConfig }))
+);
 
 const AdminTabFallback = () => (
   <div className="flex justify-center items-center py-16">
@@ -51,7 +54,7 @@ const AdminTabFallback = () => (
   </div>
 );
 export const AdminDashboard = () => {
-  const { user, loading: authLoading, isAdmin, role } = useAuth();
+  const { user, loading: authLoading, isAdmin, isSuperAdmin, role } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
@@ -271,10 +274,16 @@ export const AdminDashboard = () => {
                 Lobby music
               </span>
             )}
+            {activeTab === 'sidebar_config' && (
+              <span className="flex items-center gap-2">
+                <ShieldAlert className="w-6 h-6" />
+                Sidebar Visibility
+              </span>
+            )}
           </h1>
           <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
             <ShieldAlert className="w-5 h-5 text-indigo-500" />
-            Administrator Access
+            {isSuperAdmin && activeTab === 'sidebar_config' ? 'Super Admin Access' : 'Administrator Access'}
           </div>
         </div>
       )}
@@ -299,6 +308,7 @@ export const AdminDashboard = () => {
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
+        {activeTab === 'sidebar_config' && isSuperAdmin && <AdminSidebarConfig />}
       </Suspense>
 
       {activeTab === 'overview' && (

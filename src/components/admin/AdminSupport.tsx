@@ -154,8 +154,16 @@ export const AdminSupport = () => {
     setDeleting(true);
     setSaveMsg(null);
     try {
-      const { error } = await supabase.from('support_tickets').delete().eq('id', selected.id);
-      if (error) throw error;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
+
+      const res = await fetch(`/api/admin/ops/support-tickets/${selected.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete');
+
       setTickets((prev) => prev.filter((t) => t.id !== selected.id));
       setSelectedId(null);
       setSaveMsg({ type: 'ok', text: 'Ticket deleted.' });

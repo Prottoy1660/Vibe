@@ -56,7 +56,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       .eq('id', user.id)
       .single();
 
-    if (userData?.role !== 'admin') {
+    if (userData?.role !== 'admin' && userData?.role !== 'super_admin') {
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
 
@@ -100,6 +100,18 @@ router.delete('/users/:id', verifyAdmin, async (req, res) => {
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error: any) {
     console.error('Error deleting user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/ops/support-tickets/:id', verifyAdmin, async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const { error } = await supabase.from('support_tickets').delete().eq('id', ticketId);
+    if (error) throw error;
+    res.json({ success: true, message: 'Ticket deleted successfully' });
+  } catch (error: any) {
+    console.error('Error deleting ticket:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

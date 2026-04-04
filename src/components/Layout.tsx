@@ -48,7 +48,7 @@ export const Layout = () => {
   const location = useLocation();
   /** User-facing alerts only; admin workspace stays clean */
   const showGlobalBanners = !location.pathname.startsWith('/admin');
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, isSuperAdmin } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
 
@@ -112,6 +112,18 @@ export const Layout = () => {
     };
   }, [isAdmin]);
 
+  const [hiddenAdminTabs, setHiddenAdminTabs] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    supabase.from('system_settings').select('value').eq('key', 'admin_sidebar_config').maybeSingle().then(({ data }) => {
+      if (cancelled) return;
+      const val = (data?.value || {}) as { hidden_tabs?: string[] };
+      setHiddenAdminTabs(val.hidden_tabs || []);
+    });
+    return () => { cancelled = true; };
+  }, [isAdmin]);
+
   const navigation = useMemo(
     () =>
       isAdmin
@@ -151,13 +163,29 @@ export const Layout = () => {
         { name: 'Growth Ops', href: '/admin?tab=growth_ops', icon: TrendingUp },
       ]
     },
+    ...(isSuperAdmin ? [{
+      name: 'Super Admin Tools',
+      items: [
+        { name: 'Sidebar Visibility', href: '/admin?tab=sidebar_config', icon: ShieldAlert },
+      ]
+    }] : []),
     {
       name: 'Personal',
       items: [
         { name: 'My Profile', href: '/profile', icon: UserIcon },
       ]
     }
-  ]
+  ].map((section) => ({
+     ...section,
+     items: section.items?.filter(item => {
+       if (isSuperAdmin) return true;
+       const match = item.href.match(/tab=([^&]+)/);
+       if (match && hiddenAdminTabs.includes(match[1])) {
+         return false;
+       }
+       return true;
+     })
+  })).filter(section => section.items && section.items.length > 0)
         : [
             { name: 'Dashboard', href: '/', icon: LayoutDashboard },
             {
@@ -181,7 +209,7 @@ export const Layout = () => {
               items: [{ name: 'My Profile', href: '/profile', icon: UserIcon }],
             },
           ],
-    [isAdmin, referralNavVisible]
+    [isAdmin, isSuperAdmin, referralNavVisible, hiddenAdminTabs]
   );
 
   return (

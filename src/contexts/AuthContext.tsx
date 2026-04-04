@@ -10,6 +10,7 @@ interface AuthContextType {
   loading: boolean;
   role: string | null;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   signOut: () => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   role: null,
   isAdmin: false,
+  isSuperAdmin: false,
   signOut: async () => {},
 });
 
@@ -89,7 +91,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     session,
     loading,
     role,
-    isAdmin: role === 'admin',
+    isAdmin: role === 'admin' || role === 'super_admin',
+    isSuperAdmin: role === 'super_admin',
     signOut,
   };
 
