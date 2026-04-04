@@ -11,6 +11,7 @@ import {
   User,
   Phone,
   ChevronRight,
+  Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -65,6 +66,7 @@ export const AdminSupport = () => {
   const [adminReply, setAdminReply] = useState('');
   const [statusEdit, setStatusEdit] = useState<TicketStatus>('open');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const fetchTickets = useCallback(async () => {
@@ -143,6 +145,25 @@ export const AdminSupport = () => {
       setSaveMsg({ type: 'err', text: msg });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selected) return;
+    if (!window.confirm('Are you sure you want to delete this ticket? This action cannot be undone.')) return;
+    setDeleting(true);
+    setSaveMsg(null);
+    try {
+      const { error } = await supabase.from('support_tickets').delete().eq('id', selected.id);
+      if (error) throw error;
+      setTickets((prev) => prev.filter((t) => t.id !== selected.id));
+      setSelectedId(null);
+      setSaveMsg({ type: 'ok', text: 'Ticket deleted.' });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to delete';
+      setSaveMsg({ type: 'err', text: msg });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -349,15 +370,27 @@ export const AdminSupport = () => {
                   </p>
                 )}
 
-                <button
-                  type="button"
-                  onClick={handleSaveReply}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save reply & status
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveReply}
+                    disabled={saving || deleting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
+                  >
+                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save reply & status
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={saving || deleting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 font-semibold px-4 py-2.5 text-sm disabled:opacity-60 transition-colors"
+                  >
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Delete Ticket
+                  </button>
+                </div>
               </div>
             )}
           </div>
