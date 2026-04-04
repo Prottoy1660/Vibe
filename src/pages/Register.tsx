@@ -32,7 +32,6 @@ export const Register = () => {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
-  const [referralCode, setReferralCode] = useState('');
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
@@ -43,7 +42,6 @@ export const Register = () => {
       const cleaned = r.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (cleaned.length >= 4) {
         sessionStorage.setItem('referral_pending_code', cleaned);
-        setReferralCode(cleaned);
       }
     }
   }, [searchParams]);
@@ -97,19 +95,21 @@ export const Register = () => {
 
       if (error) throw error;
 
-      const fromInput = referralCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const fromStore = (sessionStorage.getItem('referral_pending_code') || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const refToApply = fromInput.length >= 4 ? fromInput : fromStore.length >= 4 ? fromStore : '';
+      const refToApply = (sessionStorage.getItem('referral_pending_code') || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+      const validRef = refToApply.length >= 4 ? refToApply : '';
 
-      if (refToApply && signUpData.session) {
+      if (validRef && signUpData.session) {
         try {
-          await postJsonWithFallback('/api/referral/claim', { code: refToApply });
+          await postJsonWithFallback('/api/referral/claim', { code: validRef });
           sessionStorage.removeItem('referral_pending_code');
         } catch {
-          sessionStorage.setItem('referral_pending_code', refToApply);
+          sessionStorage.setItem('referral_pending_code', validRef);
         }
-      } else if (refToApply) {
-        sessionStorage.setItem('referral_pending_code', refToApply);
+      } else if (validRef) {
+        sessionStorage.setItem('referral_pending_code', validRef);
       }
 
       navigate('/');
@@ -315,30 +315,6 @@ export const Register = () => {
                   className={`block w-full pl-12 pr-4 py-4 bg-transparent focus:outline-none font-medium ${isDark ? 'text-white placeholder-gray-500' : 'text-slate-900 placeholder-slate-400'}`}
                   placeholder="Phone Number (017...)"
                 />
-              </motion.div>
-
-              <motion.div
-                className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
-                  focusedInput === 'referral'
-                    ? 'border-indigo-500/60 bg-indigo-500/5'
-                    : isDark
-                      ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
-                      : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
-                }`}
-              >
-                <input
-                  type="text"
-                  value={referralCode}
-                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  onFocus={() => setFocusedInput('referral')}
-                  onBlur={() => setFocusedInput(null)}
-                  autoComplete="off"
-                  className={`block w-full px-4 py-3.5 bg-transparent focus:outline-none font-mono text-sm font-semibold tracking-wide ${isDark ? 'text-white placeholder-gray-500' : 'text-slate-900 placeholder-slate-400'}`}
-                  placeholder="Friend's referral code (optional)"
-                />
-                <p className={`px-4 pb-3 text-[11px] leading-snug ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>
-                  If someone invited you, enter their code. You can also use a link with <span className="font-mono">?ref=</span>.
-                </p>
               </motion.div>
 
               <motion.div 
