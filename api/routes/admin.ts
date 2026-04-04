@@ -116,6 +116,40 @@ router.delete('/ops/support-tickets/:id', verifyAdmin, async (req, res) => {
   }
 });
 
+router.post('/ops/sidebar-config', verifyAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '') || '';
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (userData?.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Super Admin access required' });
+    }
+
+    const { hidden_tabs } = req.body;
+    if (!Array.isArray(hidden_tabs)) {
+      return res.status(400).json({ error: 'hidden_tabs must be an array' });
+    }
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({ key: 'admin_sidebar_config', value: { hidden_tabs } });
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('sidebar config error:', error);
+    res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.put('/users/:id', verifyAdmin, async (req, res) => {
   try {
     const userId = req.params.id;

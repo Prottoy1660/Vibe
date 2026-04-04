@@ -26,6 +26,8 @@ const AVAILABLE_TABS = [
   { id: 'growth_ops', label: 'Growth Ops' },
 ];
 
+import { getApiBaseUrl } from '../../lib/apiBase';
+
 export const AdminSidebarConfig = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -68,12 +70,22 @@ export const AdminSidebarConfig = () => {
     setSaving(true);
     setSaveMsg(null);
     try {
-      const payload = { hidden_tabs: hiddenTabs };
-      const { error } = await supabase
-        .from('system_settings')
-        .upsert({ key: 'admin_sidebar_config', value: payload });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
 
-      if (error) throw error;
+      const base = getApiBaseUrl().replace(/\/$/, '');
+      const res = await fetch(`${base}/api/admin/ops/sidebar-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ hidden_tabs: hiddenTabs }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || json?.message || 'Request failed');
+
       setSaveMsg({ type: 'ok', text: 'Settings saved! General admins will no longer see hidden tabs. (Refresh may be required)' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
