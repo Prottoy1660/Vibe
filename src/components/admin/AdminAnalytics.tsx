@@ -87,7 +87,7 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
     });
 
     return Object.keys(methodMap).map(name => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
+      name: name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
       value: methodMap[name]
     }));
   };

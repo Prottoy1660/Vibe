@@ -351,7 +351,7 @@ export function SupportChatWidget() {
                     <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/50 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
                   </motion.div>
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold leading-tight tracking-tight drop-shadow-sm">Vibe সহায়তা</p>
+                    <p className="text-[15px] font-semibold leading-tight tracking-tight drop-shadow-sm">Vibe Access</p>
                     <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/88">
                       সাধারণ প্রশ্নের দ্রুত উত্তর — প্রয়োজনে টিকিট বা WhatsApp
                     </p>
