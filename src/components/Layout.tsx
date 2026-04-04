@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -89,7 +89,33 @@ export const Layout = () => {
     };
   }, [user, signOut]);
 
-  const navigation = isAdmin ? [
+  const [referralNavVisible, setReferralNavVisible] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setReferralNavVisible(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'referral_program')
+        .maybeSingle();
+      if (cancelled) return;
+      const v = (data?.value || {}) as { enabled?: boolean };
+      setReferralNavVisible(v.enabled !== false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  const navigation = useMemo(
+    () =>
+      isAdmin
+        ? [
     {
       name: 'Overview',
       items: [
@@ -131,31 +157,32 @@ export const Layout = () => {
         { name: 'My Profile', href: '/profile', icon: UserIcon },
       ]
     }
-  ] : [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    {
-      name: 'Purchases',
-      items: [
-        { name: 'Store', href: '/store', icon: ShoppingBag },
-        { name: 'Orders', href: '/orders', icon: ShoppingBasket },
-      ],
-    },
-    {
-      name: 'Services',
-      items: [
-        { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
-        { name: 'Refer & earn', href: '/refer', icon: Gift },
-        { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
-        { name: 'Support', href: '/support', icon: LifeBuoy },
-      ],
-    },
-    {
-      name: 'Personal',
-      items: [
-        { name: 'My Profile', href: '/profile', icon: UserIcon },
-      ]
-    }
-  ];
+  ]
+        : [
+            { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+            {
+              name: 'Purchases',
+              items: [
+                { name: 'Store', href: '/store', icon: ShoppingBag },
+                { name: 'Orders', href: '/orders', icon: ShoppingBasket },
+              ],
+            },
+            {
+              name: 'Services',
+              items: [
+                { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
+                ...(referralNavVisible === true ? [{ name: 'Refer & earn', href: '/refer', icon: Gift }] : []),
+                { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
+                { name: 'Support', href: '/support', icon: LifeBuoy },
+              ],
+            },
+            {
+              name: 'Personal',
+              items: [{ name: 'My Profile', href: '/profile', icon: UserIcon }],
+            },
+          ],
+    [isAdmin, referralNavVisible]
+  );
 
   return (
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">

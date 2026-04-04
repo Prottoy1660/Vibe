@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Gift, Copy, Check, Loader2, Info, ArrowRight } from 'lucide-react';
+import { Gift, Copy, Check, Loader2, ArrowRight } from 'lucide-react';
 
 const REF_STORAGE = 'referral_pending_code';
 
@@ -116,6 +116,18 @@ export const Referral = () => {
 
   if (!user) return null;
 
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto flex justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      </div>
+    );
+  }
+
+  if (!programOn) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div className="max-w-3xl mx-auto space-y-8 pb-16">
       <div>
@@ -130,21 +142,7 @@ export const Referral = () => {
         </p>
       </div>
 
-      {!programOn && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 flex gap-2">
-          <Info className="w-5 h-5 shrink-0" />
-          The referral program is temporarily paused by the team. You can still copy your code; rewards will apply when the program is
-          on again.
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-        </div>
-      ) : (
-        <>
-          <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6 shadow-sm dark:shadow-none">
+      <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6 shadow-sm dark:shadow-none">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Your code</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-4">One code per account · tracked for fraud protection</p>
             <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -162,9 +160,9 @@ export const Referral = () => {
               </button>
             </div>
             {shareUrl && <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 break-all">{shareUrl}</p>}
-          </div>
+      </div>
 
-          <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
+      <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Balances</h2>
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="rounded-xl border border-sky-200 dark:border-sky-900/40 bg-sky-50/80 dark:bg-sky-950/20 p-4">
@@ -183,9 +181,9 @@ export const Referral = () => {
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">
               Successful referrals (credited): <span className="font-semibold text-gray-800 dark:text-gray-200">{grantedCount}</span>
             </p>
-          </div>
+      </div>
 
-          <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
+      <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Apply a friend&apos;s code</h2>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 mb-4">One time only, before your first qualifying reward.</p>
             {referredBy ? (
@@ -209,29 +207,27 @@ export const Referral = () => {
               </div>
             )}
             {claimMsg && <p className="text-sm mt-2 text-gray-700 dark:text-gray-300">{claimMsg}</p>}
-          </div>
+      </div>
 
-          {recent.length > 0 && (
-            <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Recent activity</h2>
-              <ul className="space-y-2 text-sm">
-                {recent.map((r) => (
-                  <li
-                    key={`${r.id}-${r.role}`}
-                    className="flex justify-between gap-3 border-b border-gray-100 dark:border-[#26262d] pb-2 last:border-0"
-                  >
-                    <span className="text-gray-600 dark:text-gray-400">
-                      {r.role === 'referrer' ? 'You referred someone' : 'You were referred'} ·{' '}
-                      <span className="font-medium text-gray-900 dark:text-gray-100">{r.status}</span>
-                      {typeof r.risk_score === 'number' && r.risk_score > 0 ? ` · risk ${r.risk_score}` : ''}
-                    </span>
-                    <span className="tabular-nums font-medium text-gray-900 dark:text-gray-100">৳{Number(r.reward_amount || 0).toFixed(0)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </>
+      {recent.length > 0 && (
+        <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Recent activity</h2>
+          <ul className="space-y-2 text-sm">
+            {recent.map((r) => (
+              <li
+                key={`${r.id}-${r.role}`}
+                className="flex justify-between gap-3 border-b border-gray-100 dark:border-[#26262d] pb-2 last:border-0"
+              >
+                <span className="text-gray-600 dark:text-gray-400">
+                  {r.role === 'referrer' ? 'You referred someone' : 'You were referred'} ·{' '}
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{r.status}</span>
+                  {typeof r.risk_score === 'number' && r.risk_score > 0 ? ` · risk ${r.risk_score}` : ''}
+                </span>
+                <span className="tabular-nums font-medium text-gray-900 dark:text-gray-100">৳{Number(r.reward_amount || 0).toFixed(0)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

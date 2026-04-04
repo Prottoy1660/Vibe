@@ -2,14 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MessageCircle,
-  MessagesSquare,
   X,
-  ArrowUp,
+  Send,
   Loader2,
   Ticket,
   ExternalLink,
-  Sparkles,
+  BotMessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getJsonWithFallback, postJsonWithFallback } from '../../lib/apiClient';
@@ -262,30 +260,47 @@ export function SupportChatWidget() {
           'fixed z-[60] flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full text-white shadow-xl',
           'bottom-20 right-4 md:bottom-8 md:right-6',
           'bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600',
-          'shadow-indigo-500/35 dark:shadow-indigo-900/50',
-          'ring-2 ring-white/30 dark:ring-white/15',
-          open && 'ring-white/50',
+          'shadow-[0_12px_40px_-8px_rgba(99,102,241,0.55),0_4px_16px_-4px_rgba(168,85,247,0.35)]',
+          'dark:shadow-[0_16px_48px_-8px_rgba(79,70,229,0.45),0_0_0_1px_rgba(255,255,255,0.08)_inset]',
+          'ring-2 ring-white/25 dark:ring-white/12',
+          open && 'ring-white/45',
         )}
         aria-label={open ? 'Close help chat' : 'Open help chat'}
       >
         {!open && (
-          <motion.span
-            className="pointer-events-none absolute inset-0 rounded-full bg-violet-400/35"
-            animate={{ scale: [1, 1.35], opacity: [0.45, 0] }}
-            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
-            aria-hidden
-          />
+          <>
+            <motion.span
+              className="pointer-events-none absolute inset-0 rounded-full bg-violet-400/30"
+              animate={{ scale: [1, 1.45], opacity: [0.5, 0] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+              aria-hidden
+            />
+            <motion.span
+              className="pointer-events-none absolute inset-0 rounded-full border border-white/20"
+              animate={{ scale: [1, 1.15], opacity: [0.6, 0] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut', delay: 0.4 }}
+              aria-hidden
+            />
+          </>
         )}
         <span className="relative flex items-center justify-center">
           {open ? (
             <X className="h-6 w-6 drop-shadow-sm" strokeWidth={2.25} />
           ) : (
-            <>
-              <MessagesSquare className="h-[1.65rem] w-[1.65rem] drop-shadow-sm" strokeWidth={2.1} />
-              <span className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/95 text-violet-600 shadow-md dark:bg-violet-100 dark:text-violet-700">
-                <Sparkles className="h-3 w-3" strokeWidth={2.5} />
-              </span>
-            </>
+            <motion.span
+              className="relative flex items-center justify-center"
+              animate={{ y: [0, -2, 0] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              aria-hidden
+            >
+              <BotMessageSquare className="h-[1.85rem] w-[1.85rem] drop-shadow-md" strokeWidth={2.2} />
+              <motion.span
+                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/40 bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]"
+                aria-hidden
+                animate={{ scale: [1, 1.15, 1], opacity: [1, 0.85, 1] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </motion.span>
           )}
         </span>
       </motion.button>
@@ -298,42 +313,60 @@ export function SupportChatWidget() {
             initial={{ opacity: 0, y: 28, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 320 }}
+            transition={{ type: 'spring', damping: 28, stiffness: 340 }}
             className={cn(
-              'fixed z-[59] flex flex-col overflow-hidden rounded-[1.35rem]',
-              'border border-white/10 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#141416]/95',
-              'shadow-[0_25px_80px_-12px_rgba(79,70,229,0.35)] dark:shadow-[0_25px_80px_-12px_rgba(0,0,0,0.65)]',
+              'fixed z-[59] flex flex-col overflow-hidden rounded-[1.65rem]',
+              'border border-indigo-100/80 bg-white/98 shadow-2xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#0c0c0e]',
+              'shadow-[0_0_0_1px_rgba(139,92,246,0.12),0_28px_90px_-20px_rgba(79,70,229,0.45),0_12px_40px_-12px_rgba(0,0,0,0.5)]',
               'bottom-36 right-4 h-[min(560px,calc(100vh-8rem))] w-[min(100vw-2rem,400px)] md:bottom-24 md:right-6 md:h-[520px] md:w-[400px]',
             )}
           >
-            <div className="relative shrink-0 overflow-hidden border-b border-white/10 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 px-4 py-4 text-white">
-              <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
-              <div className="pointer-events-none absolute -bottom-6 left-1/4 h-24 w-24 rounded-full bg-fuchsia-400/20 blur-xl" />
+            <div className="relative shrink-0 overflow-hidden border-b border-white/[0.08] px-4 py-4 text-white">
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600" />
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.06]"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4V2H2v4h2v4H2v2h4v-2h2zm16 0v-2h4v-4h2v4h-2v2h-4zM6 4V0H4v4H0v2h6V4z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+                }}
+              />
+              <motion.div
+                className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-cyan-400/30 blur-3xl"
+                animate={{ x: [0, 12, 0], y: [0, 16, 0], opacity: [0.45, 0.65, 0.45] }}
+                transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              <motion.div
+                className="pointer-events-none absolute -bottom-14 -left-6 h-40 w-40 rounded-full bg-fuchsia-500/35 blur-3xl"
+                animate={{ x: [0, -10, 0], y: [0, -8, 0], opacity: [0.4, 0.6, 0.4] }}
+                transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+              />
               <div className="relative flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <motion.div
-                    initial={{ rotate: -8, scale: 0.9 }}
+                    initial={{ rotate: -6, scale: 0.92 }}
                     animate={{ rotate: 0, scale: 1 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-inner backdrop-blur-md ring-1 ring-white/25"
+                    transition={{ type: 'spring', stiffness: 420, damping: 20 }}
+                    className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-white/25 backdrop-blur-md"
                   >
-                    <MessageCircle className="h-5 w-5 text-white" strokeWidth={2} />
+                    <BotMessageSquare className="h-6 w-6 text-white" strokeWidth={2.2} />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/50 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
                   </motion.div>
                   <div className="min-w-0">
-                    <p className="text-[15px] font-semibold leading-tight tracking-tight">Vibe সহায়তা</p>
-                    <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/90">
+                    <p className="text-[15px] font-semibold leading-tight tracking-tight drop-shadow-sm">Vibe সহায়তা</p>
+                    <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/88">
                       সাধারণ প্রশ্নের দ্রুত উত্তর — প্রয়োজনে টিকিট বা WhatsApp
                     </p>
                   </div>
                 </div>
-                <button
+                <motion.button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="shrink-0 rounded-xl p-2 text-white/90 transition-colors hover:bg-white/15"
+                  whileHover={{ scale: 1.06, backgroundColor: 'rgba(255,255,255,0.18)' }}
+                  whileTap={{ scale: 0.94 }}
+                  className="shrink-0 rounded-xl p-2 text-white/95 transition-colors hover:bg-white/12"
                   aria-label="Close"
                 >
                   <X className="h-5 w-5" />
-                </button>
+                </motion.button>
               </div>
               <div className="relative mt-3.5 flex flex-wrap gap-2">
                 {waLink ? (
@@ -341,21 +374,21 @@ export function SupportChatWidget() {
                     href={waLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white/18 px-3 py-2 text-xs font-semibold shadow-sm backdrop-blur-md ring-1 ring-white/20 transition-colors hover:bg-white/28"
+                    whileHover={{ scale: 1.04, y: -1 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold shadow-lg shadow-black/10 ring-1 ring-white/20 backdrop-blur-md transition-colors hover:bg-black/30"
                   >
-                    <ExternalLink className="h-3.5 w-3.5 opacity-90" />
+                    <ExternalLink className="h-3.5 w-3.5 opacity-95" />
                     WhatsApp
                   </motion.a>
                 ) : null}
-                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <motion.div whileHover={{ scale: 1.04, y: -1 }} whileTap={{ scale: 0.98 }}>
                   <Link
                     to="/support"
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-white/18 px-3 py-2 text-xs font-semibold shadow-sm backdrop-blur-md ring-1 ring-white/20 transition-colors hover:bg-white/28"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-black/20 px-3 py-2 text-xs font-semibold shadow-lg shadow-black/10 ring-1 ring-white/20 backdrop-blur-md transition-colors hover:bg-black/30"
                     onClick={() => setOpen(false)}
                   >
-                    <Ticket className="h-3.5 w-3.5 opacity-90" />
+                    <Ticket className="h-3.5 w-3.5 opacity-95" />
                     Support
                   </Link>
                 </motion.div>
@@ -364,7 +397,7 @@ export function SupportChatWidget() {
 
             <div
               ref={listRef}
-              className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-slate-50/90 to-white px-3 py-3 dark:from-[#161618] dark:to-[#121214]"
+              className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-indigo-50/20 via-white to-violet-50/20 px-3 py-3 dark:from-[#101012] dark:via-[#0e0e10] dark:to-[#0a0a0c]"
             >
               {panelBusy && (
                 <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-500 dark:text-gray-400">
@@ -375,11 +408,15 @@ export function SupportChatWidget() {
 
               {messages.length === 0 && !loading && !panelBusy && (
                 <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="rounded-2xl border border-indigo-200/50 bg-gradient-to-br from-indigo-50/90 to-violet-50/40 px-3.5 py-3 text-xs leading-relaxed text-gray-600 dark:border-indigo-500/25 dark:from-indigo-950/40 dark:to-violet-950/20 dark:text-gray-300"
+                  initial={{ opacity: 0, y: 8, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                  transition={{ type: 'spring', damping: 22, stiffness: 300 }}
+                  className="relative overflow-hidden rounded-2xl border border-indigo-200/40 bg-gradient-to-br from-indigo-50/95 via-white to-violet-50/50 px-3.5 py-3.5 text-xs leading-relaxed text-gray-600 shadow-sm dark:border-indigo-500/20 dark:from-indigo-950/50 dark:via-[#16151c] dark:to-violet-950/30 dark:text-gray-300"
                 >
-                  নিচের একটি টপিক বেছে নিন, অথবা নিজের ভাষায় লিখুন। আমরা আপনার ভাষায় উত্তর দেওয়ার চেষ্টা করব।
+                  <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-indigo-400/15 blur-2xl dark:bg-indigo-500/10" />
+                  <p className="relative">
+                    নিচের একটি টপিক বেছে নিন, অথবা নিজের ভাষায় লিখুন। আমরা আপনার ভাষায় উত্তর দেওয়ার চেষ্টা করব।
+                  </p>
                 </motion.div>
               )}
 
@@ -390,15 +427,21 @@ export function SupportChatWidget() {
                     key={c.label}
                     type="button"
                     disabled={loading || panelBusy}
-                    initial={{ opacity: 0, x: -6 }}
+                    initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    whileHover={{ scale: loading || panelBusy ? 1 : 1.02 }}
-                    whileTap={{ scale: loading || panelBusy ? 1 : 0.98 }}
+                    transition={{ delay: i * 0.05, type: 'spring', damping: 24, stiffness: 320 }}
+                    whileHover={
+                      loading || panelBusy
+                        ? {}
+                        : { scale: 1.015, x: 2, boxShadow: '0 12px 28px -8px rgba(99,102,241,0.25)' }
+                    }
+                    whileTap={{ scale: loading || panelBusy ? 1 : 0.99 }}
                     onClick={() => void handleSend(c.text)}
-                    className="block w-full rounded-2xl border border-gray-200/90 bg-white/90 px-3.5 py-2.5 text-left text-xs text-gray-800 shadow-sm transition-[border,box-shadow] hover:border-indigo-300/80 hover:shadow-md dark:border-[#2e2e36] dark:bg-[#1a1a1f] dark:text-gray-200 dark:hover:border-indigo-500/45 disabled:opacity-50"
+                    className="group relative block w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-white/95 py-2.5 pl-4 pr-3 text-left text-xs text-gray-800 shadow-sm transition-colors before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-gradient-to-b before:from-indigo-500 before:to-violet-500 before:content-[''] hover:border-indigo-300/70 dark:border-[#2c2c34] dark:bg-[#18181d] dark:text-gray-200 dark:before:from-indigo-400 dark:before:to-fuchsia-500 dark:hover:border-indigo-500/40 disabled:opacity-50"
                   >
-                    <span className="font-semibold text-indigo-700 dark:text-indigo-300">{c.label}</span>
+                    <span className="font-semibold text-indigo-700 transition-colors group-hover:text-indigo-800 dark:text-indigo-300 dark:group-hover:text-indigo-200">
+                      {c.label}
+                    </span>
                     <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500 dark:text-gray-500">
                       {c.text}
                     </span>
@@ -492,7 +535,7 @@ export function SupportChatWidget() {
               )}
             </div>
 
-            <div className="shrink-0 border-t border-gray-100/90 bg-white/90 p-3 backdrop-blur-md dark:border-[#26262d] dark:bg-[#121214]/95">
+            <div className="shrink-0 border-t border-gray-100 bg-white p-3 backdrop-blur-xl dark:border-[#2a2a30] dark:bg-[#141416]">
               <form
                 className="flex gap-2"
                 onSubmit={(e) => {
@@ -506,21 +549,21 @@ export function SupportChatWidget() {
                   placeholder="আপনার প্রশ্ন লিখুন…"
                   maxLength={2000}
                   disabled={loading || panelBusy}
-                  className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/90 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 dark:border-[#2e2e36] dark:bg-[#1a1a1f] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-500/50 disabled:opacity-60"
+                  className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/95 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 transition-shadow focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-[#34343c] dark:bg-[#18181c] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-500/55 disabled:opacity-60"
                 />
                 <motion.button
                   type="submit"
                   disabled={loading || panelBusy || !input.trim()}
-                  whileHover={{ scale: loading || panelBusy || !input.trim() ? 1 : 1.05 }}
-                  whileTap={{ scale: loading || panelBusy || !input.trim() ? 1 : 0.95 }}
+                  whileHover={{ scale: loading || panelBusy || !input.trim() ? 1 : 1.06 }}
+                  whileTap={{ scale: loading || panelBusy || !input.trim() ? 1 : 0.94 }}
                   className={cn(
                     'inline-flex h-11 min-w-[2.75rem] shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-shadow',
-                    'bg-gradient-to-br from-indigo-600 to-violet-600 shadow-indigo-500/30',
+                    'bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 shadow-indigo-500/35',
                     'disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none',
                   )}
-                  aria-label="Send"
+                  aria-label="Send message"
                 >
-                  <ArrowUp className="h-5 w-5" strokeWidth={2.4} />
+                  <Send className="h-5 w-5" strokeWidth={2.35} />
                 </motion.button>
               </form>
             </div>

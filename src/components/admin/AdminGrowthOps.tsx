@@ -11,6 +11,7 @@ import {
   Info,
   LineChart,
   Gift,
+  Trash2,
 } from 'lucide-react';
 
 async function adminRequest(path: string, method: string = 'GET', body?: any) {
@@ -64,8 +65,12 @@ export const AdminGrowthOps = () => {
     setLoadingCampaigns(true);
     try {
       const data = await adminRequest('/api/admin/ops/campaigns');
-      setCampaigns(data.campaigns || []);
-      if (!roiCampaignId && data.campaigns?.[0]?.id) setRoiCampaignId(data.campaigns[0].id);
+      const list = data.campaigns || [];
+      setCampaigns(list);
+      setRoiCampaignId((prev) => {
+        if (prev && list.some((c: any) => c.id === prev)) return prev;
+        return list[0]?.id || '';
+      });
     } catch (e: any) {
       alert(e?.message || 'Failed to load campaigns');
     } finally {
@@ -182,6 +187,20 @@ export const AdminGrowthOps = () => {
       setRoi(data.metrics);
     } catch (e: any) {
       alert(e?.message || 'ROI load failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const deleteCampaign = async (id: string) => {
+    if (!window.confirm('Delete this campaign? Tracked ROI events for it will be removed. This cannot be undone.')) return;
+    setRunning(true);
+    try {
+      await adminRequest(`/api/admin/ops/campaigns/${encodeURIComponent(id)}`, 'DELETE');
+      if (roiCampaignId === id) setRoi(null);
+      await loadCampaigns();
+    } catch (e: any) {
+      alert(e?.message || 'Delete failed');
     } finally {
       setRunning(false);
     }
@@ -511,11 +530,11 @@ export const AdminGrowthOps = () => {
               ) : (
                 <ul className="space-y-2 max-h-64 overflow-y-auto">
                   {campaigns.map((c) => (
-                    <li key={c.id}>
+                    <li key={c.id} className="flex gap-2 items-stretch">
                       <button
                         type="button"
                         onClick={() => setRoiCampaignId(c.id)}
-                        className={`w-full text-left rounded-xl border px-4 py-3 transition-colors ${
+                        className={`min-w-0 flex-1 text-left rounded-xl border px-4 py-3 transition-colors ${
                           roiCampaignId === c.id
                             ? 'border-indigo-500 bg-indigo-50/80 dark:bg-indigo-500/15 dark:border-indigo-500/50'
                             : 'border-gray-200 dark:border-[#26262d] hover:border-indigo-300 dark:hover:border-indigo-500/30'
@@ -525,6 +544,18 @@ export const AdminGrowthOps = () => {
                         <p className="text-xs text-gray-500 mt-0.5">
                           {c.campaign_type} · {c.status} · ৳{Number(c.budget || 0).toFixed(0)}
                         </p>
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete campaign"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteCampaign(c.id);
+                        }}
+                        disabled={running}
+                        className="shrink-0 rounded-xl border border-red-200 dark:border-red-900/40 px-3 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </li>
                   ))}

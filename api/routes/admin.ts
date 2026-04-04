@@ -555,6 +555,20 @@ router.put('/ops/campaigns/:id', verifyAdmin, async (req, res) => {
   }
 });
 
+router.delete('/ops/campaigns/:id', verifyAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) return res.status(400).json({ error: 'Campaign id is required' });
+
+    const { error } = await supabase.from('campaigns').delete().eq('id', id);
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (error: any) {
+    console.error('campaign delete error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.get('/ops/campaigns/:id/roi', verifyAdmin, async (req, res) => {
   try {
     const id = req.params.id;

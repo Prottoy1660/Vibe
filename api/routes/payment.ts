@@ -355,8 +355,9 @@ router.post('/create', requireUser, async (req, res) => {
       return res.json(payload);
     }
 
-    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
-      console.warn("UddoktaPay credentials not set. Simulating successful payment flow for dev.");
+    const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL || isLocalhost) {
+      console.warn("UddoktaPay dev mode: Simulating successful payment flow for dev/localhost.");
       
       // Simulate webhook logic for local dev since we can't receive real webhooks easily
       // In production, remove this block and let the actual webhook handle it
@@ -489,8 +490,9 @@ router.post('/recharge', requireUser, async (req, res) => {
     }
     await logPaymentEvent(null, user.id, 'recharge_init', normalizedAmount, 'Recharge initialization started');
 
-    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL) {
-      console.warn("UddoktaPay credentials not set. Simulating successful wallet recharge for dev.");
+    const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL || isLocalhost) {
+      console.warn("UddoktaPay dev mode: Simulating successful wallet recharge for dev/localhost.");
       
       const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
       const currentBalance = Number(userData?.wallet_balance) || 0;
