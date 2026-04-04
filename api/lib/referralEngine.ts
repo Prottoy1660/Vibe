@@ -21,8 +21,10 @@ const DEFAULT_SETTINGS: ReferralProgramSettings = {
   referee_bonus_matches_referrer: true,
   referee_bonus_fixed: 50,
   min_order_total_bdt: 100,
-  risk_review_from: 35,
-  risk_block_from: 70,
+  /** Above this → manual review before credits (fraud signals). */
+  risk_review_from: 52,
+  /** At or above → no credits until admin overrides. */
+  risk_block_from: 88,
   daily_cap_per_referrer_bdt: 1000,
 };
 
@@ -130,11 +132,11 @@ async function computeReferralRisk(args: {
   const overlap = await sessionOverlapSignals(supabase, referrerId, refereeId);
   if (overlap.shared_canvas) {
     signals.shared_canvas_fingerprint = true;
-    score += 45;
+    score += 28;
   }
   if (overlap.shared_ip) {
     signals.shared_ip_address = true;
-    score += 30;
+    score += 20;
   }
 
   return { score, signals };

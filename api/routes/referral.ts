@@ -11,6 +11,24 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+/** Public: lets checkout show a helpful hint when users paste a referral code into the coupon field. */
+router.get('/check-code', async (req, res) => {
+  try {
+    const raw = String(req.query.code || '')
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    if (raw.length < 4) {
+      return res.json({ success: true, is_referral_code: false });
+    }
+    const { data } = await supabase.from('referral_codes').select('code').eq('code', raw).maybeSingle();
+    return res.json({ success: true, is_referral_code: !!data });
+  } catch (e: any) {
+    console.error('referral/check-code:', e);
+    return res.status(500).json({ success: false, message: e?.message || 'Server error' });
+  }
+});
+
 async function requireUser(req: express.Request, res: express.Response, next: express.NextFunction) {
   try {
     const authHeader = req.headers.authorization || '';

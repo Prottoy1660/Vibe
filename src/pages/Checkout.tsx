@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getLastApiDebug, postJsonWithFallback } from '../lib/apiClient';
+import { getApiBaseUrl } from '../lib/apiBase';
 import {
   CreditCard,
   ShieldCheck,
@@ -129,7 +130,22 @@ export const Checkout = () => {
         .single();
 
       if (error || !data) {
-        setCouponError('Invalid or expired coupon');
+        const cleaned = couponCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        let hint = 'Invalid or expired coupon';
+        if (cleaned.length >= 4) {
+          try {
+            const base = getApiBaseUrl();
+            const r = await fetch(`${base}/api/referral/check-code?code=${encodeURIComponent(cleaned)}`);
+            const j = (await r.json()) as { is_referral_code?: boolean };
+            if (j.is_referral_code) {
+              hint =
+                'That is a referral code, not a discount coupon. Go to Refer & earn, apply the code to your account, then complete a qualifying order.';
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        setCouponError(hint);
         setDiscount(0);
         setAppliedCouponId(null);
         return;
@@ -473,10 +489,13 @@ export const Checkout = () => {
               </div>
 
               <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-900/40 p-3">
-                <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
                   <Ticket className="w-4 h-4 text-indigo-500" />
                   Coupon
                 </label>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-2 leading-snug">
+                  Admin discount codes only. Referral codes belong on <span className="font-medium text-zinc-600 dark:text-zinc-300">Refer &amp; earn</span>, not here.
+                </p>
                 <div className="flex gap-2">
                   <input
                     type="text"

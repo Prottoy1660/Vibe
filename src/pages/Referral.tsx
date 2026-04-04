@@ -140,6 +140,15 @@ export const Referral = () => {
           Share your code. When a friend registers with it and completes a qualifying subscription order, both of you receive bonus
           balance. Bonus credits are for subscriptions on Vibe Access only — they cannot be withdrawn or transferred to cash.
         </p>
+        <p className="text-sm text-amber-800 dark:text-amber-200/90 mt-3 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 leading-relaxed">
+          <span className="font-semibold">Not a checkout coupon:</span> your referral code is applied on this page (or at signup with the
+          invite link). It cannot be pasted into the discount field on the checkout screen — that field is only for promotional
+          coupons from the admin.
+        </p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          A qualifying order must meet the minimum amount set in the referral program (default ৳100) after discounts, and the friend’s
+          account must have your code saved before they pay. Suspicious patterns may be held for admin review before credits appear.
+        </p>
       </div>
 
       <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-6 shadow-sm dark:shadow-none">
@@ -220,7 +229,17 @@ export const Referral = () => {
               >
                 <span className="text-gray-600 dark:text-gray-400">
                   {r.role === 'referrer' ? 'You referred someone' : 'You were referred'} ·{' '}
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{r.status}</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">
+                    {r.status === 'granted'
+                      ? 'Credited'
+                      : r.status === 'pending_review'
+                        ? 'Under review (credits after approval)'
+                        : r.status === 'blocked'
+                          ? 'Blocked (fraud check)'
+                          : r.status === 'rejected'
+                            ? 'Rejected'
+                            : r.status}
+                  </span>
                   {typeof r.risk_score === 'number' && r.risk_score > 0 ? ` · risk ${r.risk_score}` : ''}
                 </span>
                 <span className="tabular-nums font-medium text-gray-900 dark:text-gray-100">৳{Number(r.reward_amount || 0).toFixed(0)}</span>

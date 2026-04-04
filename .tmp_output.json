@@ -1,0 +1,54 @@
+{
+  "emails_pool": [
+    {
+      "id": "dafbbcd5-93ed-47f0-a5de-f0d406e878b6",
+      "email": "adobe.u9eq@vibeaccess.space",
+      "password": "O^1jC2@$5$hq",
+      "status": "available",
+      "created_at": "2026-04-04T17:14:33.297049+00:00",
+      "assigned_at": null,
+      "current_users": 0,
+      "product_id": null,
+      "cloud_access_type": "none",
+      "is_burned": false
+    }
+  ],
+  "products": [
+    {
+      "id": "8646ca24-9396-4838-bddd-832d10d5cb11",
+      "title": "Adobe",
+      "title_bn": "",
+      "price": 150,
+      "duration": "1 month",
+      "icons": [],
+      "description": "",
+      "is_active": true,
+      "created_at": "2026-04-01T18:03:58.240753+00:00",
+      "image_url": "https://image.vibeaccess.cloud/vibeaccess.png",
+      "email_slots": 2,
+      "max_users_per_email": 1,
+      "single_device_warning": false,
+      "with_cloud_access": false,
+      "is_personal": false,
+      "email_slot_interval_days": 10
+    },
+    {
+      "id": "0dcc9c6f-e228-4937-9bd1-8cd26909c117",
+      "title": "Adobe",
+      "title_bn": "",
+      "price": 200,
+      "duration": "1 month",
+      "icons": [],
+      "description": "",
+      "is_active": true,
+      "created_at": "2026-04-02T09:37:03.620768+00:00",
+      "image_url": "",
+      "email_slots": 1,
+      "max_users_per_email": 1,
+      "single_device_warning": false,
+      "with_cloud_access": false,
+      "is_personal": true,
+      "email_slot_interval_days": 0
+    }
+  ]
+}
