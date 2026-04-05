@@ -434,7 +434,7 @@ export const AdminRedeemCodes = () => {
   const cancelOrder = async (orderId: string) => {
     if (
       !window.confirm(
-        'Seize this redeem? The user will be banned, shared emails deactivated, and the ৳ amount will be reversed in payment records (not counted as revenue).',
+        'Seize this redeem? Shared Adobe access will be turned off for this order, the order will be cancelled, and the ৳ amount will be reversed in payment records (not counted as revenue). The user account stays able to sign in — use Admin → Users only if you need a full ban.',
       )
     ) {
       return;
@@ -454,7 +454,7 @@ export const AdminRedeemCodes = () => {
       if (!response.ok) throw new Error(body.error || 'Failed to seize order');
       setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
       await fetchAll();
-      alert('Redeem seized: access revoked, user banned, amount reversed.');
+      alert('Redeem seized: access revoked for this order, amount reversed. User account was not banned.');
     } catch (err: any) {
       alert('Error: ' + (err.message || 'Could not seize order'));
     }
@@ -463,7 +463,7 @@ export const AdminRedeemCodes = () => {
   const restoreOrder = async (orderId: string) => {
     if (
       !window.confirm(
-        'Restore this user? They will be unbanned, Adobe emails reactivated, and a fresh 24-hour manual payment window will start. (Only possible within 48 hours after seize — the server will reject if the window has passed.)',
+        'Restore this order? Adobe emails for it will be reactivated and a fresh 24-hour manual payment window will start. Any legacy account ban from an old seize will be cleared. (Only within 48 hours after seize — the server will reject if the window has passed.)',
       )
     ) {
       return;
@@ -1081,7 +1081,7 @@ export const AdminRedeemCodes = () => {
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               Access is already granted (email slots). You have until the due time (default 24h) to collect payment. Mark paid to keep revenue;
-              seize to ban the user, revoke access, and reverse the amount in payment history.
+              seize to cancel this redeem order, revoke Adobe access for it, and reverse the amount in payment history (the user account is not banned — ban separately in Users if needed).
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -1216,7 +1216,7 @@ export const AdminRedeemCodes = () => {
               Seized redeem orders
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              These accounts were banned and access removed. Order rows are kept with user, code, emails, and amount for your audit trail.
+              These redeem orders were seized: Adobe access was removed and orders cancelled. Order rows are kept with user, code, emails, and amount for your audit trail.
               Payment events include a matching reversal so totals stay honest.{' '}
               <strong>Restore</strong> is only allowed within <strong>48 hours</strong> after seize; after that the row stays for audit only.
             </p>

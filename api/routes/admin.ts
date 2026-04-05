@@ -1609,7 +1609,7 @@ router.get('/redeem/revoked', verifyAdmin, async (_req, res) => {
   }
 });
 
-// Seize redeem access: ban user, deactivate emails, cancel order, reverse notional revenue
+// Seize redeem access: deactivate emails, cancel order, reverse notional revenue (no account ban)
 router.post('/redeem/cancel/:orderId', verifyAdmin, async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -1634,14 +1634,17 @@ router.post('/redeem/cancel/:orderId', verifyAdmin, async (req, res) => {
       return res.status(status).json({ error: result.error });
     }
 
-    return res.json({ success: true, message: 'Access seized, user banned, and amount reversed from records' });
+    return res.json({
+      success: true,
+      message: 'Redeem access seized: order cancelled, emails deactivated, amount reversed from records (account not banned).',
+    });
   } catch (error: any) {
     console.error('redeem cancel:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
 
-// Restore after seize: unban, reactivate Adobe emails, new 24h manual-payment window
+// Restore after seize: ensure not banned, reactivate Adobe emails, new 24h manual-payment window
 router.post('/redeem/restore/:orderId', verifyAdmin, async (req, res) => {
   try {
     const { orderId } = req.params;

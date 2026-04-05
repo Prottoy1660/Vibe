@@ -6,7 +6,8 @@ export type SeizeRedeemResult =
   | { ok: false; error: string; code?: string };
 
 /**
- * Same behavior as POST /api/admin/redeem/cancel — cancel order, deactivate emails, ban user, audit rows.
+ * Same behavior as POST /api/admin/redeem/cancel — cancel order, deactivate emails, reverse notional amount, audit rows.
+ * Does not set users.is_banned; use Admin → Users if you need a full account ban.
  */
 export async function seizeRedeemOrderForUnpaid(
   supabase: SupabaseClient,
@@ -68,7 +69,6 @@ export async function seizeRedeemOrderForUnpaid(
   if (updateError) return { ok: false, error: updateError.message, code: 'update_failed' };
 
   await supabase.from('user_emails').update({ is_active: false }).eq('order_id', orderId);
-  await supabase.from('users').update({ is_banned: true }).eq('id', o.user_id);
 
   const amt = Number(o.total_amount || 0);
   const paymentMsg =
@@ -130,7 +130,7 @@ export async function listRedeemOrderIdsPastDue(supabase: SupabaseClient): Promi
 }
 
 /**
- * Undo seize for a customer who pays / returns later: unban, reactivate emails, new 24h payment window.
+ * Undo seize for a customer who pays / returns later: clear any legacy ban, reactivate emails, new 24h payment window.
  */
 export async function restoreRedeemOrderAfterSeize(
   supabase: SupabaseClient,
