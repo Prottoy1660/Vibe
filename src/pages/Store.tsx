@@ -281,10 +281,10 @@ export const Store = () => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: idx * 0.1 }}
               key={product.id}
-              className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none hover:shadow-glow hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col group"
+              className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none dark:ring-1 dark:ring-primary/10 hover:shadow-glow dark:hover:shadow-[0_0_24px_rgba(139,92,246,0.22)] hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col group"
             >
-              {/* Product Banner */}
-              <div className="h-32 bg-gradient-to-r from-primary via-purple-500 to-secondary relative flex items-center justify-center overflow-hidden">
+              {/* Product Banner — brand gradient from tailwind primary → secondary */}
+              <div className="h-32 bg-gradient-to-r from-primary via-primary-dark to-secondary relative flex items-center justify-center overflow-hidden">
                 {product.image_url ? (
                   <img src={product.image_url} alt={product.title} loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500" />
                 ) : (
@@ -312,7 +312,7 @@ export const Store = () => {
                     <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-300 leading-snug">
                       {bullets.map((line, i) => (
                         <li key={i} className="flex gap-2 items-start">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" aria-hidden />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-accent-green shrink-0 mt-0.5" aria-hidden />
                           <span>{line}</span>
                         </li>
                       ))}
@@ -332,12 +332,12 @@ export const Store = () => {
                             ৳{formatBdt(Number(product.list_price))}
                           </span>
                         ) : null}
-                        <p className="text-2xl font-bold text-emerald-500 dark:text-emerald-400 tabular-nums">
+                        <p className="text-2xl font-bold text-accent-green tabular-nums">
                           ৳{formatBdt(Number(product.price))}
                         </p>
                       </div>
                       {savePct != null ? (
-                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500 text-gray-900 dark:text-black">
+                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-accent-green text-gray-900">
                           Save {savePct}%
                         </span>
                       ) : null}
@@ -351,7 +351,7 @@ export const Store = () => {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleBuyNow(product.id)}
-                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-500 dark:hover:bg-emerald-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all flex items-center justify-center uppercase tracking-wide text-sm"
+                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-accent-green hover:brightness-110 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary dark:focus:ring-offset-[#151518] transition-all flex items-center justify-center uppercase tracking-wide text-sm"
                     >
                       <ShoppingBag className="w-4 h-4 mr-2" />
                       Buy Now
@@ -360,7 +360,7 @@ export const Store = () => {
                       type="button"
                       onClick={() => handleNotifyMe(product.id)}
                       disabled={notifyBusy === product.id || waitlistedIds.has(product.id)}
-                      className="w-full py-2.5 px-4 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      className="w-full py-2.5 px-4 border border-primary/25 dark:border-primary/35 text-primary dark:text-primary-light rounded-xl text-sm font-medium hover:bg-primary/10 dark:hover:bg-primary/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                       {notifyBusy === product.id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -391,7 +391,7 @@ export const Store = () => {
       <div className="mt-4">
         <button
           onClick={() => { setShowRedeemPanel(p => !p); setRedeemError(''); setRedeemInfo(null); setRedeemSuccess(''); }}
-          className="w-full flex items-center justify-center gap-2 py-3.5 px-6 border-2 border-dashed border-emerald-200 dark:border-emerald-500/20 rounded-2xl text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/5 transition-all text-sm font-semibold group"
+          className="w-full flex items-center justify-center gap-2 py-3.5 px-6 border-2 border-dashed border-primary/35 dark:border-primary/40 rounded-2xl text-primary dark:text-primary-light hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-sm font-semibold group"
         >
           <Gift className="w-4 h-4 group-hover:scale-110 transition-transform" />
           Have a Redeem Code? Click here to activate your free access
@@ -406,10 +406,10 @@ export const Store = () => {
               exit={{ opacity: 0, height: 0, marginTop: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-white dark:bg-[#151518] rounded-2xl border border-emerald-100 dark:border-emerald-500/20 p-6 shadow-soft dark:shadow-none">
+              <div className="bg-white dark:bg-[#151518] rounded-2xl border border-primary/15 dark:border-primary/25 p-6 shadow-soft dark:shadow-none">
                 <div className="flex items-center gap-2 mb-4">
-                  <div className="p-2 bg-emerald-100 dark:bg-emerald-500/10 rounded-xl">
-                    <Gift className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  <div className="p-2 bg-primary/10 dark:bg-primary/15 rounded-xl">
+                    <Gift className="w-5 h-5 text-primary dark:text-primary-light" />
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Redeem Your Gift Code</h3>
@@ -418,7 +418,7 @@ export const Store = () => {
                 </div>
 
                 {redeemSuccess ? (
-                  <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl text-emerald-700 dark:text-emerald-400 font-medium">
+                  <div className="flex items-center gap-3 p-4 bg-accent-green/10 dark:bg-accent-green/15 rounded-xl text-accent-green font-medium">
                     <CheckCircle2 className="w-5 h-5 shrink-0" />
                     {redeemSuccess}
                   </div>
@@ -430,7 +430,7 @@ export const Store = () => {
                         onChange={e => { setRedeemCode(e.target.value.toUpperCase()); setRedeemError(''); setRedeemInfo(null); }}
                         onKeyDown={e => e.key === 'Enter' && handleRedeemValidate()}
                         placeholder="e.g. ABCD-EFGH-IJKL"
-                        className="flex-1 px-4 py-3 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-mono tracking-widest font-bold text-gray-900 dark:text-gray-100 placeholder:font-sans placeholder:tracking-normal placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent transition-all"
+                        className="flex-1 px-4 py-3 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-mono tracking-widest font-bold text-gray-900 dark:text-gray-100 placeholder:font-sans placeholder:tracking-normal placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                       />
                       <button
                         onClick={handleRedeemValidate}
@@ -448,8 +448,8 @@ export const Store = () => {
                     )}
 
                     {redeemInfo && (
-                      <div className="mt-3 p-4 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl">
-                        <p className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold mb-2">Valid Code — Grants Access To:</p>
+                      <div className="mt-3 p-4 bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30 rounded-xl">
+                        <p className="text-xs text-primary dark:text-primary-light font-semibold mb-2">Valid Code — Grants Access To:</p>
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="font-bold text-gray-900 dark:text-gray-100">{redeemInfo.products?.title}</p>
@@ -458,7 +458,7 @@ export const Store = () => {
                           <button
                             onClick={handleRedeemApply}
                             disabled={redeemApplying}
-                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
+                            className="px-5 py-2.5 bg-accent-green hover:brightness-110 disabled:opacity-50 text-gray-900 rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
                           >
                             {redeemApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
                             Redeem Now
