@@ -17,12 +17,14 @@ import {
   Sparkles,
   Wallet,
 } from 'lucide-react';
+import { productSavePercent } from '../lib/productStoreDisplay';
 
 interface Product {
   id: string;
   title: string;
   title_bn: string;
   price: number;
+  list_price?: number | null;
   duration: string;
   is_personal?: boolean;
 }
@@ -294,6 +296,8 @@ export const Checkout = () => {
 
   if (!product) return null;
 
+  const storeSavePct = productSavePercent(product.list_price, product.price);
+
   const originalPrice = Number(product.price) || 0;
   const finalPrice = Math.round(originalPrice * (1 - discount / 100) * 100) / 100;
   const spendableWallet = walletBalance + walletPromotional;
@@ -333,8 +337,18 @@ export const Checkout = () => {
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                   {product.title_bn || product.title}
                 </h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed">
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200">৳{product.price}</span>
+                <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                  {storeSavePct != null && product.list_price != null ? (
+                    <span className="text-zinc-400 line-through tabular-nums">৳{Number(product.list_price)}</span>
+                  ) : null}
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    ৳{product.price}
+                  </span>
+                  {storeSavePct != null ? (
+                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                      Save {storeSavePct}%
+                    </span>
+                  ) : null}
                   <span className="text-zinc-500 dark:text-zinc-500"> · </span>
                   {product.duration}
                   <span className="text-zinc-500 dark:text-zinc-500"> · </span>

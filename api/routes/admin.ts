@@ -1324,10 +1324,17 @@ router.post('/ops/subscription-reminder/test', verifyAdmin, async (req, res) => 
     if (authErr || !authData?.user?.id) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-    const body = (req.body || {}) as { send_email?: boolean; send_whatsapp?: boolean };
+    const body = (req.body || {}) as {
+      send_email?: boolean;
+      send_whatsapp?: boolean;
+      test_email?: string;
+      test_whatsapp_phone?: string;
+    };
     const result = await sendSubscriptionReminderTestToAdmin(supabase, authData.user.id, {
       send_email: body.send_email !== false,
       send_whatsapp: body.send_whatsapp !== false,
+      test_email: body.test_email,
+      test_whatsapp_phone: body.test_whatsapp_phone,
     });
     return res.json({ success: true, result });
   } catch (error: any) {

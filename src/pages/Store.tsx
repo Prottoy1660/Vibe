@@ -6,16 +6,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { getStoredLanguage, pickLocalized } from '../lib/language';
 import { getApiBaseUrl } from '../lib/apiBase';
+import { parseProductDescriptionBullets, productSavePercent } from '../lib/productStoreDisplay';
 
 interface Product {
   id: string;
   title: string;
   title_bn: string;
   price: number;
+  /** Optional higher “was” price for store strikethrough + Save %. Checkout charges `price`. */
+  list_price?: number | null;
   duration: string;
   icons: string[];
   description: string;
   image_url?: string;
+}
+
+function formatBdt(n: number) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return '0';
+  return Number.isInteger(x) ? x.toLocaleString() : x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 export const Store = () => {
@@ -263,7 +272,10 @@ export const Store = () => {
         </div>
       ) : filteredProducts.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map((product, idx) => (
+          {filteredProducts.map((product, idx) => {
+            const bullets = parseProductDescriptionBullets(product.description);
+            const savePct = productSavePercent(product.list_price, product.price);
+            return (
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -290,23 +302,48 @@ export const Store = () => {
               </div>
 
               <div className="p-6 flex-1 flex flex-col">
-                <div className="mb-4">
+                <div className="mb-4 min-h-0 flex-1">
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">
                       {pickLocalized(product.title, product.title_bn, language)}
                     </h3>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 line-clamp-2">{product.description}</p>
+                  {bullets.length > 0 ? (
+                    <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-300 leading-snug">
+                      {bullets.map((line, i) => (
+                        <li key={i} className="flex gap-2 items-start">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" aria-hidden />
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{product.description}</p>
+                  )}
                 </div>
 
-                <div className="mt-auto">
-                  <div className="flex items-end justify-between mb-4">
-                    <div>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase font-semibold tracking-wider">Price</p>
-                      <p className="text-2xl font-bold text-primary">৳{product.price}</p>
+                <div className="mt-auto pt-2">
+                  <div className="flex items-end justify-between mb-3 gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wider">Price</p>
+                      <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
+                        {savePct != null && product.list_price != null ? (
+                          <span className="text-sm text-gray-400 dark:text-gray-500 line-through tabular-nums">
+                            ৳{formatBdt(Number(product.list_price))}
+                          </span>
+                        ) : null}
+                        <p className="text-2xl font-bold text-emerald-500 dark:text-emerald-400 tabular-nums">
+                          ৳{formatBdt(Number(product.price))}
+                        </p>
+                      </div>
+                      {savePct != null ? (
+                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500 text-gray-900 dark:text-black">
+                          Save {savePct}%
+                        </span>
+                      ) : null}
                     </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 uppercase font-semibold tracking-wider">Duration</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold tracking-wider">Duration</p>
                       <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{product.duration}</p>
                     </div>
                   </div>
@@ -314,7 +351,7 @@ export const Store = () => {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleBuyNow(product.id)}
-                      className="w-full py-3 px-4 bg-gradient-primary text-white rounded-xl font-medium shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all flex items-center justify-center"
+                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-500 dark:hover:bg-emerald-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all flex items-center justify-center uppercase tracking-wide text-sm"
                     >
                       <ShoppingBag className="w-4 h-4 mr-2" />
                       Buy Now
@@ -336,7 +373,8 @@ export const Store = () => {
                 </div>
               </div>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="bg-white dark:bg-[#151518] rounded-xl p-12 text-center shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d]">

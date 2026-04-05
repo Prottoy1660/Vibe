@@ -130,6 +130,8 @@ export const AdminSubscriptionReminders = () => {
   const [runningTest, setRunningTest] = useState(false);
   const [testSendEmail, setTestSendEmail] = useState(true);
   const [testSendWhatsapp, setTestSendWhatsapp] = useState(true);
+  const [testEmailTo, setTestEmailTo] = useState('');
+  const [testWhatsappTo, setTestWhatsappTo] = useState('');
 
   const sample = useMemo(() => previewSampleArgs(), []);
   const previewRenewUrl = useMemo(() => {
@@ -361,29 +363,42 @@ export const AdminSubscriptionReminders = () => {
       setMsg({ type: 'err', text: 'Choose at least email or WhatsApp for the test.' });
       return;
     }
+    const emailTrim = testEmailTo.trim();
+    if (testSendEmail && emailTrim) {
+      const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim);
+      if (!ok) {
+        setMsg({ type: 'err', text: 'Enter a valid test email address, or leave it blank to use your profile email.' });
+        return;
+      }
+    }
     setRunningTest(true);
     setMsg(null);
     try {
       const data = await adminFetch('/api/admin/ops/subscription-reminder/test', 'POST', {
         send_email: testSendEmail,
         send_whatsapp: testSendWhatsapp,
+        ...(emailTrim ? { test_email: emailTrim } : {}),
+        ...(testWhatsappTo.trim() ? { test_whatsapp_phone: testWhatsappTo.trim() } : {}),
       });
       const r = data.result as {
         email?: { ok?: boolean; skipped?: boolean; error?: string; skipped_reason?: string };
         whatsapp?: { ok?: boolean; skipped?: boolean; error?: string; skipped_reason?: string };
+        recipients?: { email: string | null; whatsapp_e164: string | null };
       };
       const parts: string[] = [];
       if (testSendEmail) {
+        const dest = r.recipients?.email ? ` → ${r.recipients.email}` : '';
         const e = r.email;
-        if (!e) parts.push('Email: (no result)');
-        else if (e.skipped) parts.push(`Email: skipped (${e.skipped_reason || e.error || 'unknown'})`);
-        else parts.push(e.ok ? 'Email: sent' : `Email: failed — ${e.error || 'unknown'}`);
+        if (!e) parts.push(`Email: (no result)${dest}`);
+        else if (e.skipped) parts.push(`Email: skipped (${e.skipped_reason || e.error || 'unknown'})${dest}`);
+        else parts.push(e.ok ? `Email: sent${dest}` : `Email: failed — ${e.error || 'unknown'}${dest}`);
       }
       if (testSendWhatsapp) {
+        const dest = r.recipients?.whatsapp_e164 ? ` → ${r.recipients.whatsapp_e164}` : '';
         const w = r.whatsapp;
-        if (!w) parts.push('WhatsApp: (no result)');
-        else if (w.skipped) parts.push(`WhatsApp: skipped (${w.skipped_reason || w.error || 'unknown'})`);
-        else parts.push(w.ok ? 'WhatsApp: sent' : `WhatsApp: failed — ${w.error || 'unknown'}`);
+        if (!w) parts.push(`WhatsApp: (no result)${dest}`);
+        else if (w.skipped) parts.push(`WhatsApp: skipped (${w.skipped_reason || w.error || 'unknown'})${dest}`);
+        else parts.push(w.ok ? `WhatsApp: sent${dest}` : `WhatsApp: failed — ${w.error || 'unknown'}${dest}`);
       }
       setMsg({ type: 'ok', text: `Test: ${parts.join(' · ')}` });
     } catch (e: unknown) {
@@ -420,9 +435,34 @@ export const AdminSubscriptionReminders = () => {
         </h3>
         <p className="text-xs text-gray-600 dark:text-gray-400">
           <strong className="font-medium text-gray-800 dark:text-gray-200">Run now</strong> executes the same job as the daily cron
-          (real sends). <strong className="font-medium text-gray-800 dark:text-gray-200">Send test</strong> uses your admin profile email
-          and phone only, prefixed [TEST].
+          (real sends). <strong className="font-medium text-gray-800 dark:text-gray-200">Send test</strong> sends [TEST] messages to the
+          addresses below; leave a field blank to fall back to your admin profile email / phone.
         </p>
+        <div className="grid sm:grid-cols-2 gap-3 max-w-2xl">
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Test email (optional)</span>
+            <input
+              type="email"
+              value={testEmailTo}
+              onChange={(e) => setTestEmailTo(e.target.value)}
+              placeholder="you@example.com — blank = profile email"
+              autoComplete="email"
+              className="w-full rounded-lg border border-amber-200/80 dark:border-amber-900/40 bg-white dark:bg-[#151518] px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">Test WhatsApp number (optional)</span>
+            <input
+              type="tel"
+              inputMode="tel"
+              value={testWhatsappTo}
+              onChange={(e) => setTestWhatsappTo(e.target.value)}
+              placeholder="01… or 880… — blank = profile phone"
+              autoComplete="tel"
+              className="w-full rounded-lg border border-amber-200/80 dark:border-amber-900/40 bg-white dark:bg-[#151518] px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"

@@ -21,6 +21,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { productSavePercent } from '../../lib/productStoreDisplay';
 
 const PRODUCT_IMAGES_BUCKET = 'product-images';
 const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -42,6 +43,8 @@ interface Product {
   title: string;
   title_bn: string;
   price: number;
+  /** Optional “was” price — store shows strikethrough + Save % when above `price`. */
+  list_price?: number | null;
   duration: string;
   icons: string[];
   description: string;
@@ -71,6 +74,7 @@ export const AdminProducts = () => {
     title: '',
     title_bn: '',
     price: 0,
+    list_price: null,
     duration: '1 month',
     icons: [],
     description: '',
@@ -110,36 +114,64 @@ export const AdminProducts = () => {
 
   const handleSave = async () => {
     try {
+      const iconsNorm = Array.isArray(formData.icons)
+        ? formData.icons
+        : String(formData.icons || '')
+            .split(',')
+            .map((i: string) => i.trim())
+            .filter(Boolean);
+
+      const salePrice = Number(formData.price);
+      if (!Number.isFinite(salePrice) || salePrice < 0) {
+        alert('Enter a valid sale price (BDT) — this is what checkout charges.');
+        return;
+      }
+
+      let listPriceNorm: number | null = null;
+      const lp = formData.list_price;
+      if (lp !== null && lp !== undefined && String(lp).trim() !== '') {
+        const n = Number(lp);
+        if (!Number.isFinite(n) || n < 0) {
+          alert('Invalid original list price.');
+          return;
+        }
+        listPriceNorm = n;
+      }
+
+      if (listPriceNorm != null && listPriceNorm < salePrice) {
+        alert('Original list price must be greater than or equal to the sale price.');
+        return;
+      }
+
+      const title = (formData.title || '').trim();
+      if (!title) {
+        alert('Title (English) is required.');
+        return;
+      }
+
+      const payload = {
+        title,
+        title_bn: (formData.title_bn || '').trim(),
+        price: salePrice,
+        list_price: listPriceNorm,
+        duration: (formData.duration || '1 month').trim(),
+        icons: iconsNorm,
+        description: formData.description ?? '',
+        image_url: formData.image_url || '',
+        is_active: formData.is_active ?? true,
+        email_slots: formData.email_slots ?? 3,
+        email_slot_interval_days: formData.email_slot_interval_days ?? 0,
+        max_users_per_email: formData.max_users_per_email ?? 1,
+        single_device_warning: formData.single_device_warning ?? false,
+        with_cloud_access: formData.with_cloud_access ?? false,
+        is_personal: formData.is_personal ?? false,
+      };
+
       if (editingId) {
-        const updatePayload = { ...formData };
-        delete updatePayload.id;
-        delete (updatePayload as any).created_at;
-
-        const { error } = await supabase
-          .from('products')
-          .update({
-            ...updatePayload,
-            icons: Array.isArray(formData.icons)
-              ? formData.icons
-              : String(formData.icons || '')
-                  .split(',')
-                  .map((i: string) => i.trim())
-                  .filter(Boolean),
-          })
-          .eq('id', editingId);
-
+        const { error } = await supabase.from('products').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('products').insert({
-          ...formData,
-          icons: Array.isArray(formData.icons)
-            ? formData.icons
-            : String(formData.icons || '')
-                .split(',')
-                .map((i: string) => i.trim())
-                .filter(Boolean),
-        });
-
+        const { error } = await supabase.from('products').insert(payload);
         if (error) throw error;
       }
 
@@ -149,7 +181,7 @@ export const AdminProducts = () => {
     } catch (error: any) {
       console.error('Error saving product:', error);
       alert(
-        `Error saving product: ${error.message || 'Unknown database error'}. Check if the image_url column exists in Supabase.`
+        `Error saving product: ${error.message || 'Unknown database error'}. If you added list pricing, run migration 063 on Supabase.`
       );
     }
   };
@@ -197,6 +229,7 @@ export const AdminProducts = () => {
     setFormData({
       ...product,
       icons: product.icons || [],
+      list_price: product.list_price ?? null,
     });
     setEditingId(product.id);
     setIsAdding(false);
@@ -218,6 +251,7 @@ export const AdminProducts = () => {
       single_device_warning: false,
       with_cloud_access: false,
       is_personal: false,
+      list_price: null,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -239,6 +273,7 @@ export const AdminProducts = () => {
       single_device_warning: false,
       with_cloud_access: false,
       is_personal: true,
+      list_price: null,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -395,13 +430,51 @@ export const AdminProducts = () => {
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               />
             </Field>
-            <Field label="Price (BDT)" hint="Whole store uses the same currency.">
+            <Field
+              label="Sale price (BDT)"
+              hint="Amount charged at checkout. Store shows this as the main green price."
+            >
               <input
                 type="number"
-                value={formData.price}
+                min={0}
+                step="0.01"
+                value={formData.price ?? 0}
                 onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })}
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               />
+            </Field>
+            <Field
+              label="Original list price (BDT, optional)"
+              hint="Higher reference price for marketing only. Leave empty for no strikethrough."
+            >
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={
+                  formData.list_price === null || formData.list_price === undefined ? '' : formData.list_price
+                }
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    list_price: e.target.value === '' ? null : Number(e.target.value),
+                  })
+                }
+                className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
+              />
+              <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1.5">
+                {(() => {
+                  const pct = productSavePercent(
+                    formData.list_price != null && formData.list_price !== undefined
+                      ? Number(formData.list_price)
+                      : null,
+                    Number(formData.price),
+                  );
+                  return pct != null
+                    ? `Store preview: strikethrough list + Save ${pct}% (rounded).`
+                    : 'Must be strictly greater than sale price to show a discount badge.';
+                })()}
+              </p>
             </Field>
             <Field label="Duration" hint='e.g. "1 month" or "1 year".'>
               <input
@@ -435,11 +508,14 @@ export const AdminProducts = () => {
               </select>
             </Field>
             <div className="md:col-span-2">
-              <Field label="Description">
+              <Field
+                label="Description"
+                hint="One bullet per line. Optional leading - or • is stripped. Store shows each line with a green checkmark."
+              >
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm h-24"
+                  className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm min-h-[120px]"
                 />
               </Field>
             </div>
@@ -562,7 +638,8 @@ export const AdminProducts = () => {
         <div className="px-4 py-3 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5 flex items-center gap-2">
           <Info className="w-4 h-4 text-indigo-500 shrink-0" />
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            Prices are shown in <strong className="font-medium">BDT</strong>. Edit sets pricing for checkout and coupons.
+            <strong className="font-medium">Sale price</strong> is charged at checkout. Optional{' '}
+            <strong className="font-medium">list price</strong> is display-only (strikethrough + Save %).
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -593,8 +670,15 @@ export const AdminProducts = () => {
                       <div className="text-xs text-gray-500 dark:text-gray-400">{product.title_bn}</div>
                     ) : null}
                   </td>
-                  <td className="py-3 px-4 font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
-                    BDT {Number(product.price).toLocaleString()}
+                  <td className="py-3 px-4 tabular-nums">
+                    <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                      BDT {Number(product.price).toLocaleString()}
+                    </div>
+                    {product.list_price != null && Number(product.list_price) > Number(product.price) ? (
+                      <div className="text-[11px] text-gray-500 line-through">
+                        was BDT {Number(product.list_price).toLocaleString()}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{product.duration}</td>
                   {activeTab === 'regular' && (

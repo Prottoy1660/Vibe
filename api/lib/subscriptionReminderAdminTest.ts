@@ -19,15 +19,35 @@ import { buildExpiryReminderEmailHtml } from './reminderEmailHtml.js';
 export type TestSendResult = {
   email?: ChannelSendResult & { skipped_reason?: string };
   whatsapp?: ChannelSendResult & { skipped_reason?: string };
+  /** Where the test was actually sent (admin-only response). */
+  recipients?: { email: string | null; whatsapp_e164: string | null };
 };
+
+function isValidTestEmail(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 5 || t.length > 320) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t);
+}
 
 export async function sendSubscriptionReminderTestToAdmin(
   supabase: SupabaseClient,
   adminUserId: string,
-  opts: { send_email?: boolean; send_whatsapp?: boolean },
+  opts: {
+    send_email?: boolean;
+    send_whatsapp?: boolean;
+    /** If set and valid, test email goes here instead of profile email */
+    test_email?: string | null | undefined;
+    /** If set, parsed as BD-style mobile; else profile phone */
+    test_whatsapp_phone?: string | null | undefined;
+  },
 ): Promise<TestSendResult> {
   const sendEmail = opts.send_email !== false;
   const sendWa = opts.send_whatsapp !== false;
+
+  const overrideEmail = typeof opts.test_email === 'string' ? opts.test_email.trim() : '';
+  if (overrideEmail && !isValidTestEmail(overrideEmail)) {
+    throw new Error('Invalid test_email address');
+  }
 
   const { data: profile, error: pErr } = await supabase
     .from('users')
@@ -49,7 +69,7 @@ export async function sendSubscriptionReminderTestToAdmin(
   const integrationStored = await loadReminderIntegrationsStored(supabase);
   const outbound = resolveReminderOutbound(integrationStored);
 
-  const out: TestSendResult = {};
+  const out: TestSendResult = { recipients: { email: null, whatsapp_e164: null } };
   const html = buildExpiryReminderEmailHtml({
     title,
     bodyPlain: body,
@@ -59,9 +79,10 @@ export async function sendSubscriptionReminderTestToAdmin(
   });
 
   if (sendEmail) {
-    const to = profile?.email?.trim();
+    const to = overrideEmail || profile?.email?.trim() || '';
+    out.recipients!.email = to || null;
     if (!to) {
-      out.email = { ok: false, skipped: true, skipped_reason: 'no_email_on_profile' };
+      out.email = { ok: false, skipped: true, skipped_reason: 'no_email_entered_or_on_profile' };
     } else {
       out.email = await sendExpiryReminderEmail({
         to,
@@ -74,9 +95,18 @@ export async function sendSubscriptionReminderTestToAdmin(
   }
 
   if (sendWa) {
-    const waTo = phoneToWhatsappE164(profile?.phone ?? undefined);
+    const rawOverride =
+      typeof opts.test_whatsapp_phone === 'string' ? opts.test_whatsapp_phone.trim() : '';
+    const waTo = rawOverride
+      ? phoneToWhatsappE164(rawOverride)
+      : phoneToWhatsappE164(profile?.phone ?? undefined);
+    out.recipients!.whatsapp_e164 = waTo;
     if (!waTo) {
-      out.whatsapp = { ok: false, skipped: true, skipped_reason: 'no_phone_on_profile' };
+      out.whatsapp = {
+        ok: false,
+        skipped: true,
+        skipped_reason: rawOverride ? 'invalid_test_whatsapp_phone' : 'no_phone_on_profile',
+      };
     } else {
       out.whatsapp = await sendExpiryReminderWhatsApp({
         toE164: waTo,
