@@ -264,6 +264,7 @@ export const AdobeEmail = () => {
               id,
               created_at,
               status,
+              payment_method,
               auto_renew,
               products:product_id (id, duration, price, email_slots, email_slot_interval_days, max_users_per_email, single_device_warning, is_personal)
             )
@@ -282,8 +283,13 @@ export const AdobeEmail = () => {
         // Map the joined data and calculate expiration
         validFormattedEmails = userEmails
           .filter((item: any) => {
-             // Exclude emails tied to refunded or cancelled orders
-             return item.orders?.status === 'paid' || item.orders?.status === 'completed';
+            const s = item.orders?.status;
+            const pm = item.orders?.payment_method;
+            if (s === 'refunded' || s === 'cancelled') return false;
+            if (s === 'paid' || s === 'completed') return true;
+            // Redeem: mailbox may be assigned while order is still pending payment
+            if (s === 'pending' && pm === 'redeem_code') return true;
+            return false;
           })
           .map((item: any) => {
           let subscription_details = undefined;

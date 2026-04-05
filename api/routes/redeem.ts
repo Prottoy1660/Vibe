@@ -278,7 +278,15 @@ router.post('/apply', requireUser, async (req, res) => {
     const assignment = await assignEmailForOrder(supabase, order.id, user.id, productUuid);
 
     if (assignment.success) {
-      await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+      const { error: completeErr } = await supabase
+        .from('orders')
+        .update({ status: 'completed' })
+        .eq('id', order.id);
+      if (completeErr) {
+        console.error('[redeem/apply] failed to mark order completed:', completeErr);
+      }
+    } else {
+      console.error('[redeem/apply] email assignment failed:', order.id, assignment.error, assignment.code);
     }
 
     try {
@@ -298,7 +306,16 @@ router.post('/apply', requireUser, async (req, res) => {
       /* best-effort */
     }
 
-    res.json({ success: true, message: 'Code redeemed successfully!', order_id: order.id });
+    res.json({
+      success: true,
+      message: assignment.success
+        ? 'Code redeemed successfully!'
+        : 'Code redeemed, but no Adobe mailbox was assigned yet. Check Adobe Email after inventory is restocked, or contact support.',
+      order_id: order.id,
+      email_assigned: assignment.success,
+      assignment_error: assignment.success ? undefined : assignment.error,
+      assignment_code: assignment.success ? undefined : assignment.code,
+    });
   } catch (err) {
     console.error('Redeem apply error:', err);
     if (user?.id && typeof codeRaw === 'string') {

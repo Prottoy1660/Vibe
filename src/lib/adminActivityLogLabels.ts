@@ -87,6 +87,7 @@ const API_PATTERN: Array<{ re: RegExp; label: string }> = [
   { re: /^PUT \/api\/admin\/users\/[^/]+$/, label: 'Updated a user account' },
   { re: /^DELETE \/api\/admin\/ops\/support-tickets\/[^/]+$/, label: 'Deleted a support ticket' },
   { re: /^POST \/api\/admin\/redeem\/cancel\/[^/]+$/, label: 'Cancelled / seized a redeem order' },
+  { re: /^POST \/api\/admin\/redeem\/restore\/[^/]+$/, label: 'Restored a seized redeem order (new payment window)' },
   { re: /^POST \/api\/admin\/redeem\/mark-paid\/[^/]+$/, label: 'Marked a redeem order as paid' },
   { re: /^POST \/api\/admin\/orders\/[^/]+\/renew$/, label: 'Triggered order renewal' },
 ];

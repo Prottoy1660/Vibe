@@ -3,11 +3,12 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
   RefreshCw, ShieldCheck, Hash, Package, Users, X,
-  Download, Layers, Ban, Clock, AlertTriangle, CheckCircle,
+  Download, Layers, Ban, Clock, AlertTriangle, CheckCircle, RotateCcw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { REDEEM_RESTORE_WINDOW_MS } from '../../lib/redeemManualPaymentPolicy';
 
 interface Product {
   id: string;
@@ -416,6 +417,34 @@ export const AdminRedeemCodes = () => {
       alert('Redeem seized: access revoked, user banned, amount reversed.');
     } catch (err: any) {
       alert('Error: ' + (err.message || 'Could not seize order'));
+    }
+  };
+
+  const restoreOrder = async (orderId: string) => {
+    if (
+      !window.confirm(
+        'Restore this user? They will be unbanned, Adobe emails reactivated, and a fresh 24-hour manual payment window will start. (Only possible within 48 hours after seize — the server will reject if the window has passed.)',
+      )
+    ) {
+      return;
+    }
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      const response = await fetch(`${base}/api/admin/redeem/restore/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Failed to restore order');
+      await fetchAll();
+      alert(body.message || 'Access restored.');
+    } catch (err: any) {
+      alert('Error: ' + (err.message || 'Could not restore order'));
     }
   };
 
@@ -1136,7 +1165,8 @@ export const AdminRedeemCodes = () => {
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
               These accounts were banned and access removed. Order rows are kept with user, code, emails, and amount for your audit trail.
-              Payment events include a matching reversal so totals stay honest.
+              Payment events include a matching reversal so totals stay honest.{' '}
+              <strong>Restore</strong> is only allowed within <strong>48 hours</strong> after seize; after that the row stays for audit only.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -1164,12 +1194,19 @@ export const AdminRedeemCodes = () => {
                   <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     By
                   </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
                 {revokedOrders.map((order) => {
                   const emails = order.provisioned_emails || [];
                   const seizedAt = order.redeem_seized_at ? new Date(order.redeem_seized_at) : null;
+                  const restoreDeadline =
+                    seizedAt != null ? new Date(seizedAt.getTime() + REDEEM_RESTORE_WINDOW_MS) : null;
+                  const restoreAllowed =
+                    restoreDeadline != null && Date.now() <= restoreDeadline.getTime();
                   return (
                     <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
                       <td className="px-5 py-3.5">
@@ -1191,6 +1228,27 @@ export const AdminRedeemCodes = () => {
                       </td>
                       <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-300">
                         {order.seized_by_admin?.name || order.seized_by_admin?.email || order.redeem_seized_by || '—'}
+                      </td>
+                      <td className="px-5 py-3.5 align-top">
+                        {restoreAllowed ? (
+                          <>
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1.5 max-w-[140px] leading-snug">
+                              Restore by {restoreDeadline ? format(restoreDeadline, 'MMM d, yyyy HH:mm') : '—'}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => restoreOrder(order.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25 transition-colors"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Restore access
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[160px] inline-block leading-snug">
+                            Restore closed (48h after seize)
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

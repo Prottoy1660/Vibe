@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { getStoredLanguage, pickLocalized } from '../lib/language';
 import { getApiBaseUrl } from '../lib/apiBase';
+import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseProductDescriptionBullets, productSavePercent } from '../lib/productStoreDisplay';
 
 interface Product {
@@ -191,8 +192,11 @@ export const Store = () => {
     setRedeemApplying(true);
     setRedeemError('');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        setRedeemError('Session expired. Please sign in again.');
+        return;
+      }
 
       const API_URL = getApiBaseUrl();
       const res = await fetch(`${API_URL}/api/redeem/apply`, {
@@ -205,7 +209,14 @@ export const Store = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setRedeemSuccess('🎉 Code redeemed! Your access has been activated.');
+        let successText =
+          typeof data.message === 'string' && data.message.trim()
+            ? data.message
+            : '🎉 Code redeemed! Your access has been activated.';
+        if (data.email_assigned === false && data.assignment_error) {
+          successText += `\n\nDetails: ${data.assignment_error}`;
+        }
+        setRedeemSuccess(successText);
         setRedeemInfo(null);
         setRedeemCode('');
         setTimeout(() => navigate('/adobe-email'), 2000);
@@ -418,8 +429,8 @@ export const Store = () => {
                 </div>
 
                 {redeemSuccess ? (
-                  <div className="flex items-center gap-3 p-4 bg-accent-green/10 dark:bg-accent-green/15 rounded-xl text-accent-green font-medium">
-                    <CheckCircle2 className="w-5 h-5 shrink-0" />
+                  <div className="flex items-start gap-3 p-4 bg-accent-green/10 dark:bg-accent-green/15 rounded-xl text-accent-green font-medium whitespace-pre-line">
+                    <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" />
                     {redeemSuccess}
                   </div>
                 ) : (

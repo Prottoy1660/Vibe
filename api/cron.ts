@@ -4,11 +4,12 @@ import dotenv from 'dotenv';
 import { assignEmailForOrder } from './lib/emailAssignment.js';
 import { productDurationToMonths } from './lib/productDuration.js';
 import { runSubscriptionExpiryReminders } from './lib/subscriptionExpiryReminders.js';
+import { runAutoSeizeOverdueRedeemOrders } from './lib/redeemSeizeUnpaid.js';
 
 dotenv.config();
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 /**
@@ -127,6 +128,23 @@ export function initCronJobs() {
       
     } catch (err) {
       console.error('[CRON] Subscription check failed:', err);
+    }
+  });
+
+  // Hourly: auto-seize redeem orders whose manual payment due time passed (24h window from payment_due_date or created_at).
+  cron.schedule('15 * * * *', async () => {
+    const off =
+      process.env.REDEEM_AUTO_SEIZE_ENABLED === '0' ||
+      String(process.env.REDEEM_AUTO_SEIZE_ENABLED || '').toLowerCase() === 'false';
+    if (off || !supabaseUrl || !supabaseServiceKey) return;
+    console.log('[CRON] Checking overdue redeem manual payments...');
+    try {
+      const r = await runAutoSeizeOverdueRedeemOrders(supabase);
+      if (r.scanned > 0) {
+        console.log(`[CRON] Redeem auto-seize: scanned=${r.scanned} seized=${r.seized}`, r.errors.length ? r.errors : '');
+      }
+    } catch (err) {
+      console.error('[CRON] Redeem auto-seize failed:', err);
     }
   });
 

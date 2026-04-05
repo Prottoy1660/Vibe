@@ -24,6 +24,10 @@ import {
 import { runSubscriptionExpiryReminders } from '../lib/subscriptionExpiryReminders.js';
 import { sendSubscriptionReminderTestToAdmin } from '../lib/subscriptionReminderAdminTest.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
+import {
+  seizeRedeemOrderForUnpaid,
+  restoreRedeemOrderAfterSeize,
+} from '../lib/redeemSeizeUnpaid.js';
 
 dotenv.config();
 
@@ -1544,72 +1548,56 @@ router.post('/redeem/cancel/:orderId', verifyAdmin, async (req, res) => {
     const { data: adminAuth } = await supabase.auth.getUser(token);
     const adminUserId = adminAuth?.user?.id || null;
 
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .select('id, user_id, product_id, total_amount, redeem_pending, payment_status, status, redeem_seized_at')
-      .eq('id', orderId)
-      .single();
-    if (orderError || !order) return res.status(404).json({ error: 'Order not found' });
-
-    if ((order as any).redeem_seized_at) {
-      return res.status(400).json({ error: 'This redeem order was already seized' });
-    }
-    if (!(order as any).redeem_pending || (order as any).payment_status !== 'pending') {
-      return res.status(400).json({ error: 'Not a pending manual-payment redeem order' });
-    }
-
-    const { data: targetUser } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', (order as any).user_id)
-      .single();
-    if (targetUser?.role === 'admin' || targetUser?.role === 'super_admin') {
-      return res.status(403).json({ error: 'Cannot seize admin accounts' });
-    }
-
-    const nowIso = new Date().toISOString();
-    const { error: updateError } = await supabase
-      .from('orders')
-      .update({
-        status: 'cancelled',
-        payment_status: 'cancelled',
-        redeem_pending: false,
-        payment_due_date: null,
-        redeem_seized_at: nowIso,
-        redeem_seized_by: adminUserId,
-      })
-      .eq('id', orderId)
-      .eq('redeem_pending', true)
-      .eq('payment_status', 'pending');
-    if (updateError) throw updateError;
-
-    await supabase.from('user_emails').update({ is_active: false }).eq('order_id', orderId);
-
-    await supabase.from('users').update({ is_banned: true }).eq('id', (order as any).user_id);
-
-    const amt = Number((order as any).total_amount || 0);
-    const { error: paymentError } = await supabase.from('payment_events').insert({
-      order_id: orderId,
-      user_id: (order as any).user_id,
-      event_type: 'redeem_seized',
-      amount: amt > 0 ? -amt : 0,
-      message: 'Redeem seized (unpaid): access revoked; notional amount reversed',
-      meta: { seized_by: adminUserId },
+    const result = await seizeRedeemOrderForUnpaid(supabase, orderId, {
+      seizedByUserId: adminUserId,
+      source: 'admin',
     });
-    if (paymentError) console.error('Failed to record redeem seize payment event:', paymentError);
-
-    await supabase.from('order_events').insert({
-      order_id: orderId,
-      user_id: (order as any).user_id,
-      event_type: 'redeem_seized',
-      status: 'cancelled',
-      message: 'Admin seized redeem order (manual payment not received)',
-      meta: { admin_id: adminUserId },
-    });
+    if (result.ok === false) {
+      const status =
+        result.code === 'not_found'
+          ? 404
+          : result.code === 'admin_user'
+            ? 403
+            : 400;
+      return res.status(status).json({ error: result.error });
+    }
 
     return res.json({ success: true, message: 'Access seized, user banned, and amount reversed from records' });
   } catch (error: any) {
     console.error('redeem cancel:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+// Restore after seize: unban, reactivate Adobe emails, new 24h manual-payment window
+router.post('/redeem/restore/:orderId', verifyAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
+    const { data: adminAuth } = await supabase.auth.getUser(token);
+    const adminUserId = adminAuth?.user?.id || null;
+
+    const result = await restoreRedeemOrderAfterSeize(supabase, orderId, adminUserId);
+    if (result.ok === false) {
+      const status =
+        result.code === 'not_found'
+          ? 404
+          : result.code === 'admin_user'
+            ? 403
+            : 400;
+      return res.status(status).json({ error: result.error, code: result.code });
+    }
+
+    return res.json({
+      success: true,
+      message:
+        'Access restored: user unbanned, emails reactivated, and a new 24-hour payment window was set. Mark paid when you receive money.',
+    });
+  } catch (error: any) {
+    console.error('redeem restore:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });

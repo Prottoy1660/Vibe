@@ -7,8 +7,8 @@ import rateLimit from 'express-rate-limit'
 
 const router = Router()
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim()
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const supabase =
   supabaseUrl && supabaseServiceKey
     ? createClient(supabaseUrl, supabaseServiceKey)
@@ -125,6 +125,7 @@ router.get('/my-emails', async (req: Request, res: Response): Promise<void> => {
           id,
           created_at,
           status,
+          payment_method,
           auto_renew,
           products:product_id (id, duration, price, email_slots, email_slot_interval_days, max_users_per_email, single_device_warning, is_personal)
         )
