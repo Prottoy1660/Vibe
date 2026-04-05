@@ -438,36 +438,34 @@ export const AdminOrders = () => {
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-2xl border border-indigo-200/40 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 via-violet-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
         <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl pointer-events-none" />
-        <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2.5 rounded-xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
-              <Sparkles className="w-6 h-6" />
+        <div className="relative flex flex-col gap-4 min-w-0 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-1 items-start gap-3">
+            <div className="shrink-0 rounded-xl bg-indigo-500/15 p-2.5 text-indigo-600 dark:text-indigo-400">
+              <Sparkles className="h-6 w-6" />
             </div>
-            <div>
-              <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Order management</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Review recent orders (last 200). <strong className="font-medium text-gray-800 dark:text-gray-200">Pending</strong>{' '}
-                includes gateway orders awaiting approval and <strong className="font-medium text-gray-800 dark:text-gray-200">redeem</strong>{' '}
-                orders where access is active but manual cash is still due. Amounts are in{' '}
-                <strong className="font-medium text-gray-800 dark:text-gray-200">BDT</strong>.
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 md:text-2xl">Order management</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-snug text-gray-600 dark:text-gray-400">
+                Last 200 orders · <strong className="font-medium text-gray-800 dark:text-gray-200">Pending</strong> = gateway approval or redeem
+                manual pay · <strong className="font-medium text-gray-800 dark:text-gray-200">BDT</strong>
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
             <button
               type="button"
               onClick={handleBulkAssign}
               disabled={loading || assigningBulk || unfulfilledCount === 0}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold border border-transparent shadow-sm disabled:opacity-50 transition-all active:scale-95 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-transparent px-3 py-2 text-xs font-semibold text-white shadow-sm transition-all active:scale-[0.98] disabled:opacity-50 sm:px-4 sm:text-sm ${
                 unfulfilledCount > 0
-                  ? 'bg-orange-500 hover:bg-orange-600 shadow-[0_0_15px_-3px_rgba(249,115,22,0.4)] animate-pulse'
+                  ? 'bg-orange-500 shadow-[0_0_15px_-3px_rgba(249,115,22,0.4)] animate-pulse hover:bg-orange-600'
                   : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
             >
-              {assigningBulk ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {assigningBulk ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Sparkles className="h-4 w-4 shrink-0" />}
               Fulfill Missing
               {unfulfilledCount > 0 && (
-                <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs font-bold tabular-nums">
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-bold tabular-nums text-white">
                   {unfulfilledCount}
                 </span>
               )}
@@ -476,9 +474,9 @@ export const AdminOrders = () => {
               type="button"
               onClick={() => fetchOrders()}
               disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#303038] text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-white/60 dark:hover:bg-white/5 disabled:opacity-50 transition-all"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition-all hover:bg-white/60 disabled:opacity-50 dark:border-[#303038] dark:text-gray-200 dark:hover:bg-white/5 sm:text-sm"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 shrink-0 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
             {stats.pending > 0 && (
@@ -486,16 +484,16 @@ export const AdminOrders = () => {
                 type="button"
                 onClick={handleDeleteAllPending}
                 disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-300 text-sm font-semibold border border-red-100 dark:border-red-500/25 hover:bg-red-100/80 dark:hover:bg-red-500/20 disabled:opacity-50"
+                className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100/80 disabled:opacity-50 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20 sm:text-sm"
               >
-                <Trash2 className="w-4 h-4" />
-                Clear all pending
+                <Trash2 className="h-4 w-4 shrink-0" />
+                Clear pending
               </button>
             )}
           </div>
         </div>
 
-        <div className="relative mt-6 flex flex-wrap gap-2">
+        <div className="relative mt-6 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
           {filters.map((f) => {
             const active = filter === f.key;
             return (
@@ -503,7 +501,7 @@ export const AdminOrders = () => {
                 key={f.key}
                 type="button"
                 onClick={() => setFilter(f.key)}
-                className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all ${
+                className={`inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
                   active
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
                     : 'bg-white/70 dark:bg-white/5 text-gray-700 dark:text-gray-300 border border-gray-200/80 dark:border-[#303038] hover:border-indigo-300 dark:hover:border-indigo-500/30'

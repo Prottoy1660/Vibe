@@ -20,7 +20,7 @@ import cpanelRoutes from './routes/cpanel.js'
 import adminRoutes from './routes/admin.js'
 import redeemRoutes from './routes/redeem.js'
 import platformRoutes from './routes/platform.js'
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import cronRoutes from './routes/cron.js'
 import telemetryRoutes from './routes/telemetry.js'
 import referralRoutes from './routes/referral.js'
@@ -34,7 +34,15 @@ const __dirname = path.dirname(__filename)
 dotenv.config()
 
 const app: express.Application = express()
-app.set('trust proxy', 1)
+// Behind reverse proxy: default 1 hop. Use TRUST_PROXY=2 if CDN + edge both prepend X-Forwarded-For. TRUST_PROXY=true only if you intend to trust all hops (see Express docs).
+const trustProxyEnv = process.env.TRUST_PROXY?.trim()
+if (trustProxyEnv === 'true' || trustProxyEnv === 'yes') {
+  app.set('trust proxy', true)
+} else if (trustProxyEnv && !Number.isNaN(Number(trustProxyEnv))) {
+  app.set('trust proxy', Number(trustProxyEnv))
+} else {
+  app.set('trust proxy', 1)
+}
 
 function withWwwVariants(url?: string) {
   if (!url) return [];
@@ -98,12 +106,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Rate Limiting
+// Note: SPA `apiClient` probes every candidate origin with GET /api/health per cold resolve — those must not consume the same bucket as real API traffic (NAT / shared hosting would hit 200 fast).
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per `window` (here, per 15 minutes)
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' }
+  max: Number(process.env.API_GLOBAL_RATE_LIMIT_MAX || 900),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
+  keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'unknown'),
+  skip: (req) => req.method === 'OPTIONS' || req.path === '/api/health',
 })
 
 const strictLimiter = rateLimit({

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
   RefreshCw, ShieldCheck, Hash, Package, Users, X,
-  Download, Layers, Ban, Clock, AlertTriangle, CheckCircle, RotateCcw,
+  Download, Layers, Ban, Clock, AlertTriangle, CheckCircle, RotateCcw, Search, Minus,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { REDEEM_RESTORE_WINDOW_MS } from '../../lib/redeemManualPaymentPolicy';
@@ -19,6 +19,61 @@ interface Product {
 
 const productSelectClassName =
   'w-full min-h-[42px] px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 dark:[color-scheme:dark]';
+
+const BD_TZ = 'Asia/Dhaka';
+
+function formatBdDateShort(d: Date): string {
+  return formatInTimeZone(d, BD_TZ, 'MMM d, yy');
+}
+
+function formatBdDateTime12(d: Date): string {
+  return formatInTimeZone(d, BD_TZ, 'MMM d, h:mm a');
+}
+
+type RedeemSelectVisualState = 'checked' | 'unchecked' | 'indeterminate';
+
+function RedeemSelectToggle({
+  state,
+  onToggle,
+  ariaLabel,
+  disabled,
+}: {
+  state: RedeemSelectVisualState;
+  onToggle: () => void;
+  ariaLabel: string;
+  disabled?: boolean;
+}) {
+  const on = state !== 'unchecked';
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state === 'indeterminate' ? 'mixed' : state === 'checked'}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onToggle();
+      }}
+      className={`flex h-[14px] w-[14px] shrink-0 items-center justify-center rounded-[3px] border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-40 dark:focus-visible:ring-offset-[#151518] ${
+        on
+          ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm dark:border-indigo-500 dark:bg-indigo-500'
+          : 'border-zinc-400/80 bg-white dark:border-zinc-500 dark:bg-zinc-950'
+      }`}
+    >
+      {state === 'checked' ? (
+        <Check className="h-2.5 w-2.5" strokeWidth={3.5} aria-hidden />
+      ) : state === 'indeterminate' ? (
+        <Minus className="h-2 w-2" strokeWidth={3} aria-hidden />
+      ) : null}
+    </button>
+  );
+}
+
+const redeemStickyActionsThClass =
+  'sticky right-0 z-20 bg-gray-50/95 px-2 py-3 text-left align-bottom shadow-[-10px_0_20px_-8px_rgba(15,23,42,0.12)] backdrop-blur-[2px] dark:bg-[#1a1a1f]/95 dark:shadow-[-10px_0_24px_-8px_rgba(0,0,0,0.45)]';
+
+const redeemStickyActionsTdClass =
+  'sticky right-0 z-10 bg-white px-2 py-2.5 align-top shadow-[-10px_0_20px_-8px_rgba(15,23,42,0.1)] dark:bg-[#151518] dark:shadow-[-10px_0_24px_-8px_rgba(0,0,0,0.4)] group-hover:bg-gray-50/80 dark:group-hover:bg-[#1c1c21]';
 
 function sortProductsForAdmin(list: Product[]): Product[] {
   return [...list].sort((a, b) => {
@@ -63,6 +118,91 @@ interface RevokedOrder extends PendingOrder {
   seized_by_admin?: { name: string; email: string } | null;
 }
 
+async function redeemMarkPaidRequest(
+  orderId: string,
+  token: string,
+  base: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const response = await fetch(`${base}/api/admin/redeem/mark-paid/${orderId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, error: String((body as { error?: string }).error || (body as { message?: string }).message || `HTTP ${response.status}`) };
+  }
+  return { ok: true };
+}
+
+async function redeemSeizeRequest(
+  orderId: string,
+  token: string,
+  base: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const response = await fetch(`${base}/api/admin/redeem/cancel/${orderId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, error: String((body as { error?: string }).error || `HTTP ${response.status}`) };
+  }
+  return { ok: true };
+}
+
+async function redeemRestoreRequest(
+  orderId: string,
+  token: string,
+  base: string,
+): Promise<{ ok: true; message?: string } | { ok: false; error: string }> {
+  const response = await fetch(`${base}/api/admin/redeem/restore/${orderId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { ok: false, error: String((body as { error?: string }).error || `HTTP ${response.status}`) };
+  }
+  const message = (body as { message?: string }).message;
+  return { ok: true, message: typeof message === 'string' ? message : undefined };
+}
+
+function redeemOrderRestoreAllowed(order: RevokedOrder): boolean {
+  const seizedAt = order.redeem_seized_at ? new Date(order.redeem_seized_at) : null;
+  if (!seizedAt || Number.isNaN(seizedAt.getTime())) return false;
+  return Date.now() <= seizedAt.getTime() + REDEEM_RESTORE_WINDOW_MS;
+}
+
+function redeemOrderSearchHaystack(order: PendingOrder | RevokedOrder): string {
+  const u = order.users;
+  const chunks: (string | null | undefined)[] = [
+    u?.name,
+    u?.email,
+    u?.phone != null && u.phone !== '' ? String(u.phone) : null,
+    order.redeem_code_used,
+    order.products?.title,
+    order.id,
+    ...(order.provisioned_emails || []),
+  ];
+  const r = order as RevokedOrder;
+  if (r.redeem_seized_by) chunks.push(r.redeem_seized_by);
+  if (r.seized_by_admin?.name) chunks.push(r.seized_by_admin.name);
+  if (r.seized_by_admin?.email) chunks.push(r.seized_by_admin.email);
+  return chunks
+    .filter((s): s is string => typeof s === 'string' && s.length > 0)
+    .join(' ')
+    .toLowerCase();
+}
+
+function redeemOrderMatchesSearchQuery(order: PendingOrder | RevokedOrder, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const haystack = redeemOrderSearchHaystack(order);
+  return tokens.every((t) => haystack.includes(t));
+}
+
 function generateCode(length = 12): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
   let result = '';
@@ -99,10 +239,88 @@ export const AdminRedeemCodes = () => {
   const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
   /** Set when /redeem/pending or /redeem/revoked API fails or is skipped (no token / no API base). */
   const [redeemListsError, setRedeemListsError] = useState<string | null>(null);
+  const [pendingSelected, setPendingSelected] = useState<Set<string>>(() => new Set());
+  const [pendingBulkLoading, setPendingBulkLoading] = useState(false);
+  const [pendingSearchQuery, setPendingSearchQuery] = useState('');
+  const [revokedSearchQuery, setRevokedSearchQuery] = useState('');
+  const [revokedSelected, setRevokedSelected] = useState<Set<string>>(() => new Set());
+  const [revokedBulkLoading, setRevokedBulkLoading] = useState(false);
+
+  const pendingOrdersFiltered = useMemo(
+    () => pendingOrders.filter((o) => redeemOrderMatchesSearchQuery(o, pendingSearchQuery)),
+    [pendingOrders, pendingSearchQuery],
+  );
+
+  const revokedOrdersFiltered = useMemo(
+    () => revokedOrders.filter((o) => redeemOrderMatchesSearchQuery(o, revokedSearchQuery)),
+    [revokedOrders, revokedSearchQuery],
+  );
+
+  const revokedSelectedRestoreableCount = useMemo(() => {
+    let n = 0;
+    revokedSelected.forEach((id) => {
+      const o = revokedOrders.find((x) => x.id === id);
+      if (o && redeemOrderRestoreAllowed(o)) n += 1;
+    });
+    return n;
+  }, [revokedSelected, revokedOrders]);
+
+  const pendingHeaderSelectState = useMemo((): RedeemSelectVisualState => {
+    const n = pendingOrdersFiltered.length;
+    const s = pendingOrdersFiltered.filter((o) => pendingSelected.has(o.id)).length;
+    if (n === 0) return 'unchecked';
+    if (s === n) return 'checked';
+    if (s > 0) return 'indeterminate';
+    return 'unchecked';
+  }, [pendingOrdersFiltered, pendingSelected]);
+
+  const revokedHeaderSelectState = useMemo((): RedeemSelectVisualState => {
+    const n = revokedOrdersFiltered.length;
+    const s = revokedOrdersFiltered.filter((o) => revokedSelected.has(o.id)).length;
+    if (n === 0) return 'unchecked';
+    if (s === n) return 'checked';
+    if (s > 0) return 'indeterminate';
+    return 'unchecked';
+  }, [revokedOrdersFiltered, revokedSelected]);
 
   useEffect(() => {
     fetchAll();
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'pending') setPendingSelected(new Set());
+    if (activeTab !== 'revoked') setRevokedSelected(new Set());
+  }, [activeTab]);
+
+  useEffect(() => {
+    const visible = new Set(pendingOrdersFiltered.map((o) => o.id));
+    setPendingSelected((prev) => {
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      if (next.size === prev.size) {
+        let same = true;
+        prev.forEach((id) => {
+          if (!next.has(id)) same = false;
+        });
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [pendingOrdersFiltered]);
+
+  useEffect(() => {
+    const visible = new Set(revokedOrdersFiltered.map((o) => o.id));
+    setRevokedSelected((prev) => {
+      const next = new Set([...prev].filter((id) => visible.has(id)));
+      if (next.size === prev.size) {
+        let same = true;
+        prev.forEach((id) => {
+          if (!next.has(id)) same = false;
+        });
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [revokedOrdersFiltered]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -446,17 +664,104 @@ export const AdminRedeemCodes = () => {
         return;
       }
       const base = getApiBaseUrl();
-      const response = await fetch(`${base}/api/admin/redeem/cancel/${orderId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Failed to seize order');
+      const r = await redeemSeizeRequest(orderId, token, base);
+      if (r.ok === false) throw new Error(r.error);
       setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setPendingSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
       await fetchAll();
       alert('Redeem seized: access revoked for this order, amount reversed. User account was not banned.');
     } catch (err: any) {
       alert('Error: ' + (err.message || 'Could not seize order'));
+    }
+  };
+
+  const bulkMarkPaid = async () => {
+    const ids = [...pendingSelected];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Mark ${ids.length} selected order(s) as paid? Each will record manual payment and settled revenue.`,
+      )
+    ) {
+      return;
+    }
+    setPendingBulkLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      if (!base) {
+        alert('API URL is not configured.');
+        return;
+      }
+      const succeeded: string[] = [];
+      const failures: string[] = [];
+      for (const id of ids) {
+        const r = await redeemMarkPaidRequest(id, token, base);
+        if (r.ok === true) succeeded.push(id);
+        else failures.push(`${(pendingOrders.find((o) => o.id === id)?.users?.name || id).slice(0, 24)}: ${r.error}`);
+      }
+      if (succeeded.length) {
+        setPendingOrders((prev) => prev.filter((o) => !succeeded.includes(o.id)));
+        setPendingSelected(new Set());
+      }
+      await fetchAll();
+      const msg = `Marked paid: ${succeeded.length}. Failed: ${failures.length}.`;
+      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+    } catch (e: any) {
+      alert(e?.message || 'Bulk mark paid failed');
+    } finally {
+      setPendingBulkLoading(false);
+    }
+  };
+
+  const bulkSeize = async () => {
+    const ids = [...pendingSelected];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Seize ${ids.length} selected redeem order(s)? Access will be revoked for each, orders cancelled, amounts reversed. User accounts are not banned.`,
+      )
+    ) {
+      return;
+    }
+    setPendingBulkLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      if (!base) {
+        alert('API URL is not configured.');
+        return;
+      }
+      const succeeded: string[] = [];
+      const failures: string[] = [];
+      for (const id of ids) {
+        const r = await redeemSeizeRequest(id, token, base);
+        if (r.ok === true) succeeded.push(id);
+        else failures.push(`${(pendingOrders.find((o) => o.id === id)?.users?.name || id).slice(0, 24)}: ${r.error}`);
+      }
+      if (succeeded.length) {
+        setPendingOrders((prev) => prev.filter((o) => !succeeded.includes(o.id)));
+        setPendingSelected(new Set());
+      }
+      await fetchAll();
+      const msg = `Seized: ${succeeded.length}. Failed: ${failures.length}.`;
+      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+    } catch (e: any) {
+      alert(e?.message || 'Bulk seize failed');
+    } finally {
+      setPendingBulkLoading(false);
     }
   };
 
@@ -475,16 +780,80 @@ export const AdminRedeemCodes = () => {
         return;
       }
       const base = getApiBaseUrl();
-      const response = await fetch(`${base}/api/admin/redeem/restore/${orderId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      if (!base) {
+        alert('API URL is not configured.');
+        return;
+      }
+      const r = await redeemRestoreRequest(orderId, token, base);
+      if (r.ok === false) throw new Error(r.error);
+      setRevokedSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Failed to restore order');
       await fetchAll();
-      alert(body.message || 'Access restored.');
+      alert(r.message || 'Access restored.');
     } catch (err: any) {
       alert('Error: ' + (err.message || 'Could not restore order'));
+    }
+  };
+
+  const bulkRevokedRestore = async () => {
+    const selected = [...revokedSelected];
+    const restoreableIds = selected.filter((id) => {
+      const o = revokedOrders.find((x) => x.id === id);
+      return o != null && redeemOrderRestoreAllowed(o);
+    });
+    if (restoreableIds.length === 0) {
+      alert('No selected orders are still within the 48-hour restore window.');
+      return;
+    }
+    const skipped = selected.length - restoreableIds.length;
+    const skipNote =
+      skipped > 0 ? ` ${skipped} selected row(s) are past the window and will be skipped.` : '';
+    if (
+      !window.confirm(
+        `Restore ${restoreableIds.length} order(s)?${skipNote} Adobe emails will be reactivated and a fresh manual payment window will start for each.`,
+      )
+    ) {
+      return;
+    }
+    setRevokedBulkLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      if (!base) {
+        alert('API URL is not configured.');
+        return;
+      }
+      const succeeded: string[] = [];
+      const failures: string[] = [];
+      for (const id of restoreableIds) {
+        const r = await redeemRestoreRequest(id, token, base);
+        if (r.ok === true) succeeded.push(id);
+        else
+          failures.push(
+            `${(revokedOrders.find((o) => o.id === id)?.users?.name || id).slice(0, 24)}: ${r.error}`,
+          );
+      }
+      if (succeeded.length) {
+        setRevokedSelected((prev) => {
+          const next = new Set(prev);
+          succeeded.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+      await fetchAll();
+      const msg = `Restored: ${succeeded.length}. Failed: ${failures.length}.`;
+      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+    } catch (e: any) {
+      alert(e?.message || 'Bulk restore failed');
+    } finally {
+      setRevokedBulkLoading(false);
     }
   };
 
@@ -497,15 +866,14 @@ export const AdminRedeemCodes = () => {
         return;
       }
       const base = getApiBaseUrl();
-      const response = await fetch(`${base}/api/admin/redeem/mark-paid/${orderId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(body.error || body.message || `Failed to mark as paid (HTTP ${response.status})`);
-      }
+      const r = await redeemMarkPaidRequest(orderId, token, base);
+      if (r.ok === false) throw new Error(r.error);
       setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setPendingSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
       await fetchAll();
       alert('Marked as paid. Amount is now recorded as settled revenue.');
     } catch (err: any) {
@@ -556,27 +924,27 @@ export const AdminRedeemCodes = () => {
       {/* Header */}
       <div className="relative overflow-hidden rounded-2xl border border-emerald-200/40 dark:border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-transparent dark:from-indigo-950/40 dark:via-[#151518] dark:to-[#151518] p-6 md:p-8">
         <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
-        <div className="relative flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="flex items-start gap-3 min-w-0">
+        <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between min-w-0">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
             <div className="p-2.5 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
               <Gift className="w-6 h-6" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Redeem code manager</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Generate gift codes, track usage, and collect manual payments after redeem. Users get access first; you have 24h to mark paid
-                or seize access — seized rows stay visible with full details for your records.
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl leading-snug">
+                Gift codes, usage, and manual payment after redeem. Access first; you have 24h to mark paid or seize — seized rows stay in{' '}
+                <span className="font-medium text-gray-700 dark:text-gray-300">Seized / revoked</span>.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex shrink-0 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
             <button
               onClick={fetchAll}
               type="button"
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4 shrink-0" />
               Refresh
             </button>
             <button
@@ -585,17 +953,17 @@ export const AdminRedeemCodes = () => {
                 setForm((f) => ({ ...f, code: generateCode() }));
               }}
               type="button"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-colors"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20 transition-colors"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 shrink-0" />
               Generate code
             </button>
             <button
               onClick={() => setShowBulkPanel((v) => !v)}
               type="button"
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/15 transition-colors"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl text-xs sm:text-sm font-semibold border border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-500/15 transition-colors"
             >
-              <Layers className="w-4 h-4" />
+              <Layers className="w-4 h-4 shrink-0" />
               Bulk generate
             </button>
           </div>
@@ -890,17 +1258,17 @@ export const AdminRedeemCodes = () => {
           </div>
         ) : (
           <div className="p-4 sm:p-6 space-y-4">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-              <div>
+            <div className="flex flex-col gap-3 min-w-0 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+              <div className="shrink-0 lg:pr-2">
                 <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Codes</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Showing <span className="font-semibold text-gray-900 dark:text-gray-100">{filteredCodes.length}</span> of{' '}
                   <span className="font-semibold text-gray-900 dark:text-gray-100">{codes.length}</span>
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="relative w-full sm:w-72">
+              <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 [-webkit-overflow-scrolling:touch] [scrollbar-width:thin]">
+                <div className="relative w-44 shrink-0 sm:w-52 md:w-60">
                   <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                     <Hash className="w-4 h-4 text-gray-400" />
                   </div>
@@ -908,14 +1276,14 @@ export const AdminRedeemCodes = () => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search code or product…"
-                    className="w-full pl-10 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                    className="w-full pl-10 pr-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                   />
                 </div>
 
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                  className="shrink-0 rounded-xl border border-gray-200 bg-white px-2.5 py-2 text-sm dark:border-[#26262d] dark:bg-[#111113] dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
                 >
                   <option value="all">All statuses</option>
                   <option value="active">Active</option>
@@ -929,9 +1297,9 @@ export const AdminRedeemCodes = () => {
                     setSearchQuery('');
                     setStatusFilter('all');
                   }}
-                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-gray-200 bg-white px-2.5 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-[#26262d] dark:bg-[#111113] dark:text-gray-200 dark:hover:bg-white/5"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4 shrink-0" />
                   Reset
                 </button>
 
@@ -939,9 +1307,9 @@ export const AdminRedeemCodes = () => {
                   type="button"
                   onClick={downloadCsv}
                   disabled={filteredCodes.length === 0}
-                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/80 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-200 hover:bg-indigo-100/80 dark:hover:bg-indigo-500/15 disabled:opacity-40 transition-colors"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-indigo-200 bg-indigo-50/80 px-2.5 py-2 text-sm font-medium text-indigo-800 transition-colors hover:bg-indigo-100/80 disabled:opacity-40 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/15"
                 >
-                  <Download className="w-4 h-4" />
+                  <Download className="h-4 w-4 shrink-0" />
                   Download CSV
                 </button>
 
@@ -949,27 +1317,26 @@ export const AdminRedeemCodes = () => {
                   type="button"
                   onClick={() => void handleBulkDeactivateFiltered()}
                   disabled={saving || filteredCodes.filter((c) => c.is_active).length === 0}
-                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-500/10 text-amber-900 dark:text-amber-100 hover:bg-amber-100/80 disabled:opacity-40 transition-colors"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50/80 px-2.5 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100/80 disabled:opacity-40 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 dark:hover:bg-amber-500/20"
                 >
-                  <Ban className="w-4 h-4" />
-                  Deactivate all (list)
+                  <Ban className="h-4 w-4 shrink-0" />
+                  Deactivate all
                 </button>
 
                 <button
                   type="button"
                   onClick={() => void handleBulkDeleteFiltered()}
                   disabled={saving || filteredCodes.length === 0}
-                  className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50/80 dark:bg-red-500/10 text-red-800 dark:text-red-200 hover:bg-red-100/80 disabled:opacity-40 transition-colors"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-red-200 bg-red-50/80 px-2.5 py-2 text-sm font-medium text-red-800 transition-colors hover:bg-red-100/80 disabled:opacity-40 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/20"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Delete all (list)
+                  <Trash2 className="h-4 w-4 shrink-0" />
+                  Delete all
                 </button>
               </div>
             </div>
 
             <p className="text-[11px] text-gray-500 dark:text-gray-500">
-              CSV, deactivate, and delete apply to the <span className="font-semibold">codes currently shown</span> (search + status
-              filter). Use Reset to include everything loaded from the server.
+              CSV / Deactivate all / Delete all apply to the <span className="font-semibold">filtered list</span> only. Reset clears filters.
             </p>
 
             <div className="overflow-x-auto">
@@ -1074,120 +1441,269 @@ export const AdminRedeemCodes = () => {
       {/* Pending Payments Tab */}
       {activeTab === 'pending' && (
         <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] shadow-soft overflow-hidden">
-          <div className="p-5 border-b border-gray-100 dark:border-[#26262d]">
+          <div className="border-b border-gray-100 dark:border-[#26262d] px-4 py-3 sm:px-5 sm:py-4">
             <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
               <Clock className="w-5 h-5 text-orange-500" />
               Pending Redeem Payments
             </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Access is already granted (email slots). You have until the due time (default 24h) to collect payment. Mark paid to keep revenue;
-              seize to cancel this redeem order, revoke Adobe access for it, and reverse the amount in payment history (the user account is not banned — ban separately in Users if needed).
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-snug">
+              <span className="font-medium text-gray-700 dark:text-gray-300">Bangladesh time · 12-hour</span> — Collect before due. Mark paid or seize; search, then use row toggles or bulk.
             </p>
+            <details className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              <summary className="cursor-pointer select-none text-indigo-600 hover:underline dark:text-indigo-400 [&::-webkit-details-marker]:hidden">
+                More about pending payment &amp; seize
+              </summary>
+              <p className="mt-2 max-w-3xl border-l-2 border-gray-200 pl-3 leading-relaxed dark:border-gray-700">
+                Access (email slots) is already live. Default payment window is 24h from redeem. Mark paid to record revenue. Seize cancels the order, revokes Adobe access for it, reverses the amount in payment history, and does not ban the user account (ban from Users if needed). The header toggle selects all rows that match your current search.
+              </p>
+            </details>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+
+          {pendingOrders.length > 0 && (
+            <div className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/70 dark:bg-white/[0.03] px-4 sm:px-5 py-3 space-y-3">
+              <div className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-4">
+                <div className="min-w-0 w-full flex-1">
+                  <label className="sr-only" htmlFor="pending-redeem-search">
+                    Search pending orders
+                  </label>
+                  <div className="relative w-full">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                      aria-hidden
+                    />
+                    <input
+                      id="pending-redeem-search"
+                      type="search"
+                      value={pendingSearchQuery}
+                      onChange={(e) => setPendingSearchQuery(e.target.value)}
+                      placeholder="Search user, code, email, phone…"
+                      title="Matches name, email, phone, redeem code, product, Adobe emails, order id. Multiple words narrow the list."
+                      className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/35 dark:border-[#26262d] dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:ring-indigo-400/25"
+                      autoComplete="off"
+                    />
+                    {pendingSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setPendingSearchQuery('')}
+                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {pendingSearchQuery.trim() ? (
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Showing <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-300">{pendingOrdersFiltered.length}</span> of{' '}
+                      <span className="tabular-nums">{pendingOrders.length}</span>
+                      {pendingOrdersFiltered.length === 0 ? ' — try another word or clear the search.' : ''}
+                    </p>
+                  ) : null}
+                </div>
+                {pendingOrdersFiltered.length > 0 ? (
+                  <div className="flex flex-col gap-2 lg:min-w-[16rem] lg:items-end lg:pt-0.5">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 lg:text-right">
+                      {pendingSelected.size > 0 ? (
+                        <>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{pendingSelected.size}</span> selected — bulk actions:
+                        </>
+                      ) : (
+                        <>Top toggle = select all (current search).</>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void bulkMarkPaid()}
+                        disabled={pendingBulkLoading || pendingSelected.size === 0}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        {pendingBulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                        Bulk mark paid ({pendingSelected.size})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void bulkSeize()}
+                        disabled={pendingBulkLoading || pendingSelected.size === 0}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-red-600/90 px-3 py-2 text-xs font-semibold text-white hover:bg-red-600 disabled:pointer-events-none disabled:opacity-40 dark:bg-red-500/80 dark:hover:bg-red-500"
+                      >
+                        {pendingBulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                        Bulk seize ({pendingSelected.size})
+                      </button>
+                      {pendingSelected.size > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setPendingSelected(new Set())}
+                          disabled={pendingBulkLoading}
+                          className="px-2 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                          Clear selection
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto rounded-b-2xl overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+            {pendingOrders.length > 0 && pendingOrdersFiltered.length > 0 ? (
+            <table className="w-full min-w-0 table-auto border-collapse text-[13px] leading-snug">
               <thead className="bg-gray-50/80 dark:bg-white/[0.02]">
                 <tr>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="w-9 px-1.5 py-3 align-bottom" scope="col">
+                    <RedeemSelectToggle
+                      state={pendingHeaderSelectState}
+                      disabled={pendingOrdersFiltered.length === 0}
+                      ariaLabel={
+                        pendingHeaderSelectState === 'checked'
+                          ? 'Deselect all rows in this list'
+                          : 'Select all rows matching the current search'
+                      }
+                      onToggle={() => {
+                        const ids = pendingOrdersFiltered.map((o) => o.id);
+                        const allSelected =
+                          pendingOrdersFiltered.length > 0 &&
+                          pendingOrdersFiltered.every((o) => pendingSelected.has(o.id));
+                        if (allSelected) {
+                          setPendingSelected((prev) => {
+                            const next = new Set(prev);
+                            ids.forEach((id) => next.delete(id));
+                            return next;
+                          });
+                        } else {
+                          setPendingSelected((prev) => new Set([...prev, ...ids]));
+                        }
+                      }}
+                    />
+                  </th>
+                  <th className="max-w-[11rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     User
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Redeem code
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Code
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Provisioned emails
+                  <th className="max-w-[10rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Emails
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="max-w-[9rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Product
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Amount
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Amt
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Due
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th
+                    className={`${redeemStickyActionsThClass} text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+                    scope="col"
+                  >
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
-                {pendingOrders.map((order) => {
+                {pendingOrdersFiltered.map((order) => {
                   const dueDate = order.payment_due_date ? new Date(order.payment_due_date) : new Date(order.created_at);
                   const isOverdue = new Date() > dueDate;
                   const emails = order.provisioned_emails || [];
                   return (
-                    <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                      <td className="px-5 py-3.5">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown'}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{order.users?.email}</p>
+                    <tr
+                      key={order.id}
+                      className="group align-top transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
+                    >
+                      <td className="px-1.5 py-2.5 align-top">
+                        <RedeemSelectToggle
+                          state={pendingSelected.has(order.id) ? 'checked' : 'unchecked'}
+                          ariaLabel={`Select ${order.users?.name || 'order'}`}
+                          onToggle={() => {
+                            setPendingSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(order.id)) next.delete(order.id);
+                              else next.add(order.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                      <td className="max-w-[11rem] px-2 py-2.5 align-top">
+                        <div className="space-y-0.5">
+                          <p className="text-[13px] font-semibold leading-tight text-gray-900 dark:text-gray-100">
+                            {order.users?.name || 'Unknown'}
+                          </p>
+                          <p className="break-words text-xs text-gray-600 dark:text-gray-400">{order.users?.email}</p>
                           {order.users?.phone ? (
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500">{order.users.phone}</p>
+                            <p className="text-xs tabular-nums text-gray-500 dark:text-gray-500">{order.users.phone}</p>
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <span className="font-mono text-xs font-semibold text-gray-800 dark:text-gray-200">
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top">
+                        <span className="font-mono text-[11px] font-semibold tracking-wide text-gray-800 dark:text-gray-200">
                           {order.redeem_code_used || '—'}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 max-w-[220px]">
+                      <td className="max-w-[10rem] px-2 py-2.5 align-top">
                         {emails.length === 0 ? (
                           <span className="text-xs text-gray-400">—</span>
                         ) : (
-                          <div className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
-                            {emails.slice(0, 2).map((e) => (
-                              <div key={e} className="truncate" title={e}>
-                                {e}
-                              </div>
-                            ))}
-                            {emails.length > 2 ? (
-                              <span className="text-[10px] text-gray-400">+{emails.length - 2} more</span>
+                          <p
+                            className="truncate font-mono text-xs text-gray-600 dark:text-gray-300"
+                            title={emails.join(', ')}
+                          >
+                            {emails[0]}
+                            {emails.length > 1 ? (
+                              <span className="text-gray-400"> +{emails.length - 1}</span>
                             ) : null}
-                          </div>
+                          </p>
                         )}
                       </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <Package className="w-4 h-4 text-indigo-500 shrink-0" />
-                          <div>
-                            <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">{order.products?.title || 'Unknown'}</p>
-                            <p className="text-[10px] text-gray-400 dark:text-gray-500">Redeemed {format(new Date(order.created_at), 'MMM d, yyyy')}</p>
-                          </div>
+                      <td className="max-w-[9rem] px-2 py-2.5 align-top">
+                        <div className="min-w-0 space-y-0.5">
+                          <p className="text-[12px] font-semibold leading-snug text-gray-800 dark:text-gray-200">
+                            {order.products?.title || 'Unknown'}
+                          </p>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-500">
+                            {formatBdDateShort(new Date(order.created_at))}
+                          </p>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top tabular-nums">
                         <span className="text-sm font-bold text-gray-900 dark:text-gray-100">৳{order.total_amount}</span>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2">
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top">
+                        <div className="inline-flex items-center gap-1.5">
                           {isOverdue ? (
-                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
                           ) : (
-                            <Clock className="w-4 h-4 text-orange-500 shrink-0" />
+                            <Clock className="h-3.5 w-3.5 shrink-0 text-orange-500" />
                           )}
-                          <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-orange-600'}`}>
-                            {format(dueDate, 'MMM d, HH:mm')}
+                          <span
+                            className={`text-[12px] font-medium tabular-nums ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400'}`}
+                          >
+                            {formatBdDateTime12(dueDate)}
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
-                        <div className="flex flex-wrap items-center gap-2">
+                      <td className={redeemStickyActionsTdClass}>
+                        <div className="flex min-w-[6.5rem] flex-col gap-1.5">
                           <button
                             onClick={() => markPaid(order.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-500/10 dark:text-green-400 dark:hover:bg-green-500/20 transition-colors"
+                            title="Mark manual payment as received"
+                            className="inline-flex w-full items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600/15 px-2 py-1.5 text-[11px] font-semibold text-emerald-800 transition-colors hover:bg-emerald-600/25 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25"
                             type="button"
                           >
-                            <CheckCircle className="w-3.5 h-3.5" />
+                            <CheckCircle className="h-3.5 w-3.5 shrink-0" />
                             Mark paid
                           </button>
                           <button
                             onClick={() => cancelOrder(order.id)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20 transition-colors"
+                            title="Seize: revoke access and cancel order"
+                            className="inline-flex w-full items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-red-600/12 px-2 py-1.5 text-[11px] font-semibold text-red-800 transition-colors hover:bg-red-600/20 dark:bg-red-500/15 dark:text-red-300 dark:hover:bg-red-500/25"
                             type="button"
                           >
-                            <Ban className="w-3.5 h-3.5" />
+                            <Ban className="h-3.5 w-3.5 shrink-0" />
                             Seize
                           </button>
                         </div>
@@ -1197,11 +1713,17 @@ export const AdminRedeemCodes = () => {
                 })}
               </tbody>
             </table>
+            ) : null}
             {pendingOrders.length === 0 && (
               <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
                 {redeemListsError
                   ? 'Could not load this list — see the yellow notice above (API error or configuration).'
                   : 'No pending manual payments for redeem orders. Rows appear when someone redeems with payment still pending (cash/bKash not marked paid yet).'}
+              </div>
+            )}
+            {pendingOrders.length > 0 && pendingOrdersFiltered.length === 0 && (
+              <div className="py-12 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
+                No pending rows match your search. Clear the search box or try name, email, phone, or redeem code.
               </div>
             )}
           </div>
@@ -1210,96 +1732,257 @@ export const AdminRedeemCodes = () => {
 
       {activeTab === 'revoked' && (
         <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] shadow-soft overflow-hidden">
-          <div className="p-5 border-b border-gray-100 dark:border-[#26262d]">
+          <div className="border-b border-gray-100 dark:border-[#26262d] px-4 py-3 sm:px-5 sm:py-4">
             <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
               <Ban className="w-5 h-5 text-red-500" />
               Seized redeem orders
             </h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              These redeem orders were seized: Adobe access was removed and orders cancelled. Order rows are kept with user, code, emails, and amount for your audit trail.
-              Payment events include a matching reversal so totals stay honest.{' '}
-              <strong>Restore</strong> is only allowed within <strong>48 hours</strong> after seize; after that the row stays for audit only.
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 leading-snug">
+              <span className="font-medium text-gray-700 dark:text-gray-300">Bangladesh time · 12-hour</span> — Rows kept for audit. Restore only within 48h; search, toggles, bulk restore.
             </p>
+            <details className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              <summary className="cursor-pointer select-none text-indigo-600 hover:underline dark:text-indigo-400 [&::-webkit-details-marker]:hidden">
+                More about seized orders
+              </summary>
+              <p className="mt-2 max-w-3xl border-l-2 border-gray-200 pl-3 leading-relaxed dark:border-gray-700">
+                Seize removed Adobe access and cancelled the order. Payment history includes a reversal so totals stay correct. After 48 hours, restore is closed but the row remains for your records.
+              </p>
+            </details>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          {revokedOrders.length > 0 && (
+            <div className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/70 dark:bg-white/[0.03] px-4 sm:px-5 py-3 space-y-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+                <div className="min-w-0 w-full flex-1">
+                  <label className="sr-only" htmlFor="revoked-redeem-search">
+                    Search seized orders
+                  </label>
+                  <div className="relative w-full">
+                    <Search
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                      aria-hidden
+                    />
+                    <input
+                      id="revoked-redeem-search"
+                      type="search"
+                      value={revokedSearchQuery}
+                      onChange={(e) => setRevokedSearchQuery(e.target.value)}
+                      placeholder="Search user, code, email…"
+                      title="Matches name, email, phone, code, product, Adobe emails, admin who seized, order id."
+                      className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/35 dark:border-[#26262d] dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:ring-indigo-400/25"
+                      autoComplete="off"
+                    />
+                    {revokedSearchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setRevokedSearchQuery('')}
+                        className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-white/10 dark:hover:text-gray-200"
+                        aria-label="Clear search"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                  {revokedSearchQuery.trim() ? (
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      Showing <span className="font-semibold tabular-nums text-gray-700 dark:text-gray-300">{revokedOrdersFiltered.length}</span> of{' '}
+                      <span className="tabular-nums">{revokedOrders.length}</span>
+                      {revokedOrdersFiltered.length === 0 ? ' — try another word or clear the search.' : ''}
+                    </p>
+                  ) : null}
+                </div>
+                {revokedOrdersFiltered.length > 0 ? (
+                  <div className="flex flex-col gap-2 lg:min-w-[14rem] lg:items-end lg:pt-0.5">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 lg:text-right">
+                      {revokedSelected.size > 0 ? (
+                        <>
+                          <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">{revokedSelected.size}</span> selected —{' '}
+                          <span className="tabular-nums text-gray-500 dark:text-gray-400">
+                            {revokedSelectedRestoreableCount} can restore
+                          </span>
+                        </>
+                      ) : (
+                        <>Top toggle = select all (current search).</>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void bulkRevokedRestore()}
+                        disabled={revokedBulkLoading || revokedSelectedRestoreableCount === 0}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:pointer-events-none disabled:opacity-40"
+                      >
+                        {revokedBulkLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        Bulk restore ({revokedSelectedRestoreableCount})
+                      </button>
+                      {revokedSelected.size > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setRevokedSelected(new Set())}
+                          disabled={revokedBulkLoading}
+                          className="px-2 py-2 text-xs font-semibold text-gray-600 hover:text-gray-900 disabled:opacity-40 dark:text-gray-400 dark:hover:text-gray-200"
+                        >
+                          Clear selection
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          )}
+          <div className="overflow-x-auto rounded-b-2xl overscroll-x-contain [-webkit-overflow-scrolling:touch]">
+            {revokedOrders.length > 0 && revokedOrdersFiltered.length > 0 ? (
+            <table className="w-full min-w-0 table-auto border-collapse text-[13px] leading-snug">
               <thead className="bg-gray-50/80 dark:bg-white/[0.02]">
                 <tr>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="w-9 px-1.5 py-3 align-bottom" scope="col">
+                    <RedeemSelectToggle
+                      state={revokedHeaderSelectState}
+                      disabled={revokedOrdersFiltered.length === 0}
+                      ariaLabel={
+                        revokedHeaderSelectState === 'checked'
+                          ? 'Deselect all rows in this list'
+                          : 'Select all rows matching the current search'
+                      }
+                      onToggle={() => {
+                        const ids = revokedOrdersFiltered.map((o) => o.id);
+                        const allSelected =
+                          revokedOrdersFiltered.length > 0 &&
+                          revokedOrdersFiltered.every((o) => revokedSelected.has(o.id));
+                        if (allSelected) {
+                          setRevokedSelected((prev) => {
+                            const next = new Set(prev);
+                            ids.forEach((id) => next.delete(id));
+                            return next;
+                          });
+                        } else {
+                          setRevokedSelected((prev) => new Set([...prev, ...ids]));
+                        }
+                      }}
+                    />
+                  </th>
+                  <th className="max-w-[11rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     User
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Code
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Emails (snapshot)
+                  <th className="max-w-[10rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Emails
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="max-w-[9rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     Product
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Amount
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Amt
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Seized at
+                  <th className="whitespace-nowrap px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Seized
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th className="max-w-[7rem] px-2 py-3 text-left align-bottom text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     By
                   </th>
-                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  <th
+                    className={`${redeemStickyActionsThClass} text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400`}
+                    scope="col"
+                  >
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
-                {revokedOrders.map((order) => {
+                {revokedOrdersFiltered.map((order) => {
                   const emails = order.provisioned_emails || [];
                   const seizedAt = order.redeem_seized_at ? new Date(order.redeem_seized_at) : null;
                   const restoreDeadline =
                     seizedAt != null ? new Date(seizedAt.getTime() + REDEEM_RESTORE_WINDOW_MS) : null;
-                  const restoreAllowed =
-                    restoreDeadline != null && Date.now() <= restoreDeadline.getTime();
+                  const restoreAllowed = redeemOrderRestoreAllowed(order);
                   return (
-                    <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown'}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{order.users?.email}</p>
+                    <tr
+                      key={order.id}
+                      className="group align-top transition-colors hover:bg-gray-50/50 dark:hover:bg-white/[0.02]"
+                    >
+                      <td className="px-1.5 py-2.5 align-top">
+                        <RedeemSelectToggle
+                          state={revokedSelected.has(order.id) ? 'checked' : 'unchecked'}
+                          ariaLabel={`Select ${order.users?.name || 'order'}`}
+                          onToggle={() => {
+                            setRevokedSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(order.id)) next.delete(order.id);
+                              else next.add(order.id);
+                              return next;
+                            });
+                          }}
+                        />
                       </td>
-                      <td className="px-5 py-3.5 font-mono text-xs font-semibold text-gray-800 dark:text-gray-200">
-                        {order.redeem_code_used || '—'}
+                      <td className="max-w-[11rem] px-2 py-2.5 align-top">
+                        <div className="space-y-0.5">
+                          <p className="text-[13px] font-semibold leading-tight text-gray-900 dark:text-gray-100">
+                            {order.users?.name || 'Unknown'}
+                          </p>
+                          <p className="break-words text-xs text-gray-600 dark:text-gray-400">{order.users?.email}</p>
+                          {order.users?.phone ? (
+                            <p className="text-xs tabular-nums text-gray-500 dark:text-gray-500">{order.users.phone}</p>
+                          ) : null}
+                        </div>
                       </td>
-                      <td className="px-5 py-3.5 max-w-[220px] text-xs text-gray-600 dark:text-gray-300">
-                        {emails.length === 0 ? '—' : emails.join(', ')}
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top">
+                        <span className="font-mono text-[11px] font-semibold tracking-wide text-gray-800 dark:text-gray-200">
+                          {order.redeem_code_used || '—'}
+                        </span>
                       </td>
-                      <td className="px-5 py-3.5 text-xs font-semibold text-gray-800 dark:text-gray-200">
-                        {order.products?.title || '—'}
+                      <td className="max-w-[10rem] px-2 py-2.5 align-top">
+                        {emails.length === 0 ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : (
+                          <p
+                            className="truncate font-mono text-xs text-gray-600 dark:text-gray-300"
+                            title={emails.join(', ')}
+                          >
+                            {emails[0]}
+                            {emails.length > 1 ? (
+                              <span className="text-gray-400"> +{emails.length - 1}</span>
+                            ) : null}
+                          </p>
+                        )}
                       </td>
-                      <td className="px-5 py-3.5 text-sm font-bold text-gray-900 dark:text-gray-100">৳{order.total_amount}</td>
-                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-gray-300">
-                        {seizedAt ? format(seizedAt, 'MMM d, yyyy HH:mm') : '—'}
+                      <td className="max-w-[9rem] px-2 py-2.5 align-top">
+                        <p className="text-[12px] font-semibold leading-snug text-gray-800 dark:text-gray-200">
+                          {order.products?.title || '—'}
+                        </p>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-300">
-                        {order.seized_by_admin?.name || order.seized_by_admin?.email || order.redeem_seized_by || '—'}
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top tabular-nums">
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100">৳{order.total_amount}</span>
                       </td>
-                      <td className="px-5 py-3.5 align-top">
+                      <td className="whitespace-nowrap px-2 py-2.5 align-top tabular-nums text-[12px] text-gray-600 dark:text-gray-300">
+                        {seizedAt ? formatBdDateTime12(seizedAt) : '—'}
+                      </td>
+                      <td className="max-w-[7rem] px-2 py-2.5 align-top text-[12px] leading-snug text-gray-700 dark:text-gray-300">
+                        <span className="break-words">
+                          {order.seized_by_admin?.name || order.seized_by_admin?.email || order.redeem_seized_by || '—'}
+                        </span>
+                      </td>
+                      <td className={redeemStickyActionsTdClass}>
                         {restoreAllowed ? (
-                          <>
-                            <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1.5 max-w-[140px] leading-snug">
-                              Restore by {restoreDeadline ? format(restoreDeadline, 'MMM d, yyyy HH:mm') : '—'}
+                          <div className="flex min-w-[6.5rem] flex-col gap-1.5">
+                            <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                              By{' '}
+                              <span className="font-medium tabular-nums text-gray-700 dark:text-gray-300">
+                                {restoreDeadline ? formatBdDateTime12(restoreDeadline) : '—'}
+                              </span>
                             </p>
                             <button
                               type="button"
                               onClick={() => restoreOrder(order.id)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-800 hover:bg-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25 transition-colors"
+                              className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-600/15 px-2 py-1.5 text-[11px] font-semibold text-emerald-800 transition-colors hover:bg-emerald-600/25 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25"
                             >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              Restore access
+                              <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+                              Restore
                             </button>
-                          </>
+                          </div>
                         ) : (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[160px] inline-block leading-snug">
-                            Restore closed (48h after seize)
-                          </span>
+                          <span className="text-[10px] leading-snug text-gray-500 dark:text-gray-400">Closed</span>
                         )}
                       </td>
                     </tr>
@@ -1307,11 +1990,17 @@ export const AdminRedeemCodes = () => {
                 })}
               </tbody>
             </table>
+            ) : null}
             {revokedOrders.length === 0 && (
               <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
                 {redeemListsError
                   ? 'Could not load this list — see the yellow notice above.'
                   : 'No seized redeem orders yet. After you use Seize on a pending row, it will show here.'}
+              </div>
+            )}
+            {revokedOrders.length > 0 && revokedOrdersFiltered.length === 0 && (
+              <div className="py-12 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
+                No seized rows match your search. Clear the search box or try another keyword.
               </div>
             )}
           </div>

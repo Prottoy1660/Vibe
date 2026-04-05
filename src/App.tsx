@@ -16,6 +16,7 @@ const AdobeEmail = React.lazy(() => import('./pages/AdobeEmail').then(module => 
 const Orders = React.lazy(() => import('./pages/Orders').then(module => ({ default: module.Orders })));
 const RedeemCoupon = React.lazy(() => import('./pages/RedeemCoupon').then(module => ({ default: module.RedeemCoupon })));
 const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
+const AdminEmailTeamDetail = React.lazy(() => import('./pages/AdminEmailTeamDetail'));
 const Profile = React.lazy(() => import('./pages/Profile').then(module => ({ default: module.Profile })));
 const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module => ({ default: module.TutorialHelp })));
 const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
@@ -81,6 +82,7 @@ function AppRoutes() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/refer" element={<Referral />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/email-team/:teamId" element={<AdminEmailTeamDetail />} />
         </Route>
       </Routes>
     </React.Suspense>

@@ -54,7 +54,10 @@ export const Layout = () => {
   const location = useLocation();
   /** User-facing alerts only; admin workspace stays clean */
   const showGlobalBanners = !location.pathname.startsWith('/admin');
+  const isProfilePage = location.pathname === '/profile';
   const { user, signOut, isAdmin, isSuperAdmin, loading: authLoading, role, needsMandatoryPhone } = useAuth();
+  /** Help chat is for customers — hide for admins everywhere (including /profile) */
+  const showSupportChat = showGlobalBanners && !isAdmin;
   const { platform: maintPlatform, ready: maintReady } = useMaintenanceMode();
   const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
@@ -385,9 +388,22 @@ export const Layout = () => {
 
         {showGlobalBanners ? <PlatformBanner /> : null}
 
-        {/* Page Content */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-          <div className="max-w-6xl mx-auto">
+        {/* Page Content — profile uses flex column so short pages don’t leave a huge empty band below */}
+        <main
+          className={cn(
+            'flex-1 min-h-0 overflow-y-auto',
+            isProfilePage && 'flex flex-col',
+            isProfilePage ? 'px-3 py-2 pb-4 md:px-6 md:py-4 md:pb-6' : 'p-4 md:p-8',
+          )}
+        >
+          <div
+            className={cn(
+              'mx-auto w-full',
+              isProfilePage
+                ? 'max-w-7xl flex flex-1 flex-col max-lg:min-h-[calc(100dvh-9.5rem)] max-lg:justify-center max-lg:py-2 lg:block lg:min-h-0 lg:flex-none lg:py-0'
+                : 'max-w-6xl',
+            )}
+          >
             <Outlet />
           </div>
         </main>
@@ -414,7 +430,7 @@ export const Layout = () => {
 
       <LobbyMusicPlayer userId={user?.id ?? null} adminRoute={location.pathname.startsWith('/admin')} />
 
-      {showGlobalBanners ? <SupportChatWidget /> : null}
+      {showSupportChat ? <SupportChatWidget /> : null}
     </div>
   );
 };

@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
@@ -28,13 +29,9 @@ import {
   Table2,
   Building2,
   Plus,
+  ArrowRight,
 } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
-
-function escapeCsvField(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
 
 interface EmailTeam {
   id: string;
@@ -61,88 +58,6 @@ interface EmailPool {
     max_users_per_email: number;
   } | null;
   email_teams?: { name: string } | null;
-}
-
-interface TeamDetailUserEmail {
-  id: string;
-  assigned_at: string;
-  is_active: boolean;
-  order_id: string | null;
-  users: { id: string; name: string; email: string } | null;
-  orders: { status: string } | null;
-}
-
-interface TeamDetailPoolRow {
-  id: string;
-  email: string;
-  password: string;
-  status: string;
-  assigned_at: string | null;
-  created_at: string;
-  slot_intent: string | null;
-  current_users?: number | null;
-  is_burned?: boolean | null;
-  products: { title: string } | null;
-  user_emails: TeamDetailUserEmail[] | null;
-}
-
-interface FlatTeamAssignmentRow {
-  poolId: string;
-  poolEmail: string;
-  password: string;
-  poolStatus: string;
-  productTitle: string;
-  slotIntent: string;
-  poolCreatedAt: string;
-  poolAssignedAt: string;
-  userName: string;
-  userEmail: string;
-  assignmentAt: string;
-  assignmentActive: boolean;
-  orderStatus: string;
-  userEmailRowId: string;
-}
-
-function flattenTeamAssignments(rows: TeamDetailPoolRow[]): FlatTeamAssignmentRow[] {
-  const out: FlatTeamAssignmentRow[] = [];
-  for (const r of rows) {
-    const ues = r.user_emails?.length ? r.user_emails : [];
-    const productTitle = r.products?.title || '';
-    const base = {
-      poolId: r.id,
-      poolEmail: r.email,
-      password: r.password,
-      poolStatus: r.status,
-      productTitle,
-      slotIntent: r.slot_intent || '',
-      poolCreatedAt: r.created_at,
-      poolAssignedAt: r.assigned_at || '',
-    };
-    if (ues.length === 0) {
-      out.push({
-        ...base,
-        userName: '',
-        userEmail: '',
-        assignmentAt: '',
-        assignmentActive: false,
-        orderStatus: '',
-        userEmailRowId: `unassigned-${r.id}`,
-      });
-    } else {
-      for (const ue of ues) {
-        out.push({
-          ...base,
-          userName: ue.users?.name || '',
-          userEmail: ue.users?.email || '',
-          assignmentAt: ue.assigned_at || '',
-          assignmentActive: ue.is_active,
-          orderStatus: ue.orders?.status || '',
-          userEmailRowId: ue.id,
-        });
-      }
-    }
-  }
-  return out;
 }
 
 function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
@@ -185,10 +100,10 @@ export const AdminEmails = () => {
   const [savingTeam, setSavingTeam] = useState(false);
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
   const [inventoryTeamFilter, setInventoryTeamFilter] = useState<string>('');
-  const [detailTeamId, setDetailTeamId] = useState<string | null>(null);
-  const [teamDetailRaw, setTeamDetailRaw] = useState<TeamDetailPoolRow[]>([]);
-  const [teamDetailLoading, setTeamDetailLoading] = useState(false);
-  const [teamDetailError, setTeamDetailError] = useState<string | null>(null);
+  const [teamStats, setTeamStats] = useState<Record<string, { emailCount: number; userCount: number }>>({});
+
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     fetchEmails();
@@ -197,110 +112,68 @@ export const AdminEmails = () => {
   }, []);
 
   useEffect(() => {
-    if (!detailTeamId) {
-      setTeamDetailRaw([]);
-      setTeamDetailError(null);
+    const et = searchParams.get('emailTab');
+    if (et === 'overview' || et === 'teams' || et === 'generate' || et === 'inventory') {
+      setActiveTab(et as TabId);
+    } else if (et === 'burned') {
+      setActiveTab('burned');
+    }
+  }, [searchParams]);
+
+  const loadTeamStats = useCallback(async () => {
+    if (!teams.length) {
+      setTeamStats({});
       return;
     }
-    let cancelled = false;
-    (async () => {
-      setTeamDetailLoading(true);
-      setTeamDetailError(null);
-      try {
-        const { data, error } = await supabase
-          .from('emails_pool')
-          .select(
-            `
-            id,
-            email,
-            password,
-            status,
-            assigned_at,
-            created_at,
-            slot_intent,
-            current_users,
-            is_burned,
-            products:product_id (title),
-            user_emails (
-              id,
-              assigned_at,
-              is_active,
-              order_id,
-              users:user_id (id, name, email),
-              orders:order_id (status)
-            )
-          `,
-          )
-          .eq('team_id', detailTeamId)
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        if (!cancelled) {
-          const raw = (data || []) as Record<string, unknown>[];
-          const normalized: TeamDetailPoolRow[] = raw.map((row) => {
-            const r = row as Record<string, unknown>;
-            const products = r.products;
-            const prod =
-              Array.isArray(products) && products[0] && typeof products[0] === 'object'
-                ? (products[0] as { title?: string })
-                : products && typeof products === 'object'
-                  ? (products as { title?: string })
-                  : null;
-            const uesRaw = r.user_emails;
-            const ues = Array.isArray(uesRaw) ? uesRaw : [];
-            const user_emails: TeamDetailUserEmail[] = ues.map((ue: Record<string, unknown>) => {
-              const u = ue.users;
-              const users =
-                Array.isArray(u) && u[0] && typeof u[0] === 'object'
-                  ? (u[0] as { id: string; name: string; email: string })
-                  : u && typeof u === 'object'
-                    ? (u as { id: string; name: string; email: string })
-                    : null;
-              const o = ue.orders;
-              const orders =
-                Array.isArray(o) && o[0] && typeof o[0] === 'object'
-                  ? (o[0] as { status: string })
-                  : o && typeof o === 'object'
-                    ? (o as { status: string })
-                    : null;
-              return {
-                id: String(ue.id),
-                assigned_at: String(ue.assigned_at || ''),
-                is_active: Boolean(ue.is_active),
-                order_id: (ue.order_id as string | null) ?? null,
-                users,
-                orders,
-              };
-            });
-            return {
-              id: String(r.id),
-              email: String(r.email),
-              password: String(r.password),
-              status: String(r.status),
-              assigned_at: (r.assigned_at as string | null) ?? null,
-              created_at: String(r.created_at),
-              slot_intent: (r.slot_intent as string | null) ?? null,
-              current_users: (r.current_users as number | null) ?? null,
-              is_burned: (r.is_burned as boolean | null) ?? null,
-              products: prod && prod.title != null ? { title: String(prod.title) } : null,
-              user_emails: user_emails.length ? user_emails : null,
-            };
-          });
-          setTeamDetailRaw(normalized);
-        }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : 'Failed to load team emails';
-        if (!cancelled) {
-          setTeamDetailError(msg);
-          setTeamDetailRaw([]);
-        }
-      } finally {
-        if (!cancelled) setTeamDetailLoading(false);
+    const ids = teams.map((t) => t.id);
+    try {
+      const { data: pools, error: pErr } = await supabase.from('emails_pool').select('id, team_id').in('team_id', ids);
+      if (pErr) throw pErr;
+      const poolIdsByTeam: Record<string, string[]> = {};
+      for (const p of pools || []) {
+        const row = p as { id: string; team_id: string | null };
+        if (!row.team_id) continue;
+        if (!poolIdsByTeam[row.team_id]) poolIdsByTeam[row.team_id] = [];
+        poolIdsByTeam[row.team_id].push(row.id);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [detailTeamId]);
+      const allPoolIds = Object.values(poolIdsByTeam).flat();
+      const next: Record<string, { emailCount: number; userCount: number }> = {};
+      for (const id of ids) {
+        next[id] = { emailCount: poolIdsByTeam[id]?.length ?? 0, userCount: 0 };
+      }
+      if (allPoolIds.length) {
+        const { data: ues, error: uErr } = await supabase
+          .from('user_emails')
+          .select('user_id, email_id')
+          .in('email_id', allPoolIds);
+        if (uErr) throw uErr;
+        const emailToTeam = new Map<string, string>();
+        for (const tid of Object.keys(poolIdsByTeam)) {
+          for (const pid of poolIdsByTeam[tid]) {
+            emailToTeam.set(pid, tid);
+          }
+        }
+        const usersByTeam: Record<string, Set<string>> = {};
+        for (const ue of ues || []) {
+          const row = ue as { user_id: string; email_id: string };
+          const tid = emailToTeam.get(row.email_id);
+          if (!tid || !row.user_id) continue;
+          if (!usersByTeam[tid]) usersByTeam[tid] = new Set();
+          usersByTeam[tid].add(row.user_id);
+        }
+        for (const tid of Object.keys(usersByTeam)) {
+          if (next[tid]) next[tid].userCount = usersByTeam[tid].size;
+        }
+      }
+      setTeamStats(next);
+    } catch (e) {
+      console.error('team stats:', e);
+    }
+  }, [teams]);
+
+  useEffect(() => {
+    void loadTeamStats();
+  }, [loadTeamStats, emails.length]);
 
   const fetchTeams = async () => {
     try {
@@ -347,7 +220,6 @@ export const AdminEmails = () => {
       setTeams((prev) => prev.filter((t) => t.id !== id));
       if (genTeamId === id) setGenTeamId('');
       if (inventoryTeamFilter === id) setInventoryTeamFilter('');
-      if (detailTeamId === id) setDetailTeamId(null);
     } catch (err: any) {
       alert(err?.message || 'Could not delete team');
     } finally {
@@ -454,47 +326,6 @@ export const AdminEmails = () => {
     a.download = `email_inventory_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const teamDetailFlat = flattenTeamAssignments(teamDetailRaw);
-  const detailTeamName = teams.find((t) => t.id === detailTeamId)?.name || 'team';
-
-  const handleExportTeamDetailCsv = () => {
-    if (!detailTeamId || teamDetailFlat.length === 0) return;
-    const header =
-      'Team,Pool email,Password,Pool status,Product,Slot intent,Pool created,Pool assigned,User name,User email,Assignment at,Assignment active,Order status';
-    const rows = teamDetailFlat.map((r) =>
-      [
-        detailTeamName,
-        r.poolEmail,
-        r.password,
-        r.poolStatus,
-        r.productTitle,
-        r.slotIntent,
-        r.poolCreatedAt ? format(parseISO(r.poolCreatedAt), 'yyyy-MM-dd HH:mm') : '',
-        r.poolAssignedAt ? format(parseISO(r.poolAssignedAt), 'yyyy-MM-dd HH:mm') : '',
-        r.userName,
-        r.userEmail,
-        r.assignmentAt ? format(parseISO(r.assignmentAt), 'yyyy-MM-dd HH:mm') : '',
-        r.assignmentActive ? 'yes' : 'no',
-        r.orderStatus,
-      ]
-        .map((c) => escapeCsvField(String(c)))
-        .join(','),
-    );
-    const csv = [header, ...rows].join('\r\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const safe = detailTeamName.replace(/[^\w\-]+/g, '_').slice(0, 80);
-    a.download = `team_${safe}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const toggleTeamDetail = (teamId: string) => {
-    setDetailTeamId((prev) => (prev === teamId ? null : teamId));
   };
 
   const handleCopyDateGroup = (group: EmailPool[]) => {
@@ -751,10 +582,10 @@ export const AdminEmails = () => {
             </span>
             <div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Teams &amp; organizations</h3>
-              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Only names are stored here (internal labels). When you generate emails, pick a team from the list — no
-                need to type names on the generator screen. Click a team row to see which pool emails belong to it and
-                which users they are assigned to; export that view as CSV below.
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-2xl leading-relaxed">
+                Internal labels for generated mailboxes. When you add emails, pick a team from the list. Each row shows
+                how many pool emails and distinct users are linked. Open a team to see the full mailbox and assignment
+                table on its own page (CSV export there).
               </p>
             </div>
           </div>
@@ -785,69 +616,82 @@ export const AdminEmails = () => {
           </div>
 
           <div className="mt-8 overflow-x-auto rounded-xl border border-gray-100 dark:border-[#26262d]">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[52rem] text-left text-sm table-fixed">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5">
-                  <th className="py-3 px-2 w-10" aria-hidden />
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-40">
-                    Added
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[28%]">
+                    Name
                   </th>
-                  <th className="py-3 px-4 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider w-24">
-                    Actions
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap w-[12%]">
+                    Pool emails
                   </th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap w-[12%]">
+                    Users
+                  </th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[22%]">Added</th>
+                  <th
+                    scope="col"
+                    aria-label="Team actions"
+                    className="py-3 px-4 text-right w-[26%]"
+                  />
                 </tr>
               </thead>
               <tbody>
                 {teams.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-12 px-4 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={5} className="py-12 px-4 text-center text-gray-500 dark:text-gray-400">
                       No teams yet. Enter a name above and click Add team.
                     </td>
                   </tr>
                 ) : (
                   teams.map((t) => {
-                    const open = detailTeamId === t.id;
+                    const st = teamStats[t.id];
                     return (
                       <tr
                         key={t.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleTeamDetail(t.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            toggleTeamDetail(t.id);
-                          }
-                        }}
-                        className={`border-b border-gray-50 dark:border-white/[0.03] cursor-pointer transition-colors ${
-                          open
-                            ? 'bg-indigo-50/80 dark:bg-indigo-500/10'
-                            : 'hover:bg-gray-50/50 dark:hover:bg-white/[0.02]'
-                        }`}
+                        className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/50 dark:hover:bg-white/[0.02] align-top"
                       >
-                        <td className="py-3 px-2 text-gray-400 align-middle">
-                          <ChevronRight
-                            className={`w-4 h-4 transition-transform shrink-0 ${open ? 'rotate-90 text-indigo-600 dark:text-indigo-400' : ''}`}
-                            aria-hidden
-                          />
+                        <td className="py-4 px-4">
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 leading-snug">{t.name}</p>
                         </td>
-                        <td className="py-3 px-4 font-medium text-gray-900 dark:text-gray-100">{t.name}</td>
-                        <td className="py-3 px-4 text-xs text-gray-500">
+                        <td className="py-4 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200">
+                          {st?.emailCount ?? '—'}
+                        </td>
+                        <td className="py-4 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200">
+                          {st?.userCount ?? '—'}
+                        </td>
+                        <td className="py-4 px-4 text-xs text-gray-500 whitespace-nowrap">
                           {t.created_at ? format(parseISO(t.created_at), 'MMM d, yyyy HH:mm') : '—'}
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleDeleteTeam(t.id);
-                            }}
-                            disabled={deletingTeamId === t.id}
-                            className="text-xs font-semibold text-red-600 hover:text-red-700 dark:text-red-400 disabled:opacity-50"
-                          >
-                            {deletingTeamId === t.id ? '…' : 'Delete'}
-                          </button>
+                        <td className="py-4 px-4 text-right">
+                          <div className="inline-flex items-center justify-end gap-1 sm:gap-2">
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/admin/email-team/${t.id}`)}
+                              className="group inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-violet-600 transition-colors hover:bg-violet-500/[0.08] hover:text-violet-700 dark:text-violet-400 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+                            >
+                              <span className="border-b border-transparent group-hover:border-violet-500/40 pb-px transition-colors">
+                                View team
+                              </span>
+                              <ArrowRight
+                                className="h-4 w-4 shrink-0 opacity-70 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"
+                                aria-hidden
+                              />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteTeam(t.id)}
+                              disabled={deletingTeamId === t.id}
+                              title="Delete team"
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-red-500/10 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40"
+                            >
+                              {deletingTeamId === t.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -856,146 +700,6 @@ export const AdminEmails = () => {
               </tbody>
             </table>
           </div>
-
-          {detailTeamId && (
-            <div className="mt-6 rounded-xl border border-indigo-200/60 dark:border-indigo-500/25 bg-indigo-50/30 dark:bg-indigo-950/20 p-4 md:p-5">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                <div>
-                  <h4 className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                    Emails in &ldquo;{detailTeamName}&rdquo;
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">
-                    Pool mailboxes linked to this team, and user assignments (one row per seat when shared).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleExportTeamDetailCsv()}
-                  disabled={teamDetailLoading || teamDetailFlat.length === 0}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 shrink-0"
-                >
-                  {teamDetailLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Download className="w-4 h-4" />
-                  )}
-                  Download CSV
-                </button>
-              </div>
-
-              {teamDetailError && (
-                <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 mb-3">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {teamDetailError}
-                </div>
-              )}
-
-              {teamDetailLoading && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 py-8 justify-center">
-                  <Loader2 className="w-5 h-5 animate-spin text-indigo-500" />
-                  Loading team emails…
-                </div>
-              )}
-
-              {!teamDetailLoading && !teamDetailError && teamDetailFlat.length === 0 && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center">
-                  No pool emails are tagged with this team yet.
-                </p>
-              )}
-
-              {!teamDetailLoading && !teamDetailError && teamDetailFlat.length > 0 && (
-                <div className="overflow-x-auto rounded-lg border border-gray-200/80 dark:border-[#303038] bg-white dark:bg-[#151518]">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5">
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Pool email</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Password</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Product</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Slot</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">User</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">User email</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Assigned</th>
-                        <th className="py-2.5 px-3 font-bold text-gray-500 uppercase tracking-wider">Active</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teamDetailFlat.map((row) => (
-                        <tr
-                          key={`${row.poolId}-${row.userEmailRowId}`}
-                          className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/40 dark:hover:bg-white/[0.02]"
-                        >
-                          <td className="py-2 px-3 font-mono text-[11px] font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
-                            {row.poolEmail}
-                          </td>
-                          <td className="py-2 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-mono text-[10px] text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/10 px-1.5 py-0.5 rounded max-w-[7rem] truncate">
-                                {showPasswords[row.poolId] ? row.password : '••••••••'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => togglePasswordVisibility(row.poolId)}
-                                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-0.5"
-                                title={showPasswords[row.poolId] ? 'Hide password' : 'Show password'}
-                              >
-                                {showPasswords[row.poolId] ? (
-                                  <EyeOff className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Eye className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </div>
-                          </td>
-                          <td className="py-2 px-3">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${statusStyles[row.poolStatus] || statusStyles.used}`}
-                            >
-                              {row.poolStatus}
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 text-gray-700 dark:text-gray-300 max-w-[140px] truncate" title={row.productTitle}>
-                            {row.productTitle || '—'}
-                          </td>
-                          <td className="py-2 px-3">
-                            {row.slotIntent === 'shared' ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300">
-                                Shared
-                              </span>
-                            ) : row.slotIntent === 'exclusive' ? (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
-                                Exclusive
-                              </span>
-                            ) : (
-                              <span className="text-gray-400">—</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3 text-gray-800 dark:text-gray-200 max-w-[120px] truncate" title={row.userName}>
-                            {row.userName || '—'}
-                          </td>
-                          <td className="py-2 px-3 font-mono text-[10px] text-gray-600 dark:text-gray-400 max-w-[160px] truncate">
-                            {row.userEmail || '—'}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600 dark:text-gray-400 whitespace-nowrap">
-                            {row.assignmentAt ? format(parseISO(row.assignmentAt), 'MMM d, HH:mm') : '—'}
-                          </td>
-                          <td className="py-2 px-3">
-                            {row.userEmailRowId.startsWith('unassigned') ? (
-                              <span className="text-gray-400">—</span>
-                            ) : row.assignmentActive ? (
-                              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Yes</span>
-                            ) : (
-                              <span className="text-amber-600 dark:text-amber-400 font-semibold">No</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 

@@ -1,7 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, Settings, Info, Mail, UserCircle } from 'lucide-react';
+import { Loader2, Save, Settings, Info, Mail, UserCircle, ChevronRight } from 'lucide-react';
 import { DEFAULT_PLATFORM_STATUS, parsePlatformStatus, type PlatformLevel, type PlatformStatusValue } from '../../lib/platformStatus';
+
+function HelpDetails({ summary, children }: { summary: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-lg border border-gray-200/90 dark:border-[#2a2a32] bg-gray-50/70 dark:bg-white/[0.04] text-sm">
+      <summary className="cursor-pointer list-none px-3 py-2 font-medium text-gray-700 dark:text-gray-300 [&::-webkit-details-marker]:hidden flex items-center gap-1.5 select-none hover:bg-gray-100/80 dark:hover:bg-white/[0.06] rounded-lg">
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-500 transition-transform group-open:rotate-90" aria-hidden />
+        {summary}
+      </summary>
+      <div className="border-t border-gray-200/80 dark:border-[#2a2a32] px-3 pb-3 pt-2 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+        {children}
+      </div>
+    </details>
+  );
+}
 
 export const AdminPlatformSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -59,7 +73,7 @@ export const AdminPlatformSettings: React.FC = () => {
       setForm(parsePlatformStatus(value));
       setMessage({
         type: 'ok',
-        text: 'Saved. Banner follows “Show banner”. Full-site lock hides the app from everyone except admins until you turn it off.',
+        text: 'Saved. Banner and maintenance lock updated.',
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Save failed';
@@ -81,9 +95,7 @@ export const AdminPlatformSettings: React.FC = () => {
       if (error) throw error;
       setSlotMessage({
         type: 'ok',
-        text: slotEmergency
-          ? 'Emergency mode ON: customers can generate all remaining Adobe slots without waiting for the per-slot interval.'
-          : 'Emergency mode OFF: per-product day spacing between slot unlocks is enforced again.',
+        text: slotEmergency ? 'Emergency mode on — spacing ignored for new generations.' : 'Emergency mode off — spacing enforced again.',
       });
     } catch (e: unknown) {
       setSlotMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
@@ -108,9 +120,7 @@ export const AdminPlatformSettings: React.FC = () => {
       }
       setPersonalMessage({
         type: 'ok',
-        text: personalSubsEnabled
-          ? 'Personal Adobe plans are visible to customers on the Adobe Email page.'
-          : 'Personal Adobe plans are hidden; new purchases and wallet auto-renew for personal products are blocked.',
+        text: personalSubsEnabled ? 'Personal plans are visible on Adobe Email.' : 'Personal plans hidden; new orders and renewals blocked.',
       });
     } catch (e: unknown) {
       setPersonalMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
@@ -128,18 +138,34 @@ export const AdminPlatformSettings: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="w-full max-w-6xl space-y-6">
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none">
-        <div className="flex items-center gap-2 mb-4">
-          <Settings className="w-5 h-5 text-indigo-500" />
+        <div className="flex items-center gap-2 mb-3">
+          <Settings className="w-5 h-5 text-indigo-500 shrink-0" />
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Platform status & banner</h2>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 flex gap-2">
-          <Info className="w-4 h-4 shrink-0 mt-0.5" />
-          Controls the global bar and the public <span className="font-mono text-xs">/status</span> page. Turn on &quot;Show
-          banner&quot; and enter a message: at <span className="font-medium">Operational</span> it shows as a blue announcement;
-          use Degraded / Maintenance for stronger styling. Turn off the toggle to hide completely.
-        </p>
+        <div className="mb-5 space-y-3">
+          <div className="flex gap-2.5 items-start">
+            <Info className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" aria-hidden />
+            <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
+              Global top banner for signed-in users and the public{' '}
+              <code className="rounded bg-gray-100 dark:bg-white/10 px-1 py-0.5 text-[11px]">/status</code> page.
+            </p>
+          </div>
+          <HelpDetails summary="How levels, banner, and maintenance work">
+            <p>
+              Turn on <span className="font-medium text-gray-800 dark:text-gray-200">Show banner</span> and set a message.
+              At <span className="font-medium">Operational</span> it appears as a calm announcement;{' '}
+              <span className="font-medium">Degraded</span> / <span className="font-medium">Maintenance</span> use stronger
+              styling. Turn the banner off to hide it completely.
+            </p>
+            <p className="mt-2">
+              <span className="font-medium text-gray-800 dark:text-gray-200">Full-site maintenance</span> shows a
+              full-screen page to visitors and customers; admins and super admins keep normal access. Use the message field
+              for text on that screen.
+            </p>
+          </HelpDetails>
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -169,22 +195,20 @@ export const AdminPlatformSettings: React.FC = () => {
           </div>
 
           <div className="rounded-xl border border-amber-200/80 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 px-4 py-3">
-            <div className="flex items-start gap-2">
+            <div className="flex items-start gap-3">
               <input
                 type="checkbox"
                 id="lock_public_site"
                 checked={form.lock_public_site}
                 onChange={(e) => setForm((f) => ({ ...f, lock_public_site: e.target.checked }))}
-                className="mt-1 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                className="mt-1 rounded border-amber-400 text-amber-600 focus:ring-amber-500 shrink-0"
               />
-              <div>
-                <label htmlFor="lock_public_site" className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+              <div className="min-w-0 flex-1 space-y-2">
+                <label htmlFor="lock_public_site" className="text-sm font-semibold text-amber-950 dark:text-amber-100 block">
                   Full-site maintenance (public lock)
                 </label>
-                <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/90 leading-relaxed">
-                  Visitors and signed-in customers see a full-screen maintenance experience only.{' '}
-                  <span className="font-medium">Admins and super admins</span> keep full access to the whole app
-                  (dashboard, store, admin panel). Use the message below for details on the maintenance screen.
+                <p className="text-xs text-amber-900/85 dark:text-amber-200/90 leading-relaxed">
+                  Locks the storefront for everyone except admins. Same message field as above.
                 </p>
               </div>
             </div>
@@ -211,7 +235,7 @@ export const AdminPlatformSettings: React.FC = () => {
             type="button"
             onClick={save}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Save
@@ -219,26 +243,36 @@ export const AdminPlatformSettings: React.FC = () => {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none">
-        <div className="flex items-center gap-2 mb-4">
-          <Mail className="w-5 h-5 text-amber-500" />
+        <div className="flex items-center gap-2 mb-3">
+          <Mail className="w-5 h-5 text-amber-500 shrink-0" />
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Adobe email slots (emergency)</h2>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 flex gap-2">
-          <Info className="w-4 h-4 shrink-0 mt-0.5" />
-          When products have &quot;Days between slot unlocks&quot; set, customers normally wait (e.g. 2nd slot 10 days after
-          purchase, 3rd after 20 days). Turn this on if many users need replacement emails before those dates — they can
-          then generate every remaining slot immediately. Turn off to restore spacing.
-        </p>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2.5 items-start">
+            <Info className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" aria-hidden />
+            <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
+              Temporarily let customers use every Adobe email slot at once (skip per-product day spacing).
+            </p>
+          </div>
+          <HelpDetails summary="When to use this">
+            <p>
+              When products use &quot;Days between slot unlocks&quot;, customers normally wait (for example 2nd slot 10 days
+              after purchase, 3rd after 20 days). Enable emergency mode if many people need replacement emails before those
+              dates. Turn it off to enforce spacing again.
+            </p>
+          </HelpDetails>
+        </div>
+        <label className="flex items-start gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={slotEmergency}
             onChange={(e) => setSlotEmergency(e.target.checked)}
-            className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            className="mt-0.5 rounded border-gray-300 text-amber-600 focus:ring-amber-500 shrink-0"
           />
-          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-            Emergency unlock — ignore spacing for all Adobe email generations
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+            Emergency unlock — ignore spacing for Adobe email generations
           </span>
         </label>
         {slotMessage && (
@@ -252,7 +286,7 @@ export const AdminPlatformSettings: React.FC = () => {
           type="button"
           onClick={() => void saveAdobeSlots()}
           disabled={slotSaving}
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
         >
           {slotSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save slot policy
@@ -260,25 +294,33 @@ export const AdminPlatformSettings: React.FC = () => {
       </div>
 
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none">
-        <div className="flex items-center gap-2 mb-4">
-          <UserCircle className="w-5 h-5 text-violet-500" />
+        <div className="flex items-center gap-2 mb-3">
+          <UserCircle className="w-5 h-5 text-violet-500 shrink-0" />
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Personal Adobe subscriptions</h2>
         </div>
-        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 flex gap-2">
-          <Info className="w-4 h-4 shrink-0 mt-0.5" />
-          Lets customers buy Adobe on <span className="font-medium text-gray-800 dark:text-gray-200">their own email</span> from
-          the Adobe Email page (personal tab and checkout). Turn off to hide that flow and block new personal orders and wallet
-          renewals for personal products. Existing personal customers can still see their plans if you turn this off.
-        </p>
-        <label className="flex items-center gap-2 cursor-pointer">
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2.5 items-start">
+            <Info className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" aria-hidden />
+            <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
+              Show or hide personal Adobe plans on the Adobe Email page (customer&apos;s own Adobe ID email).
+            </p>
+          </div>
+          <HelpDetails summary="What changes when you turn this off">
+            <p>
+              When off, that checkout path is hidden and new personal orders plus wallet auto-renew for personal products are
+              blocked. Existing personal customers can usually still see their plans.
+            </p>
+          </HelpDetails>
+        </div>
+        <label className="flex items-start gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={personalSubsEnabled}
             onChange={(e) => setPersonalSubsEnabled(e.target.checked)}
-            className="rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+            className="mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-500 shrink-0"
           />
-          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">
-            Offer personal plans (customer&apos;s own Adobe email)
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+            Offer personal plans
           </span>
         </label>
         {personalMessage && (
@@ -292,11 +334,12 @@ export const AdminPlatformSettings: React.FC = () => {
           type="button"
           onClick={() => void savePersonalSubs()}
           disabled={personalSaving}
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
         >
           {personalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save personal plans setting
+          Save personal plans
         </button>
+      </div>
       </div>
     </div>
   );
