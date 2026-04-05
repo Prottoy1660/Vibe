@@ -1480,13 +1480,15 @@ router.get('/redeem/pending', verifyAdmin, async (_req, res) => {
         status,
         payment_status,
         payment_method,
+        redeem_pending,
         users: user_id (id, email, name, phone),
         products: product_id (id, title, price)
       `)
-      .eq('redeem_pending', true)
+      .eq('payment_method', 'redeem_code')
       .eq('payment_status', 'pending')
       .in('status', ['pending', 'completed'])
-      .order('payment_due_date', { ascending: true });
+      .is('redeem_seized_at', null)
+      .order('payment_due_date', { ascending: true, nullsFirst: false });
     if (error) throw error;
     const enriched = await enrichRedeemOrderRows(supabase, orders || []);
     return res.json({ success: true, orders: enriched });
@@ -1609,15 +1611,22 @@ router.post('/redeem/mark-paid/:orderId', verifyAdmin, async (req, res) => {
 
     const { data: before, error: beforeErr } = await supabase
       .from('orders')
-      .select('id, user_id, total_amount, redeem_pending, payment_status')
+      .select('id, user_id, total_amount, payment_method, payment_status, redeem_seized_at, status')
       .eq('id', orderId)
       .single();
     if (beforeErr || !before) return res.status(404).json({ error: 'Order not found' });
-    if (!(before as any).redeem_pending || (before as any).payment_status !== 'pending') {
+    const b = before as any;
+    if (b.payment_method !== 'redeem_code' || b.payment_status !== 'pending') {
       return res.status(400).json({ error: 'Not awaiting manual payment for this redeem' });
     }
+    if (b.redeem_seized_at) {
+      return res.status(400).json({ error: 'This redeem order was seized; restore access first if applicable' });
+    }
+    if (b.status !== 'pending' && b.status !== 'completed') {
+      return res.status(400).json({ error: 'Order is not in a state that can be marked paid for redeem' });
+    }
 
-    const { error: updateError } = await supabase
+    const { data: updatedRow, error: updateError } = await supabase
       .from('orders')
       .update({
         status: 'completed',
@@ -1626,9 +1635,18 @@ router.post('/redeem/mark-paid/:orderId', verifyAdmin, async (req, res) => {
         payment_due_date: null,
       })
       .eq('id', orderId)
-      .eq('redeem_pending', true)
-      .eq('payment_status', 'pending');
+      .eq('payment_method', 'redeem_code')
+      .eq('payment_status', 'pending')
+      .in('status', ['pending', 'completed'])
+      .is('redeem_seized_at', null)
+      .select('id')
+      .maybeSingle();
     if (updateError) throw updateError;
+    if (!updatedRow?.id) {
+      return res.status(409).json({
+        error: 'Could not mark paid (order may have been updated or seized). Refresh and try again.',
+      });
+    }
 
     const { data: existingEvt } = await supabase
       .from('payment_events')

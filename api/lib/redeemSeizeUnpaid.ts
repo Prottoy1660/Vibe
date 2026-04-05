@@ -16,7 +16,7 @@ export async function seizeRedeemOrderForUnpaid(
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .select(
-      'id, user_id, total_amount, redeem_pending, payment_status, redeem_seized_at, payment_method',
+      'id, user_id, total_amount, payment_status, redeem_seized_at, payment_method, status',
     )
     .eq('id', orderId)
     .single();
@@ -26,18 +26,21 @@ export async function seizeRedeemOrderForUnpaid(
   const o = order as {
     user_id: string;
     total_amount?: number;
-    redeem_pending?: boolean;
     payment_status?: string;
     redeem_seized_at?: string | null;
     payment_method?: string;
+    status?: string;
   };
 
   if (o.redeem_seized_at) return { ok: false, error: 'This redeem order was already seized', code: 'already_seized' };
   if (o.payment_method !== 'redeem_code') {
     return { ok: false, error: 'Not a pending manual-payment redeem order', code: 'not_eligible' };
   }
-  if (!o.redeem_pending || o.payment_status !== 'pending') {
+  if (o.payment_status !== 'pending') {
     return { ok: false, error: 'Not a pending manual-payment redeem order', code: 'not_eligible' };
+  }
+  if (o.status !== 'pending' && o.status !== 'completed') {
+    return { ok: false, error: 'Order is not in a redeem-access state', code: 'not_eligible' };
   }
 
   const { data: targetUser } = await supabase.from('users').select('role').eq('id', o.user_id).single();
@@ -57,8 +60,10 @@ export async function seizeRedeemOrderForUnpaid(
       redeem_seized_by: context.seizedByUserId,
     })
     .eq('id', orderId)
-    .eq('redeem_pending', true)
-    .eq('payment_status', 'pending');
+    .eq('payment_method', 'redeem_code')
+    .eq('payment_status', 'pending')
+    .in('status', ['pending', 'completed'])
+    .is('redeem_seized_at', null);
 
   if (updateError) return { ok: false, error: updateError.message, code: 'update_failed' };
 
@@ -103,9 +108,9 @@ export async function listRedeemOrderIdsPastDue(supabase: SupabaseClient): Promi
   const { data, error } = await supabase
     .from('orders')
     .select('id, payment_due_date, created_at')
-    .eq('redeem_pending', true)
-    .eq('payment_status', 'pending')
     .eq('payment_method', 'redeem_code')
+    .eq('payment_status', 'pending')
+    .in('status', ['pending', 'completed'])
     .is('redeem_seized_at', null);
 
   if (error || !data?.length) {

@@ -29,6 +29,7 @@ interface Order {
   payment_method: string;
   total_amount: number;
   created_at: string;
+  redeem_seized_at?: string | null;
   personal_email?: string;
   renewed_from_order_id?: string | null;
   auto_renew?: boolean;
@@ -58,6 +59,16 @@ function durationToMonths(duration: string | null | undefined) {
 }
 
 type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled';
+
+/** Redeem: access may be completed while cash is still due (manual collection). */
+function isRedeemAwaitingManualPayment(o: Order): boolean {
+  return (
+    o.payment_method === 'redeem_code' &&
+    o.payment_status === 'pending' &&
+    (o.status === 'pending' || o.status === 'completed') &&
+    !o.redeem_seized_at
+  );
+}
 
 function paymentLabel(method: string, paymentStatus: string) {
   const m = (method || '').toLowerCase().replace(/_/g, ' ');
@@ -118,8 +129,8 @@ export const AdminOrders = () => {
     const o = rawOrders;
     return {
       total: o.length,
-      pending: o.filter((x) => x.status === 'pending').length,
-      paid: o.filter((x) => x.status === 'paid').length,
+      pending: o.filter((x) => x.status === 'pending' || isRedeemAwaitingManualPayment(x)).length,
+      paid: o.filter((x) => x.payment_status === 'paid').length,
       completed: o.filter((x) => x.status === 'completed').length,
       refunded: o.filter((x) => x.status === 'refunded').length,
       cancelled: o.filter((x) => x.status === 'cancelled').length,
@@ -136,6 +147,12 @@ export const AdminOrders = () => {
 
   const orders = useMemo(() => {
     if (filter === 'all') return rawOrders;
+    if (filter === 'pending') {
+      return rawOrders.filter((o) => o.status === 'pending' || isRedeemAwaitingManualPayment(o));
+    }
+    if (filter === 'paid') {
+      return rawOrders.filter((o) => o.payment_status === 'paid');
+    }
     return rawOrders.filter((o) => o.status === filter);
   }, [rawOrders, filter]);
 
@@ -355,7 +372,11 @@ export const AdminOrders = () => {
 
     try {
       setLoading(true);
-      const { error } = await supabase.from('orders').delete().eq('status', 'pending');
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .eq('status', 'pending')
+        .neq('payment_method', 'redeem_code');
 
       if (error) throw error;
 
@@ -408,8 +429,10 @@ export const AdminOrders = () => {
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Order management</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Review recent orders (last 200). Use filters to focus on pending approvals or refunds. Amounts are shown
-                in <strong className="font-medium text-gray-800 dark:text-gray-200">BDT</strong>.
+                Review recent orders (last 200). <strong className="font-medium text-gray-800 dark:text-gray-200">Pending</strong>{' '}
+                includes gateway orders awaiting approval and <strong className="font-medium text-gray-800 dark:text-gray-200">redeem</strong>{' '}
+                orders where access is active but manual cash is still due. Amounts are in{' '}
+                <strong className="font-medium text-gray-800 dark:text-gray-200">BDT</strong>.
               </p>
             </div>
           </div>
@@ -487,9 +510,10 @@ export const AdminOrders = () => {
         <div className="px-4 py-3 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5 flex items-center gap-2">
           <Info className="w-4 h-4 text-indigo-500 shrink-0" />
           <p className="text-xs text-gray-600 dark:text-gray-400">
-            <strong className="font-medium text-gray-800 dark:text-gray-200">Pending:</strong> approve assigns a pool
-            email when possible. <strong className="font-medium text-gray-800 dark:text-gray-200">Refund:</strong>{' '}
-            releases linked pool emails.
+            <strong className="font-medium text-gray-800 dark:text-gray-200">Pending:</strong> gateway approvals assign a
+            pool email when possible; redeem rows with “manual pay due” are settled from{' '}
+            <strong className="font-medium text-gray-800 dark:text-gray-200">Redeem → Pending payment</strong>.{' '}
+            <strong className="font-medium text-gray-800 dark:text-gray-200">Refund:</strong> releases linked pool emails.
           </p>
         </div>
 
@@ -604,23 +628,30 @@ export const AdminOrders = () => {
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
-                            order.status === 'completed'
-                              ? 'bg-green-100 dark:bg-emerald-500/15 text-green-800 dark:text-emerald-300'
-                              : order.status === 'paid'
-                                ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300'
-                                : order.status === 'pending'
-                                  ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200'
-                                  : order.status === 'cancelled'
-                                    ? 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300'
-                                    : order.status === 'refunded'
-                                      ? 'bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-gray-200'
-                                      : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
-                          }`}
-                        >
-                          {order.status}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize ${
+                              order.status === 'completed'
+                                ? 'bg-green-100 dark:bg-emerald-500/15 text-green-800 dark:text-emerald-300'
+                                : order.status === 'paid'
+                                  ? 'bg-blue-100 dark:bg-blue-500/15 text-blue-800 dark:text-blue-300'
+                                  : order.status === 'pending'
+                                    ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-200'
+                                    : order.status === 'cancelled'
+                                      ? 'bg-red-100 dark:bg-red-500/15 text-red-800 dark:text-red-300'
+                                      : order.status === 'refunded'
+                                        ? 'bg-gray-200 dark:bg-white/10 text-gray-800 dark:text-gray-200'
+                                        : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
+                            }`}
+                          >
+                            {order.status}
+                          </span>
+                          {isRedeemAwaitingManualPayment(order) ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
+                              Manual pay due
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-4 px-4 text-right">
                         <div className="flex flex-col items-end gap-1.5">
@@ -709,7 +740,11 @@ export const AdminOrders = () => {
                     <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
                       <ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                       <p className="font-medium text-gray-700 dark:text-gray-300">
-                        {filter === 'all' ? 'No orders in the last 200 rows.' : `No orders with status “${filter}”.`}
+                        {filter === 'all'
+                          ? 'No orders in the last 200 rows.'
+                          : filter === 'pending'
+                            ? 'No pending gateway orders or redeem orders awaiting manual payment.'
+                            : `No orders with status “${filter}”.`}
                       </p>
                       <p className="text-sm mt-1">Try another filter or refresh.</p>
                     </td>
