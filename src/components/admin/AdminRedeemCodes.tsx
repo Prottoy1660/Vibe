@@ -97,6 +97,8 @@ export const AdminRedeemCodes = () => {
   });
   const [bulkQuantity, setBulkQuantity] = useState(10);
   const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
+  /** Set when /redeem/pending or /redeem/revoked API fails or is skipped (no token / no API base). */
+  const [redeemListsError, setRedeemListsError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -105,13 +107,25 @@ export const AdminRedeemCodes = () => {
   const fetchAll = async () => {
     setLoading(true);
     setProductsLoadError(null);
+    setRedeemListsError(null);
     try {
       const token = await getAccessTokenForApi();
       const base = getApiBaseUrl();
       const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) authHeaders.Authorization = `Bearer ${token}`;
 
-      const [codesRes, catalogRes, pendingJson, revokedJson] = await Promise.all([
+      const fetchRedeemJson = async (path: string) => {
+        const url = `${base}${path}`;
+        const res = await fetch(url, { headers: authHeaders });
+        const body = (await res.json().catch(() => ({}))) as {
+          success?: boolean;
+          orders?: unknown[];
+          error?: string;
+        };
+        return { ok: res.ok, status: res.status, body };
+      };
+
+      const [codesRes, catalogRes, pendingRes, revokedRes] = await Promise.all([
         supabase
           .from('redeem_codes')
           .select('*, products:product_id(title, price)')
@@ -129,11 +143,19 @@ export const AdminRedeemCodes = () => {
             }))
           : Promise.resolve({ ok: false, status: 0, json: {} as { success?: boolean; products?: Product[]; error?: string } }),
         token && base
-          ? fetch(`${base}/api/admin/redeem/pending`, { headers: authHeaders }).then((r) => r.json())
-          : Promise.resolve({ success: false as const, orders: [] }),
+          ? fetchRedeemJson('/api/admin/redeem/pending')
+          : Promise.resolve({
+              ok: false,
+              status: 0,
+              body: { success: false as const, orders: [], error: 'Not loaded (sign in and set API URL)' },
+            }),
         token && base
-          ? fetch(`${base}/api/admin/redeem/revoked`, { headers: authHeaders }).then((r) => r.json())
-          : Promise.resolve({ success: false as const, orders: [] }),
+          ? fetchRedeemJson('/api/admin/redeem/revoked')
+          : Promise.resolve({
+              ok: false,
+              status: 0,
+              body: { success: false as const, orders: [], error: 'Not loaded (sign in and set API URL)' },
+            }),
       ]);
 
       if (codesRes.error) {
@@ -169,8 +191,26 @@ export const AdminRedeemCodes = () => {
 
       const productsData = sortProductsForAdmin(rawProducts);
       setProducts(productsData);
-      setPendingOrders(pendingJson?.success ? pendingJson.orders || [] : []);
-      setRevokedOrders(revokedJson?.success ? revokedJson.orders || [] : []);
+
+      const pendingJson = pendingRes.body;
+      const revokedJson = revokedRes.body;
+      const pendingErr =
+        token && base
+          ? pendingRes.ok && pendingJson?.success
+            ? null
+            : pendingJson?.error || `Pending list failed (${pendingRes.status || 'error'})`
+          : pendingJson?.error || null;
+      const revokedErr =
+        token && base
+          ? revokedRes.ok && revokedJson?.success
+            ? null
+            : revokedJson?.error || `Revoked list failed (${revokedRes.status || 'error'})`
+          : revokedJson?.error || null;
+      setRedeemListsError(
+        [pendingErr, revokedErr].filter(Boolean).join(' · ') || null,
+      );
+      setPendingOrders(pendingRes.ok && pendingJson?.success ? (pendingJson.orders as PendingOrder[]) || [] : []);
+      setRevokedOrders(revokedRes.ok && revokedJson?.success ? (revokedJson.orders as RevokedOrder[]) || [] : []);
 
       setForm((f) => {
         if (productsData.length === 0) {
@@ -615,6 +655,14 @@ export const AdminRedeemCodes = () => {
           Seized / revoked ({revokedOrders.length})
         </button>
       </div>
+
+      {redeemListsError ? (
+        <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/90 dark:bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+          <strong className="font-semibold">Pending / seized lists could not load:</strong> {redeemListsError} Refresh the page after fixing API URL (
+          <code className="text-xs">VITE_API_URL</code>) and server deploy, or check browser Network for{' '}
+          <code className="text-xs">/api/admin/redeem/pending</code>.
+        </div>
+      ) : null}
 
       {/* Bulk generate */}
       {showBulkPanel && (
@@ -1150,8 +1198,10 @@ export const AdminRedeemCodes = () => {
               </tbody>
             </table>
             {pendingOrders.length === 0 && (
-              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm">
-                No pending manual payments for redeem orders.
+              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
+                {redeemListsError
+                  ? 'Could not load this list — see the yellow notice above (API error or configuration).'
+                  : 'No pending manual payments for redeem orders. Rows appear when someone redeems with payment still pending (cash/bKash not marked paid yet).'}
               </div>
             )}
           </div>
@@ -1258,8 +1308,10 @@ export const AdminRedeemCodes = () => {
               </tbody>
             </table>
             {revokedOrders.length === 0 && (
-              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm">
-                No seized redeem orders yet.
+              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm px-4">
+                {redeemListsError
+                  ? 'Could not load this list — see the yellow notice above.'
+                  : 'No seized redeem orders yet. After you use Seize on a pending row, it will show here.'}
               </div>
             )}
           </div>

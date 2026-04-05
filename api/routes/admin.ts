@@ -1551,7 +1551,6 @@ router.get('/redeem/pending', verifyAdmin, async (_req, res) => {
         status,
         payment_status,
         payment_method,
-        redeem_pending,
         users: user_id (id, email, name, phone),
         products: product_id (id, title, price)
       `)
