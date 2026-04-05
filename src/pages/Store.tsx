@@ -351,7 +351,7 @@ export const Store = () => {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleBuyNow(product.id)}
-                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-accent-green hover:brightness-110 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary dark:focus:ring-offset-[#151518] transition-all flex items-center justify-center uppercase tracking-wide text-sm"
+                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-accent-green hover:brightness-110 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0f6b32] focus:ring-offset-white dark:focus:ring-[#0a5228] dark:focus:ring-offset-[#151518] transition-all flex items-center justify-center uppercase tracking-wide text-sm"
                     >
                       <ShoppingBag className="w-4 h-4 mr-2" />
                       Buy Now
