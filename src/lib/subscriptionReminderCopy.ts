@@ -17,21 +17,25 @@ export const SUBSCRIPTION_REMINDER_PLACEHOLDERS =
   '{productTitle}, {expiresDate} (locale below), {orderId}, {renewUrl} (store / renew link)';
 
 export const DEFAULT_SUBSCRIPTION_REMINDER_COPY: SubscriptionReminderCopy = {
-  d3_title: 'Your subscription ends in 3 days',
+  d3_title: 'Reminder — your plan ends in 3 days',
   d3_body: [
-    'Your "{productTitle}" plan expires on {expiresDate}.',
+    'Hi there,',
     '',
-    'Renew soon from the store or top up your wallet so your access continues without interruption.',
+    'Your "{productTitle}" subscription is set to end on {expiresDate}.',
+    '',
+    'To keep uninterrupted access, renew from the store or add funds to your wallet before the date above.',
     '',
     'Store: {renewUrl}',
     '',
     'Order ID: {orderId}',
   ].join('\n'),
-  d1_title: 'Your subscription ends tomorrow',
+  d1_title: 'Important — your plan ends tomorrow',
   d1_body: [
-    'Your "{productTitle}" plan expires tomorrow ({expiresDate}).',
+    'Hi there,',
     '',
-    'Renew today to reduce the risk of losing access. Use the store or your orders page.',
+    'Your "{productTitle}" subscription ends tomorrow ({expiresDate}).',
+    '',
+    'Renew today from the store or your orders page to avoid losing access.',
     '',
     'Store: {renewUrl}',
     '',

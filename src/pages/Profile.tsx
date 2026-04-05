@@ -107,7 +107,7 @@ export const Profile = () => {
       if (!hasMinimumPhone(formData.phone)) {
         setMessage({
           type: 'error',
-          text: 'মোবাইল নম্বর বাধ্যতামূলক — কমপক্ষে ১১ ডিজিট দিন। / Phone number is required (at least 11 digits).',
+          text: 'Phone number is required (at least 11 digits).',
         });
         setLoading(false);
         return;

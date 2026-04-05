@@ -189,7 +189,13 @@ export async function runSubscriptionExpiryReminders(
       const profile = byUser.get(c.row.user_id as string);
       const emailTo = profile?.email?.trim();
 
-      const html = buildExpiryReminderEmailHtml({ title: inboxTitle, bodyPlain: body, renewUrl });
+      const html = buildExpiryReminderEmailHtml({
+        title: inboxTitle,
+        bodyPlain: body,
+        renewUrl,
+        reminderKey: c.key,
+        orderId: c.row.id,
+      });
 
       let emailStatus: ReminderChannelStatus = 'skipped_no_contact';
       let emailDetail: string | null = null;

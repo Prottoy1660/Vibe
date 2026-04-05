@@ -29,7 +29,7 @@ export const PhoneRequired = () => {
     setError(null);
     const trimmed = phone.trim();
     if (!hasMinimumPhone(trimmed)) {
-      setError('সঠিক মোবাইল নম্বর দিন (কমপক্ষে ১১ ডিজিট) / Enter a valid mobile number (at least 11 digits).');
+      setError('Enter a valid mobile number (at least 11 digits).');
       return;
     }
     if (!user) return;
@@ -44,10 +44,10 @@ export const PhoneRequired = () => {
       if (fresh && hasMinimumPhone(fresh.phone)) {
         navigate('/', { replace: true });
       } else {
-        setError('নম্বর সেভ হয়নি — আবার চেষ্টা করুন। / Number not saved — try again.');
+        setError('Number not saved — try again.');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'সেভ করা যায়নি / Could not save.');
+      setError(err instanceof Error ? err.message : 'Could not save. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -78,27 +78,24 @@ export const PhoneRequired = () => {
           </div>
         </div>
         <h1 className="text-xl sm:text-2xl font-bold text-center text-gray-900 dark:text-gray-100">
-          মোবাইল নম্বর প্রয়োজন
+          Mobile number required
         </h1>
         <p className="mt-2 text-sm text-center text-gray-600 dark:text-gray-400 leading-relaxed">
-          Google, Facebook বা Microsoft দিয়ে লগইন করলে নম্বর আমাদের কাছে থাকে না। সেবা ও যোগাযোগের জন্য আপনার WhatsApp-যোগ্য
-          মোবাইল নম্বরটি এখনই দিন।
-        </p>
-        <p className="mt-1 text-xs text-center text-gray-500 dark:text-gray-500">
-          Mobile number is required to continue — orders, redeem, and reminders use this number.
+          When you sign in with Google, Facebook, or Microsoft we do not receive your phone number. Please add a
+          WhatsApp-capable mobile number so we can reach you for service, orders, redeem, and reminders.
         </p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
             <label htmlFor="mandatory-phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">
-              মোবাইল নম্বর <span className="text-red-500">*</span>
+              Mobile number <span className="text-red-500">*</span>
             </label>
             <input
               id="mandatory-phone"
               type="tel"
               inputMode="tel"
               autoComplete="tel"
-              placeholder="01XXXXXXXXX বা 8801XXXXXXXXX"
+              placeholder="01XXXXXXXXX or 8801XXXXXXXXX"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               className="w-full rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1a1a1e] px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
@@ -113,7 +110,7 @@ export const PhoneRequired = () => {
             className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white font-semibold py-3 text-sm flex items-center justify-center gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-            সংরক্ষণ করে চালিয়ে যান / Save & continue
+            Save & continue
           </button>
         </form>
 
@@ -123,7 +120,7 @@ export const PhoneRequired = () => {
           className="mt-4 w-full flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 py-2"
         >
           <LogOut className="w-4 h-4" />
-          লগ আউট / Sign out
+          Sign out
         </button>
       </div>
     </div>

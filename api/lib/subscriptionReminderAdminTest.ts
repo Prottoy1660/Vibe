@@ -50,7 +50,13 @@ export async function sendSubscriptionReminderTestToAdmin(
   const outbound = resolveReminderOutbound(integrationStored);
 
   const out: TestSendResult = {};
-  const html = buildExpiryReminderEmailHtml({ title, bodyPlain: body, renewUrl });
+  const html = buildExpiryReminderEmailHtml({
+    title,
+    bodyPlain: body,
+    renewUrl,
+    reminderKey: 'd3',
+    orderId: sample.orderId,
+  });
 
   if (sendEmail) {
     const to = profile?.email?.trim();
