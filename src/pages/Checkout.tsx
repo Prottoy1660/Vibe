@@ -341,11 +341,11 @@ export const Checkout = () => {
                   {storeSavePct != null && product.list_price != null ? (
                     <span className="text-zinc-400 line-through tabular-nums">৳{Number(product.list_price)}</span>
                   ) : null}
-                  <span className="font-medium tabular-nums text-zinc-900 dark:text-zinc-50">
+                  <span className="font-medium text-accent-green tabular-nums">
                     ৳{product.price}
                   </span>
                   {storeSavePct != null ? (
-                    <span className="rounded border border-zinc-200/80 bg-zinc-100/80 px-1.5 py-0.5 text-[11px] font-semibold text-zinc-600 dark:border-white/10 dark:bg-white/[0.06] dark:text-zinc-400">
+                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-accent-green/15 text-accent-green">
                       Save {storeSavePct}%
                     </span>
                   ) : null}

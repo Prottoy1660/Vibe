@@ -1,6 +1,5 @@
--- When /api/redeem/apply fails after apply_redeem_code() (order insert etc.), the code was
--- already consumed. This function releases that consumption only when no real redeem order exists.
--- Also backfills redeem_code_uses.order_id when an order row exists but the link was never written.
+-- Undo orphan redeem_code_uses when /api/redeem/apply fails after apply_redeem_code().
+-- Backfill order_id when a redeem order exists but the link row was never updated.
 
 CREATE OR REPLACE FUNCTION public.release_stale_redeem_consumption(p_user_id UUID, p_code TEXT)
 RETURNS void
@@ -36,14 +35,12 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Real redemption: use row points at a live order
   IF v_use.order_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM public.orders o WHERE o.id = v_use.order_id
   ) THEN
     RETURN;
   END IF;
 
-  -- Order exists but link missing (API best-effort update failed): repair and stop
   IF v_use.order_id IS NULL AND EXISTS (
     SELECT 1
     FROM public.orders o
@@ -65,7 +62,6 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Orphan consumption: no redeem order for this user+product (or broken order_id)
   DELETE FROM public.redeem_code_uses WHERE id = v_use.id;
 
   UPDATE public.redeem_codes
@@ -79,6 +75,6 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.release_stale_redeem_consumption(UUID, TEXT) IS
-  'Undo orphan redeem_code_uses, decrement used_count, or backfill order_id when order exists.';
+  'Undo orphan redeem uses or backfill order_id after partial /api/redeem/apply failures.';
 
 GRANT EXECUTE ON FUNCTION public.release_stale_redeem_consumption(UUID, TEXT) TO service_role;
