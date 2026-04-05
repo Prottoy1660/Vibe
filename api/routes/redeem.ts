@@ -10,6 +10,18 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+/** If apply_redeem_code ran but order creation failed, release the code so the user can retry. */
+async function releaseStaleRedeemConsumption(userId: string, code: string) {
+  try {
+    await supabase.rpc('release_stale_redeem_consumption', {
+      p_user_id: userId,
+      p_code: code,
+    });
+  } catch (e) {
+    console.error('[redeem] release_stale_redeem_consumption:', e);
+  }
+}
+
 async function requireUser(req: any, res: any, next: any) {
   try {
     const authHeader = req.headers.authorization || '';
@@ -66,11 +78,50 @@ router.post('/apply', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid code format' });
     }
     const user = (req as any).user;
+    const normalized = code.toUpperCase().trim();
+
+    // Self-heal orphans / backfill order_id link in DB
+    await releaseStaleRedeemConsumption(user.id, code);
+
+    const { data: rcRow } = await supabase
+      .from('redeem_codes')
+      .select('id, product_id')
+      .eq('code', normalized)
+      .maybeSingle();
+
+    if (rcRow) {
+      const { data: useAfter } = await supabase
+        .from('redeem_code_uses')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('redeem_code_id', rcRow.id)
+        .maybeSingle();
+
+      if (useAfter) {
+        const { data: existingOrder } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('product_id', rcRow.product_id)
+          .eq('payment_method', 'redeem_code')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (existingOrder?.id) {
+          return res.json({
+            success: true,
+            message: 'This code is already linked to your account.',
+            order_id: existingOrder.id,
+          });
+        }
+      }
+    }
 
     // Atomically consume code (locks row + enforces max uses)
     const { data: productId, error: applyErr } = await supabase.rpc('apply_redeem_code', {
       p_user_id: user.id,
-      p_code: code,
+      p_code: normalized,
     });
 
     if (applyErr || !productId) {
@@ -117,7 +168,7 @@ router.post('/apply', requireUser, async (req, res) => {
       const { data: redeemCodeRow } = await supabase
         .from('redeem_codes')
         .select('id')
-        .eq('code', code.toUpperCase().trim())
+        .eq('code', normalized)
         .single();
       if (redeemCodeRow?.id) {
         await supabase
@@ -131,7 +182,15 @@ router.post('/apply', requireUser, async (req, res) => {
     res.json({ success: true, message: 'Code redeemed successfully!', order_id: order.id });
   } catch (err) {
     console.error('Redeem apply error:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    const user = (req as any).user;
+    if (user?.id && req.body?.code) {
+      await releaseStaleRedeemConsumption(user.id, String(req.body.code));
+    }
+    res.status(500).json({
+      success: false,
+      message:
+        'Something went wrong while completing redemption. Your code was not consumed if no order was created — please try Redeem again.',
+    });
   }
 });
 
