@@ -391,7 +391,7 @@ export const Store = () => {
       <div className="mt-4">
         <button
           onClick={() => { setShowRedeemPanel(p => !p); setRedeemError(''); setRedeemInfo(null); setRedeemSuccess(''); }}
-          className="w-full flex items-center justify-center gap-2 py-3.5 px-6 border-2 border-dashed border-primary/35 dark:border-primary/40 rounded-2xl text-primary dark:text-primary-light hover:bg-primary/5 dark:hover:bg-primary/10 transition-all text-sm font-semibold group"
+          className="group flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-accent-green/35 py-3.5 px-6 text-sm font-semibold text-accent-green transition-all hover:bg-accent-green/5 dark:border-accent-green/40 dark:text-[#4ade80] dark:hover:bg-accent-green/10"
         >
           <Gift className="w-4 h-4 group-hover:scale-110 transition-transform" />
           Have a Redeem Code? Click here to activate your free access
@@ -406,10 +406,10 @@ export const Store = () => {
               exit={{ opacity: 0, height: 0, marginTop: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-white dark:bg-[#151518] rounded-2xl border border-primary/15 dark:border-primary/25 p-6 shadow-soft dark:shadow-none">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-2 bg-primary/10 dark:bg-primary/15 rounded-xl">
-                    <Gift className="w-5 h-5 text-primary dark:text-primary-light" />
+              <div className="rounded-2xl border border-zinc-200/90 bg-white p-6 shadow-soft dark:border-white/[0.07] dark:bg-[#12121a] dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]">
+                <div className="mb-4 flex items-center gap-2">
+                  <div className="rounded-xl bg-accent-green/10 p-2 dark:bg-accent-green/15">
+                    <Gift className="h-5 w-5 text-accent-green dark:text-[#4ade80]" />
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Redeem Your Gift Code</h3>
@@ -430,7 +430,7 @@ export const Store = () => {
                         onChange={e => { setRedeemCode(e.target.value.toUpperCase()); setRedeemError(''); setRedeemInfo(null); }}
                         onKeyDown={e => e.key === 'Enter' && handleRedeemValidate()}
                         placeholder="e.g. ABCD-EFGH-IJKL"
-                        className="flex-1 px-4 py-3 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-mono tracking-widest font-bold text-gray-900 dark:text-gray-100 placeholder:font-sans placeholder:tracking-normal placeholder:font-normal placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                        className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 font-mono text-sm font-bold tracking-widest text-gray-900 placeholder:font-sans placeholder:font-normal placeholder:tracking-normal placeholder:text-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-accent-green/45 dark:border-[#26262d] dark:bg-[#111113] dark:text-gray-100"
                       />
                       <button
                         onClick={handleRedeemValidate}
@@ -448,17 +448,22 @@ export const Store = () => {
                     )}
 
                     {redeemInfo && (
-                      <div className="mt-3 p-4 bg-primary/5 dark:bg-primary/10 border border-primary/20 dark:border-primary/30 rounded-xl">
-                        <p className="text-xs text-primary dark:text-primary-light font-semibold mb-2">Valid Code — Grants Access To:</p>
-                        <div className="flex items-center justify-between">
+                      <div className="mt-3 rounded-xl border border-accent-green/25 bg-accent-green/5 p-4 dark:border-accent-green/35 dark:bg-accent-green/10">
+                        <p className="mb-2 text-xs font-semibold text-accent-green dark:text-[#4ade80]">
+                          Valid Code — Grants Access To:
+                        </p>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="font-bold text-gray-900 dark:text-gray-100">{redeemInfo.products?.title}</p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">{redeemInfo.products?.duration} subscription • ৳{redeemInfo.products?.price} value</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              {redeemInfo.products?.duration} subscription • ৳{redeemInfo.products?.price} value
+                            </p>
                           </div>
                           <button
+                            type="button"
                             onClick={handleRedeemApply}
                             disabled={redeemApplying}
-                            className="px-5 py-2.5 bg-accent-green hover:brightness-110 disabled:opacity-50 text-gray-900 rounded-xl font-bold text-sm transition-all flex items-center gap-2 shadow-sm"
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/25 bg-gradient-to-b from-[#4ade80] to-accent-green px-5 py-2.5 text-sm font-semibold text-zinc-950 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.35),0_3px_14px_rgba(34,197,94,0.28)] transition-all hover:brightness-[1.03] hover:shadow-[0_4px_18px_rgba(34,197,94,0.38)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green/50 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:opacity-50 active:scale-[0.99] dark:border-white/10 dark:from-[#3fcf7a] dark:to-[#16a34a] dark:focus-visible:ring-offset-[#12121a]"
                           >
                             {redeemApplying ? <Loader2 className="w-4 h-4 animate-spin" /> : <Gift className="w-4 h-4" />}
                             Redeem Now
