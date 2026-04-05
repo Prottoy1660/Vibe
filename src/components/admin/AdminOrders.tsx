@@ -124,7 +124,7 @@ export const AdminOrders = () => {
         .select(
           `
           *,
-          users (email, name, phone),
+          users: user_id (email, name, phone),
           products (title, is_personal, duration, price),
           user_emails (id)
         `,
