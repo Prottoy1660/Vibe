@@ -8,6 +8,7 @@ import {
 import { format, subDays, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { ADMIN_ORDERS_QUERY_LIMIT } from '../../lib/adminDataLimits';
 
 interface Order {
   id: string;
@@ -33,7 +34,7 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
       const token = await getAccessTokenForApi();
       const base = getApiBaseUrl();
       if (token && base) {
-        let url = `${base}/api/admin/orders/query?payment_status=paid&limit=5000`;
+        let url = `${base}/api/admin/orders/query?payment_status=paid&limit=${ADMIN_ORDERS_QUERY_LIMIT}`;
         if (timeRange !== 'all') {
           const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
           const startDate = subDays(new Date(), days);
@@ -59,7 +60,9 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
       let query = supabase
         .from('orders')
         .select('id, total_amount, created_at, status, payment_method, payment_status')
-        .eq('payment_status', 'paid');
+        .eq('payment_status', 'paid')
+        .order('created_at', { ascending: false })
+        .limit(ADMIN_ORDERS_QUERY_LIMIT);
 
       if (timeRange !== 'all') {
         const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;

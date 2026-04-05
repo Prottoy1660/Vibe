@@ -82,6 +82,14 @@ function getSameOriginBase(): string {
   return stripTrailingSlashes(window.location.origin);
 }
 
+/** Avoid re-hitting /api/health on every API call when base URL is already known-good */
+let apiBaseHealthMemo: { base: string; checkedAt: number } | null = null;
+const API_BASE_HEALTH_TTL_MS = 60_000;
+
+function clearApiBaseHealthMemo() {
+  apiBaseHealthMemo = null;
+}
+
 /** Drop stale api_base_url when user switched apex ↔ www or host changed */
 function invalidateStaleApiBaseCache() {
   if (typeof window === 'undefined') return;
@@ -93,14 +101,17 @@ function invalidateStaleApiBaseCache() {
     const cachedHost = new URL(cached).host;
     if (cachedHost !== window.location.host) {
       window.localStorage.removeItem('api_base_url');
+      clearApiBaseHealthMemo();
       return;
     }
     // Apex-only deployments: never keep a www-preferring base if the page is on apex
     if (!host.startsWith('www.') && cachedHost.startsWith('www.')) {
       window.localStorage.removeItem('api_base_url');
+      clearApiBaseHealthMemo();
     }
   } catch {
     window.localStorage.removeItem('api_base_url');
+    clearApiBaseHealthMemo();
   }
 }
 
@@ -157,9 +168,21 @@ async function resolveBaseUrl() {
       const isLocalRuntime = ['localhost', '127.0.0.1'].includes(window.location.hostname);
       if (!isLocalRuntime && cached.includes('localhost:3001')) {
         window.localStorage.removeItem('api_base_url');
+        clearApiBaseHealthMemo();
       } else {
+        const now = Date.now();
+        if (
+          apiBaseHealthMemo?.base === cached &&
+          now - apiBaseHealthMemo.checkedAt < API_BASE_HEALTH_TTL_MS
+        ) {
+          return cached;
+        }
         const ok = await healthCheck(cached);
-        if (ok) return cached;
+        if (ok) {
+          apiBaseHealthMemo = { base: cached, checkedAt: now };
+          return cached;
+        }
+        clearApiBaseHealthMemo();
         window.localStorage.removeItem('api_base_url');
       }
     } else {
@@ -173,7 +196,11 @@ async function resolveBaseUrl() {
     // If health is blocked, we'll still allow the request attempt later.
     const ok = await healthCheck(base);
     if (ok) {
-      if (typeof window !== 'undefined') window.localStorage.setItem('api_base_url', base);
+      const now = Date.now();
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('api_base_url', base);
+        apiBaseHealthMemo = { base, checkedAt: now };
+      }
       return base;
     }
   }
@@ -182,6 +209,7 @@ async function resolveBaseUrl() {
   const origin = typeof window !== 'undefined' ? getSameOriginBase() : '';
   const fallback = origin || buildCandidates()[0] || '';
   if (typeof window !== 'undefined' && fallback) window.localStorage.setItem('api_base_url', fallback);
+  clearApiBaseHealthMemo();
   return fallback;
 }
 

@@ -26,6 +26,7 @@ import {
 } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { ADMIN_ORDERS_QUERY_LIMIT } from '../../lib/adminDataLimits';
 
 interface PaidOrderRow {
   id: string;
@@ -89,7 +90,7 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
       if (token && base) {
         const [oRes, eRes] = await Promise.all([
           fetch(
-            `${base}/api/admin/orders/query?payment_status=paid&from=${fromIso}&to=${toIso}&limit=5000`,
+            `${base}/api/admin/orders/query?payment_status=paid&from=${fromIso}&to=${toIso}&limit=${ADMIN_ORDERS_QUERY_LIMIT}`,
             { headers: { Authorization: `Bearer ${token}` } },
           ).then(async (r) => {
             const j = await r.json().catch(() => ({}));
@@ -116,7 +117,8 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
             .eq('payment_status', 'paid')
             .gte('created_at', start.toISOString())
             .lte('created_at', end.toISOString())
-            .order('created_at', { ascending: false }),
+            .order('created_at', { ascending: false })
+            .limit(ADMIN_ORDERS_QUERY_LIMIT),
           supabase
             .from('operational_expenses')
             .select('*')

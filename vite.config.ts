@@ -16,6 +16,34 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      workbox: {
+        // Default precache pulls every hashed chunk (~2MB) — slows first SW install/update.
+        // Skip the heaviest lazy chunks; they still load from network and populate runtime cache below.
+        globIgnores: [
+          '**/charts-*.js',
+          '**/AdminRedeemCodes-*.js',
+          '**/AdminEmails-*.js',
+          '**/AdminUsers-*.js',
+          '**/AdobeEmail-*.js',
+          '**/AdminSubscriptionReminders-*.js',
+        ],
+        navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api/],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request, url }) =>
+              request.destination === 'script' && url.pathname.includes('/assets/'),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'vibe-js-chunks',
+              expiration: {
+                maxEntries: 72,
+                maxAgeSeconds: 14 * 24 * 60 * 60,
+              },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'Vibe Access',
         short_name: 'Vibe',
