@@ -63,6 +63,8 @@ const API_EXACT: Record<string, string> = {
   'GET /api/admin/ops/support-chat/training': 'Opened support chat training data',
   'DELETE /api/admin/ops/support-chat/training': 'Cleared support chat training data',
   // Redeem (admin)
+  'GET /api/admin/orders/query': 'Listed orders (admin query)',
+  'GET /api/admin/finance/operational-expenses': 'Listed operational expenses',
   'GET /api/admin/redeem/pending': 'Viewed pending redeem orders',
   'GET /api/admin/redeem/revoked': 'Viewed revoked / seized redeem orders',
   // cPanel

@@ -103,6 +103,22 @@ export const AdminOrders = () => {
   const fetchOrders = async () => {
     setLoading(true);
     try {
+      const token = await getAccessTokenForApi();
+      const base = getApiBaseUrl();
+      if (token && base) {
+        const res = await fetch(`${base}/api/admin/orders/query?limit=200`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json.success && Array.isArray(json.orders)) {
+          setRawOrders(json.orders as Order[]);
+          return;
+        }
+        if (!res.ok) {
+          throw new Error(json.error || `Orders API failed (${res.status})`);
+        }
+      }
+
       const { data, error } = await supabase
         .from('orders')
         .select(
@@ -111,7 +127,7 @@ export const AdminOrders = () => {
           users (email, name, phone),
           products (title, is_personal, duration, price),
           user_emails (id)
-        `
+        `,
         )
         .order('created_at', { ascending: false })
         .limit(200);
@@ -120,6 +136,7 @@ export const AdminOrders = () => {
       setRawOrders((data as unknown as Order[]) || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
+      alert(error instanceof Error ? error.message : 'Failed to load orders. Check API URL, login, and server logs.');
     } finally {
       setLoading(false);
     }

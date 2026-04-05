@@ -462,7 +462,9 @@ export const AdminRedeemCodes = () => {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || 'Failed to mark as paid');
+      if (!response.ok) {
+        throw new Error(body.error || body.message || `Failed to mark as paid (HTTP ${response.status})`);
+      }
       setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
       await fetchAll();
       alert('Marked as paid. Amount is now recorded as settled revenue.');

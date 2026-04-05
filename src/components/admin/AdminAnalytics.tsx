@@ -6,6 +6,8 @@ import {
   BarChart, Bar, Legend, PieChart, Pie, Cell
 } from 'recharts';
 import { format, subDays, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 interface Order {
   id: string;
@@ -28,13 +30,37 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
   const fetchData = async () => {
     setLoading(true);
     try {
+      const token = await getAccessTokenForApi();
+      const base = getApiBaseUrl();
+      if (token && base) {
+        let url = `${base}/api/admin/orders/query?payment_status=paid&limit=5000`;
+        if (timeRange !== 'all') {
+          const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
+          const startDate = subDays(new Date(), days);
+          url += `&from=${encodeURIComponent(startDate.toISOString())}`;
+        }
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(json.error || `Analytics ${res.status}`);
+        const rows = (json.orders || []) as Order[];
+        setOrders(
+          rows.map((o) => ({
+            id: o.id,
+            total_amount: Number(o.total_amount),
+            created_at: o.created_at,
+            status: o.status,
+            payment_method: o.payment_method,
+            payment_status: o.payment_status,
+          })),
+        );
+        return;
+      }
+
       let query = supabase
         .from('orders')
         .select('id, total_amount, created_at, status, payment_method, payment_status')
-        .in('status', ['completed', 'paid'])
         .eq('payment_status', 'paid');
 
-      // Apply time filter
       if (timeRange !== 'all') {
         const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 90;
         const startDate = subDays(new Date(), days);

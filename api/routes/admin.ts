@@ -33,9 +33,13 @@ dotenv.config();
 
 const router = express.Router();
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('[admin] Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY for admin API.');
+}
 
 function durationToMonths(duration: string | null | undefined) {
   const raw = String(duration || '').toLowerCase();
@@ -84,6 +88,73 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     res.status(500).json({ error: 'Server error during authorization' });
   }
 };
+
+/**
+ * List orders with service role (bypasses RLS). Admin UI used to query PostgREST as the logged-in user;
+ * if public.users.role is missing/wrong, is_admin() is false and only own rows appear — empty order/finance/analytics.
+ */
+router.get('/orders/query', verifyAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 200));
+    const paymentStatus = typeof req.query.payment_status === 'string' ? req.query.payment_status.trim() : '';
+    const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+    const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+
+    let q = supabase
+      .from('orders')
+      .select(
+        `
+        *,
+        users (email, name, phone),
+        products (title, is_personal, duration, price),
+        user_emails (id)
+      `,
+      )
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (paymentStatus) {
+      q = q.eq('payment_status', paymentStatus);
+    }
+    if (from) {
+      q = q.gte('created_at', from);
+    }
+    if (to) {
+      q = q.lte('created_at', to);
+    }
+
+    const { data, error } = await q;
+    if (error) throw error;
+    return res.json({ success: true, orders: data || [] });
+  } catch (e: any) {
+    console.error('admin orders/query:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to list orders' });
+  }
+});
+
+router.get('/finance/operational-expenses', verifyAdmin, async (req, res) => {
+  try {
+    const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+    const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+    let q = supabase
+      .from('operational_expenses')
+      .select('*')
+      .order('expense_date', { ascending: false })
+      .limit(5000);
+    if (from) {
+      q = q.gte('expense_date', from);
+    }
+    if (to) {
+      q = q.lte('expense_date', to);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    return res.json({ success: true, expenses: data || [] });
+  } catch (e: any) {
+    console.error('admin finance/operational-expenses:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to load expenses' });
+  }
+});
 
 router.delete('/users/:id', verifyAdmin, async (req, res) => {
   try {

@@ -24,6 +24,8 @@ import {
   eachDayOfInterval,
   isAfter,
 } from 'date-fns';
+import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 interface PaidOrderRow {
   id: string;
@@ -74,29 +76,64 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
         end = endOfDay(t);
       }
 
-      const [oRes, eRes, sRes] = await Promise.all([
-        supabase
-          .from('orders')
-          .select('id, total_amount, created_at')
-          .eq('payment_status', 'paid')
-          .in('status', ['paid', 'completed'])
-          .gte('created_at', start.toISOString())
-          .lte('created_at', end.toISOString())
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('operational_expenses')
-          .select('*')
-          .gte('expense_date', format(start, 'yyyy-MM-dd'))
-          .lte('expense_date', format(end, 'yyyy-MM-dd'))
-          .order('expense_date', { ascending: false }),
-        supabase.from('system_settings').select('value').eq('key', 'partner_profit_share').maybeSingle(),
-      ]);
+      const token = await getAccessTokenForApi();
+      const base = getApiBaseUrl();
+      const fromIso = encodeURIComponent(start.toISOString());
+      const toIso = encodeURIComponent(end.toISOString());
+      const expFrom = format(start, 'yyyy-MM-dd');
+      const expTo = format(end, 'yyyy-MM-dd');
 
-      if (oRes.error) throw oRes.error;
-      if (eRes.error) throw eRes.error;
+      let paidOrders: PaidOrderRow[] = [];
+      let expenseRows: OperationalExpense[] = [];
 
-      setOrders((oRes.data as PaidOrderRow[]) || []);
-      setExpenses((eRes.data as OperationalExpense[]) || []);
+      if (token && base) {
+        const [oRes, eRes] = await Promise.all([
+          fetch(
+            `${base}/api/admin/orders/query?payment_status=paid&from=${fromIso}&to=${toIso}&limit=5000`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          ).then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || `Orders ${r.status}`);
+            const rows = (j.orders || []) as Array<{ id: string; total_amount: number; created_at: string }>;
+            return rows.map((o) => ({ id: o.id, total_amount: o.total_amount, created_at: o.created_at }));
+          }),
+          fetch(
+            `${base}/api/admin/finance/operational-expenses?from=${encodeURIComponent(expFrom)}&to=${encodeURIComponent(expTo)}`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          ).then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || `Expenses ${r.status}`);
+            return (j.expenses || []) as OperationalExpense[];
+          }),
+        ]);
+        paidOrders = oRes;
+        expenseRows = eRes;
+      } else {
+        const [oRes, eRes] = await Promise.all([
+          supabase
+            .from('orders')
+            .select('id, total_amount, created_at')
+            .eq('payment_status', 'paid')
+            .gte('created_at', start.toISOString())
+            .lte('created_at', end.toISOString())
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('operational_expenses')
+            .select('*')
+            .gte('expense_date', expFrom)
+            .lte('expense_date', expTo)
+            .order('expense_date', { ascending: false }),
+        ]);
+        if (oRes.error) throw oRes.error;
+        if (eRes.error) throw eRes.error;
+        paidOrders = (oRes.data as PaidOrderRow[]) || [];
+        expenseRows = (eRes.data as OperationalExpense[]) || [];
+      }
+
+      const sRes = await supabase.from('system_settings').select('value').eq('key', 'partner_profit_share').maybeSingle();
+
+      setOrders(paidOrders);
+      setExpenses(expenseRows);
 
       let pct = 0;
       if (sRes.error) {
