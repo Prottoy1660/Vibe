@@ -174,12 +174,16 @@ export async function tryProcessReferralRewardsForOrder(
 
   const { data: order } = await supabase
     .from('orders')
-    .select('id, user_id, total_amount, status, payment_status')
+    .select('id, user_id, total_amount, status, payment_status, redeem_pending')
     .eq('id', orderId)
     .single();
 
   if (!order || order.status !== 'completed') {
     return { ok: true, skipped: 'order_not_completed' };
+  }
+
+  if ((order as any).redeem_pending || order.payment_status !== 'paid') {
+    return { ok: true, skipped: 'payment_not_settled' };
   }
 
   const orderTotal = Number(order.total_amount || 0);

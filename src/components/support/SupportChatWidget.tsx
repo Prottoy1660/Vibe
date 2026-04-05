@@ -86,7 +86,7 @@ export function SupportChatWidget() {
     let cancelled = false;
     (async () => {
       try {
-        const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta');
+        const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta', { skipErrorPageRedirect: true });
         if (!cancelled) setMeta(m);
       } catch {
         if (!cancelled) setMeta({ help_chat_enabled: true, whatsapp_e164: null, ai_enabled: false });
@@ -105,7 +105,7 @@ export function SupportChatWidget() {
     setPanelRefreshing(true);
     (async () => {
       try {
-        const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta');
+        const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta', { skipErrorPageRedirect: true });
         if (!cancelled) setMeta(m);
       } catch {
         /* keep previous meta */
@@ -127,10 +127,14 @@ export function SupportChatWidget() {
     setLoading(true);
     setTicketFlash(null);
     try {
-      const data = await postJsonWithFallback<ReplyPayload>('/api/support-chat/reply', {
-        messages: turns,
-        session_id: sessionIdRef.current,
-      });
+      const data = await postJsonWithFallback<ReplyPayload>(
+        '/api/support-chat/reply',
+        {
+          messages: turns,
+          session_id: sessionIdRef.current,
+        },
+        { skipErrorPageRedirect: true },
+      );
       const errCode = (data as any).error;
       if (
         data.success === false ||
@@ -231,6 +235,7 @@ export function SupportChatWidget() {
           body: pendingTicket.body,
           category: pendingTicket.category,
         },
+        { skipErrorPageRedirect: true },
       );
       if (res.success) {
         setTicketFlash('টিকিট সফলভাবে খোলা হয়েছে। Support পেজ থেকে স্ট্যাটাস দেখুন।');

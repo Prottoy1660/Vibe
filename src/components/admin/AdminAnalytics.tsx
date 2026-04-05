@@ -13,6 +13,7 @@ interface Order {
   created_at: string;
   status: string;
   payment_method: string;
+  payment_status: string;
 }
 
 export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => {
@@ -29,8 +30,9 @@ export const AdminAnalytics = ({ embedded = false }: { embedded?: boolean }) => 
     try {
       let query = supabase
         .from('orders')
-        .select('id, total_amount, created_at, status, payment_method')
-        .in('status', ['completed', 'paid']);
+        .select('id, total_amount, created_at, status, payment_method, payment_status')
+        .in('status', ['completed', 'paid'])
+        .eq('payment_status', 'paid');
 
       // Apply time filter
       if (timeRange !== 'all') {

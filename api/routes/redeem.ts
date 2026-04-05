@@ -86,17 +86,18 @@ router.post('/apply', requireUser, async (req, res) => {
     if (productErr) throw productErr;
     const productPrice = Number((productRow as any)?.price) || 0;
 
-    // Create the order with the REAL product price — user pays ৳0 but
-    // the system records the full value so revenue/analytics stay accurate
+    // Create the order with pending status for redeem — user gets access but payment is due later
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
         user_id: user.id,
         product_id: productId,
         payment_method: 'redeem_code',
-        total_amount: productPrice,   // ← actual price, not 0
-        status: 'paid',               // Insert as 'paid' first, upgrade if provision succeeds
-        payment_status: 'paid',
+        total_amount: productPrice,   // actual price for revenue tracking
+        status: 'pending',            // Pending until payment is made
+        payment_status: 'pending',
+        redeem_pending: true,
+        payment_due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours from now
       })
       .select()
       .single();

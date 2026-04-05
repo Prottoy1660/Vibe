@@ -96,9 +96,11 @@ export const Referral = () => {
     setClaiming(true);
     try {
       const { postJsonWithFallback } = await import('../lib/apiClient');
-      const data = await postJsonWithFallback<{ success?: boolean; message?: string }>('/api/referral/claim', {
-        code: raw,
-      });
+      const data = await postJsonWithFallback<{ success?: boolean; message?: string }>(
+        '/api/referral/claim',
+        { code: raw },
+        { skipErrorPageRedirect: true },
+      );
       if (data.success) {
         setClaimMsg('Referral code applied.');
         setClaimCode('');

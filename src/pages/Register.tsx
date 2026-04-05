@@ -19,6 +19,7 @@ import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
 import { isAllowedSignupEmail, SIGNUP_EMAIL_DOMAIN_BLOCKED } from '../lib/allowedSignupEmailDomains';
 import { requestSignupIntent } from '../lib/signupIntent';
 import { postJsonWithFallback } from '../lib/apiClient';
+import { hasMinimumPhone } from '../lib/phoneRequired';
 
 export const Register = () => {
   const [searchParams] = useSearchParams();
@@ -62,7 +63,7 @@ export const Register = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!phone || phone.length < 11) {
+    if (!hasMinimumPhone(phone)) {
       setError('Please enter a valid phone number');
       return;
     }
@@ -103,7 +104,7 @@ export const Register = () => {
 
       if (validRef && signUpData.session) {
         try {
-          await postJsonWithFallback('/api/referral/claim', { code: validRef });
+          await postJsonWithFallback('/api/referral/claim', { code: validRef }, { skipErrorPageRedirect: true });
           sessionStorage.removeItem('referral_pending_code');
         } catch {
           sessionStorage.setItem('referral_pending_code', validRef);

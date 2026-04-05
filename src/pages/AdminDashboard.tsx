@@ -18,6 +18,8 @@ import {
   Megaphone,
   Music2,
   MessageCircle,
+  Wallet,
+  BellRing,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -31,6 +33,7 @@ const AdminNotices = React.lazy(() => import('../components/admin/AdminNotices')
 const AdminEmails = React.lazy(() => import('../components/admin/AdminEmails').then((m) => ({ default: m.AdminEmails })));
 const AdminUserEmails = React.lazy(() => import('../components/admin/AdminUserEmails').then((m) => ({ default: m.AdminUserEmails })));
 const AdminAnalytics = React.lazy(() => import('../components/admin/AdminAnalytics').then((m) => ({ default: m.AdminAnalytics })));
+const AdminFinance = React.lazy(() => import('../components/admin/AdminFinance').then((m) => ({ default: m.AdminFinance })));
 const AdminIntelligence = React.lazy(() => import('../components/admin/AdminIntelligence').then((m) => ({ default: m.AdminIntelligence })));
 const AdminRedeemCodes = React.lazy(() => import('../components/admin/AdminRedeemCodes').then((m) => ({ default: m.AdminRedeemCodes })));
 const AdminTutorialHelp = React.lazy(() => import('../components/admin/AdminTutorialHelp').then((m) => ({ default: m.AdminTutorialHelp })));
@@ -46,6 +49,12 @@ const AdminSupportChatSettings = React.lazy(() =>
 );
 const AdminSidebarConfig = React.lazy(() =>
   import('../components/admin/AdminSidebarConfig').then((m) => ({ default: m.AdminSidebarConfig }))
+);
+const AdminActivityLog = React.lazy(() =>
+  import('../components/admin/AdminActivityLog').then((m) => ({ default: m.AdminActivityLog }))
+);
+const AdminSubscriptionReminders = React.lazy(() =>
+  import('../components/admin/AdminSubscriptionReminders').then((m) => ({ default: m.AdminSubscriptionReminders })),
 );
 
 const AdminTabFallback = () => (
@@ -213,9 +222,20 @@ export const AdminDashboard = () => {
       {/* Mobile Menu Button & Title */}
       <div className="flex items-center justify-between md:hidden bg-white dark:bg-[#151518] p-4 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] mb-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-          {activeTab === 'analytics' ? 'Financial Analytics' : 'Admin Panel'}
+          {activeTab === 'analytics'
+            ? 'Financial Analytics'
+            : activeTab === 'finance'
+              ? 'Profit & expenses'
+              : activeTab === 'activity'
+                ? 'Activity log'
+                : activeTab === 'subscription_reminders'
+                  ? 'Subscription reminders'
+                  : 'Admin Panel'}
         </h1>
-        {activeTab === 'analytics' && (
+        {(activeTab === 'analytics' ||
+          activeTab === 'finance' ||
+          activeTab === 'activity' ||
+          activeTab === 'subscription_reminders') && (
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <ShieldAlert className="w-4 h-4 text-indigo-500" />
             Admin
@@ -224,7 +244,7 @@ export const AdminDashboard = () => {
       </div>
 
       {/* Header section for desktop — Financial Analytics uses its own hero inside AdminAnalytics */}
-      {activeTab !== 'analytics' && (
+      {activeTab !== 'analytics' && activeTab !== 'finance' && activeTab !== 'activity' && (
         <div className="hidden md:flex justify-between items-center bg-white dark:bg-[#151518] p-6 rounded-2xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300">
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {activeTab === 'overview' && 'Admin Dashboard'}
@@ -280,6 +300,14 @@ export const AdminDashboard = () => {
                 Sidebar Visibility
               </span>
             )}
+            {activeTab === 'platform_settings' && 'Platform status'}
+            {activeTab === 'subscription_reminders' && (
+              <span className="flex items-center gap-2">
+                <BellRing className="w-6 h-6" />
+                Subscription reminders
+              </span>
+            )}
+            {activeTab === 'waitlist' && 'Waitlist'}
           </h1>
           <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
             <ShieldAlert className="w-5 h-5 text-indigo-500" />
@@ -296,6 +324,8 @@ export const AdminDashboard = () => {
         {activeTab === 'notices' && <AdminNotices />}
         {activeTab === 'emails' && <AdminEmails />}
         {activeTab === 'analytics' && <AdminAnalytics />}
+        {activeTab === 'finance' && <AdminFinance />}
+        {activeTab === 'activity' && <AdminActivityLog />}
         {activeTab === 'user_emails' && <AdminUserEmails />}
         {activeTab === 'intelligence' && <AdminIntelligence />}
         {activeTab === 'redeem' && <AdminRedeemCodes />}
@@ -305,6 +335,7 @@ export const AdminDashboard = () => {
         {activeTab === 'support' && <AdminSupport />}
         {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
+        {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
@@ -323,19 +354,31 @@ export const AdminDashboard = () => {
                 <div>
                   <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Admin overview</h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                    Quick read on users, the shared email pool, and subscription health. Revenue charts are below — open{' '}
-                    <span className="font-medium text-gray-800 dark:text-gray-200">Financial Analytics</span> in the sidebar for the same view on its own page.
+                    Quick read on users, the shared email pool, and subscription health. Use{' '}
+                    <span className="font-medium text-gray-800 dark:text-gray-200">Profit &amp; expenses</span> for dated
+                    sales, net profit after costs, and{' '}
+                    <span className="font-medium text-gray-800 dark:text-gray-200">Financial Analytics</span> for charts.
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => navigate('/admin?tab=analytics')}
-                className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/25 transition-colors"
-              >
-                <TrendingUp className="w-4 h-4" />
-                Full financial analytics
-              </button>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin?tab=finance')}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-violet-600 text-white hover:bg-violet-500 shadow-md shadow-violet-500/25 transition-colors"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Profit &amp; expenses
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin?tab=analytics')}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/25 transition-colors"
+                >
+                  <TrendingUp className="w-4 h-4" />
+                  Financial analytics
+                </button>
+              </div>
             </div>
           </div>
 
@@ -424,6 +467,10 @@ export const AdminDashboard = () => {
               </div>
             </div>
           </div>
+
+          <Suspense fallback={<AdminTabFallback />}>
+            <AdminFinance embedded />
+          </Suspense>
 
           <Suspense fallback={<AdminTabFallback />}>
             <AdminAnalytics embedded />

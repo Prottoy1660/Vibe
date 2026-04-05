@@ -1,7 +1,38 @@
 import { getApiBaseUrl } from './apiBase';
 import { getAccessTokenForApi } from './getAccessTokenForApi';
+import {
+  goToHttpError,
+  HTTP_ERROR_PAGE_CODES,
+  shouldAutoRedirectToHttpErrorPage,
+  statusShouldUseErrorPage,
+} from './httpErrorNavigation';
 
 type Json = Record<string, any>;
+
+/** Default: redirect to /error/:status for these codes (unless skipErrorPageRedirect). */
+const DEFAULT_ERROR_PAGE_STATUSES: readonly number[] = [...HTTP_ERROR_PAGE_CODES];
+
+export type JsonFetchOptions = {
+  /** When true, never navigate to full-screen error pages (use for forms, widgets, silent retries). */
+  skipErrorPageRedirect?: boolean;
+  /**
+   * Which statuses trigger /error/:code. Defaults to all SPA error pages (4xx/5xx set in httpErrorNavigation).
+   * Pass `null` or `[]` to disable redirects for this call.
+   */
+  errorPageRedirectFor?: number[] | null;
+};
+
+function maybeHttpErrorRedirect(status: number, opts?: JsonFetchOptions) {
+  if (opts?.skipErrorPageRedirect) return;
+  const allowed =
+    opts?.errorPageRedirectFor === undefined
+      ? DEFAULT_ERROR_PAGE_STATUSES
+      : opts.errorPageRedirectFor;
+  if (allowed === null || allowed.length === 0) return;
+  if (!statusShouldUseErrorPage(status, allowed)) return;
+  if (!shouldAutoRedirectToHttpErrorPage(status)) return;
+  goToHttpError(status);
+}
 
 type ApiAttempt = {
   at: string;
@@ -154,7 +185,7 @@ async function resolveBaseUrl() {
   return fallback;
 }
 
-export async function postJsonWithFallback<T = any>(path: string, body: Json): Promise<T> {
+export async function postJsonWithFallback<T = any>(path: string, body: Json, opts?: JsonFetchOptions): Promise<T> {
   invalidateStaleApiBaseCache();
   const candidates = buildCandidates();
   const token = await getAccessTokenForApi();
@@ -207,6 +238,7 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
           request_id: rid,
           message
         });
+        maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;
         throw e;
@@ -263,7 +295,7 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json): P
   throw lastErr || new Error('Request failed');
 }
 
-export async function getJsonWithFallback<T = any>(path: string): Promise<T> {
+export async function getJsonWithFallback<T = any>(path: string, opts?: JsonFetchOptions): Promise<T> {
   invalidateStaleApiBaseCache();
   const candidates = buildCandidates();
   const token = await getAccessTokenForApi();
@@ -303,6 +335,7 @@ export async function getJsonWithFallback<T = any>(path: string): Promise<T> {
           request_id: rid,
           message,
         });
+        maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;
         throw e;

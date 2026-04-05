@@ -1,8 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { MaintenanceModeProvider } from './contexts/MaintenanceModeContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Layout } from './components/Layout';
+import { HttpErrorNavBridge } from './components/HttpErrorNavBridge';
 import { Loader2 } from 'lucide-react';
 
 const Login = React.lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
@@ -19,6 +21,10 @@ const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module
 const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
 const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
+const PhoneRequired = React.lazy(() => import('./pages/PhoneRequired').then((m) => ({ default: m.PhoneRequired })));
+const HttpErrorPage = React.lazy(() =>
+  import('./pages/HttpErrorPage').then((module) => ({ default: module.HttpErrorPage })),
+);
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -47,11 +53,22 @@ function AppRoutes() {
 
   return (
     <React.Suspense fallback={<PageLoader />}>
+      <HttpErrorNavBridge />
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
         <Route path="/status" element={<Status />} />
-        
+        <Route path="/error/:code" element={<HttpErrorPage />} />
+
+        <Route
+          path="/phone-required"
+          element={
+            <ProtectedRoute>
+              <PhoneRequired />
+            </ProtectedRoute>
+          }
+        />
+
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/store" element={<Store />} />
@@ -74,9 +91,11 @@ function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
+        <MaintenanceModeProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </MaintenanceModeProvider>
       </AuthProvider>
     </ThemeProvider>
   );

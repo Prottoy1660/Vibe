@@ -47,6 +47,7 @@ export const AdminPlatformSettings: React.FC = () => {
         level: form.level === 'unknown' ? 'operational' : form.level,
         message: form.message.trim(),
         show_banner: form.show_banner,
+        lock_public_site: form.lock_public_site,
       };
       const { error } = await supabase.from('system_settings').update(
         {
@@ -56,7 +57,10 @@ export const AdminPlatformSettings: React.FC = () => {
       ).eq('key', 'platform_status');
       if (error) throw error;
       setForm(parsePlatformStatus(value));
-      setMessage({ type: 'ok', text: 'Saved. Users see the banner when Show banner is on and the message field is filled.' });
+      setMessage({
+        type: 'ok',
+        text: 'Saved. Banner follows “Show banner”. Full-site lock hides the app from everyone except admins until you turn it off.',
+      });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Save failed';
       setMessage({ type: 'err', text: msg });
@@ -162,6 +166,28 @@ export const AdminPlatformSettings: React.FC = () => {
             <label htmlFor="show_banner" className="text-sm text-gray-700 dark:text-gray-200">
               Show banner to signed-in users (top of app)
             </label>
+          </div>
+
+          <div className="rounded-xl border border-amber-200/80 dark:border-amber-500/25 bg-amber-50/60 dark:bg-amber-500/10 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                id="lock_public_site"
+                checked={form.lock_public_site}
+                onChange={(e) => setForm((f) => ({ ...f, lock_public_site: e.target.checked }))}
+                className="mt-1 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+              />
+              <div>
+                <label htmlFor="lock_public_site" className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+                  Full-site maintenance (public lock)
+                </label>
+                <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/90 leading-relaxed">
+                  Visitors and signed-in customers see a full-screen maintenance experience only.{' '}
+                  <span className="font-medium">Admins and super admins</span> keep full access to the whole app
+                  (dashboard, store, admin panel). Use the message below for details on the maintenance screen.
+                </p>
+              </div>
+            </div>
           </div>
 
           <div>

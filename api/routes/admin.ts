@@ -14,6 +14,16 @@ import {
   invalidateSupportChatRuntimeCache,
   SUPPORT_CHAT_SETTINGS_KEY,
 } from '../lib/supportChatSettings.js';
+import {
+  loadReminderIntegrationsStored,
+  mergeReminderIntegrationsPatch,
+  resolveReminderOutbound,
+  toReminderIntegrationsAdminPayload,
+  SUBSCRIPTION_REMINDER_INTEGRATIONS_KEY,
+} from '../lib/reminderIntegrationSettings.js';
+import { runSubscriptionExpiryReminders } from '../lib/subscriptionExpiryReminders.js';
+import { sendSubscriptionReminderTestToAdmin } from '../lib/subscriptionReminderAdminTest.js';
+import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
 
 dotenv.config();
 
@@ -63,6 +73,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
       return res.status(403).json({ error: 'Forbidden: Admin access required' });
     }
 
+    attachAdminActivityLogging(req, res, user.id);
     next();
   } catch (err) {
     console.error('Verify admin error:', err);
@@ -335,6 +346,21 @@ router.get('/ops/risk-overview', verifyAdmin, async (req, res) => {
   }
 });
 
+// Full product list for admin UI (service role — bypasses RLS). Caller must pass verifyAdmin.
+router.get('/ops/catalog-products', verifyAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id, title, price, is_active')
+      .order('title', { ascending: true });
+    if (error) throw error;
+    return res.json({ success: true, products: data || [] });
+  } catch (error: any) {
+    console.error('catalog-products error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.post('/ops/run-policies', verifyAdmin, async (req, res) => {
   try {
     const now = Date.now();
@@ -503,7 +529,12 @@ router.post('/ops/bulk/renew-offers', verifyAdmin, async (req, res) => {
         .eq('status', 'completed')
         .gte('created_at', since)
         .limit(500);
-      targets = [...new Set((recentOrders || []).map((o: any) => o.user_id).filter(Boolean))];
+      const recent = (recentOrders || []) as { user_id?: string | null }[];
+      targets = [
+        ...new Set(
+          recent.map((o) => o.user_id).filter((id): id is string => typeof id === 'string' && id.length > 0),
+        ),
+      ];
     }
 
     if (targets.length === 0) return res.json({ success: true, queued: 0 });
@@ -854,8 +885,9 @@ router.get('/ops/analytics/ltv', verifyAdmin, async (req, res) => {
     const limit = Math.max(20, Math.min(500, Number(req.query.limit || 100)));
     const { data: orders } = await supabase
       .from('orders')
-      .select('user_id, total_amount, status')
+      .select('user_id, total_amount, status, payment_status')
       .in('status', ['completed', 'paid'])
+      .eq('payment_status', 'paid')
       .limit(5000);
 
     const spendMap: Record<string, number> = {};
@@ -1235,6 +1267,75 @@ router.post('/orders/:orderId/renew', verifyAdmin, async (req, res) => {
   }
 });
 
+router.get('/ops/subscription-reminder/integrations', verifyAdmin, async (_req, res) => {
+  try {
+    const stored = await loadReminderIntegrationsStored(supabase);
+    const resolved = resolveReminderOutbound(stored);
+    return res.json({
+      success: true,
+      settings: toReminderIntegrationsAdminPayload(stored, resolved),
+    });
+  } catch (error: any) {
+    console.error('subscription-reminder integrations get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/subscription-reminder/integrations', verifyAdmin, async (req, res) => {
+  try {
+    const stored = await loadReminderIntegrationsStored(supabase);
+    const merged = mergeReminderIntegrationsPatch(stored, (req.body || {}) as Record<string, unknown>);
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: SUBSCRIPTION_REMINDER_INTEGRATIONS_KEY,
+        value: merged as any,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
+    const resolved = resolveReminderOutbound(merged);
+    return res.json({
+      success: true,
+      settings: toReminderIntegrationsAdminPayload(merged, resolved),
+    });
+  } catch (error: any) {
+    console.error('subscription-reminder integrations patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/subscription-reminder/run', verifyAdmin, async (_req, res) => {
+  try {
+    const r = await runSubscriptionExpiryReminders(supabase);
+    return res.json({ success: true, ...r });
+  } catch (error: any) {
+    console.error('subscription-reminder run:', error);
+    return res.status(500).json({ error: error?.message || 'Failed to run expiry reminders' });
+  }
+});
+
+router.post('/ops/subscription-reminder/test', verifyAdmin, async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
+    if (!token) return res.status(401).json({ error: 'No authorization header' });
+    const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !authData?.user?.id) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    const body = (req.body || {}) as { send_email?: boolean; send_whatsapp?: boolean };
+    const result = await sendSubscriptionReminderTestToAdmin(supabase, authData.user.id, {
+      send_email: body.send_email !== false,
+      send_whatsapp: body.send_whatsapp !== false,
+    });
+    return res.json({ success: true, result });
+  } catch (error: any) {
+    console.error('subscription-reminder test:', error);
+    return res.status(500).json({ error: error?.message || 'Test send failed' });
+  }
+});
+
 router.get('/ops/support-chat/settings', verifyAdmin, async (_req, res) => {
   try {
     const stored = await loadSupportChatStored(supabase);
@@ -1318,6 +1419,248 @@ router.delete('/ops/support-chat/training', verifyAdmin, async (_req, res) => {
     return res.json({ success: true });
   } catch (error: any) {
     console.error('support-chat training clear:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+async function enrichRedeemOrderRows(supabase: any, orders: any[]) {
+  if (!orders?.length) return orders;
+  const ids = orders.map((o: any) => o.id).filter(Boolean);
+  const [{ data: uses }, { data: uems }] = await Promise.all([
+    supabase.from('redeem_code_uses').select('order_id, redeem_codes(code)').in('order_id', ids),
+    supabase
+      .from('user_emails')
+      .select('order_id, is_active, emails_pool(email)')
+      .in('order_id', ids),
+  ]);
+  const codeByOrder: Record<string, string> = {};
+  for (const u of uses || []) {
+    const row = u as any;
+    const code = row.redeem_codes?.code;
+    if (code && row.order_id) codeByOrder[row.order_id] = String(code);
+  }
+  const emailsByOrder: Record<string, string[]> = {};
+  for (const row of uems || []) {
+    const r = row as any;
+    const em = r.emails_pool?.email;
+    if (!r.order_id || !em) continue;
+    emailsByOrder[r.order_id] = emailsByOrder[r.order_id] || [];
+    emailsByOrder[r.order_id].push(String(em));
+  }
+  return orders.map((o: any) => ({
+    ...o,
+    redeem_code_used: codeByOrder[o.id] || null,
+    provisioned_emails: emailsByOrder[o.id] || [],
+  }));
+}
+
+// Pending manual payment after redeem (access may already be completed; payment_status still pending)
+router.get('/redeem/pending', verifyAdmin, async (_req, res) => {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        user_id,
+        product_id,
+        total_amount,
+        payment_due_date,
+        created_at,
+        status,
+        payment_status,
+        payment_method,
+        users: user_id (id, email, name, phone),
+        products: product_id (id, title, price)
+      `)
+      .eq('redeem_pending', true)
+      .eq('payment_status', 'pending')
+      .in('status', ['pending', 'completed'])
+      .order('payment_due_date', { ascending: true });
+    if (error) throw error;
+    const enriched = await enrichRedeemOrderRows(supabase, orders || []);
+    return res.json({ success: true, orders: enriched });
+  } catch (error: any) {
+    console.error('redeem pending list:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+// Revoked / seized redeem orders (audit: user + code + amount preserved on row)
+router.get('/redeem/revoked', verifyAdmin, async (_req, res) => {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        user_id,
+        product_id,
+        total_amount,
+        payment_due_date,
+        created_at,
+        status,
+        payment_status,
+        redeem_seized_at,
+        redeem_seized_by,
+        users: user_id (id, email, name, phone),
+        products: product_id (id, title, price)
+      `)
+      .not('redeem_seized_at', 'is', null)
+      .order('redeem_seized_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    const enriched = await enrichRedeemOrderRows(supabase, orders || []);
+    const adminIds = [...new Set(enriched.map((o: any) => o.redeem_seized_by).filter(Boolean))];
+    let adminMap: Record<string, { name: string; email: string }> = {};
+    if (adminIds.length) {
+      const { data: admins } = await supabase.from('users').select('id, name, email').in('id', adminIds);
+      adminMap = Object.fromEntries((admins || []).map((a: any) => [a.id, { name: a.name || '', email: a.email || '' }]));
+    }
+    const withAdmin = enriched.map((o: any) => ({
+      ...o,
+      seized_by_admin: o.redeem_seized_by ? adminMap[o.redeem_seized_by] || null : null,
+    }));
+    return res.json({ success: true, orders: withAdmin });
+  } catch (error: any) {
+    console.error('redeem revoked list:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+// Seize redeem access: ban user, deactivate emails, cancel order, reverse notional revenue
+router.post('/redeem/cancel/:orderId', verifyAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
+    const { data: adminAuth } = await supabase.auth.getUser(token);
+    const adminUserId = adminAuth?.user?.id || null;
+
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, user_id, product_id, total_amount, redeem_pending, payment_status, status, redeem_seized_at')
+      .eq('id', orderId)
+      .single();
+    if (orderError || !order) return res.status(404).json({ error: 'Order not found' });
+
+    if ((order as any).redeem_seized_at) {
+      return res.status(400).json({ error: 'This redeem order was already seized' });
+    }
+    if (!(order as any).redeem_pending || (order as any).payment_status !== 'pending') {
+      return res.status(400).json({ error: 'Not a pending manual-payment redeem order' });
+    }
+
+    const { data: targetUser } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', (order as any).user_id)
+      .single();
+    if (targetUser?.role === 'admin' || targetUser?.role === 'super_admin') {
+      return res.status(403).json({ error: 'Cannot seize admin accounts' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({
+        status: 'cancelled',
+        payment_status: 'cancelled',
+        redeem_pending: false,
+        payment_due_date: null,
+        redeem_seized_at: nowIso,
+        redeem_seized_by: adminUserId,
+      })
+      .eq('id', orderId)
+      .eq('redeem_pending', true)
+      .eq('payment_status', 'pending');
+    if (updateError) throw updateError;
+
+    await supabase.from('user_emails').update({ is_active: false }).eq('order_id', orderId);
+
+    await supabase.from('users').update({ is_banned: true }).eq('id', (order as any).user_id);
+
+    const amt = Number((order as any).total_amount || 0);
+    const { error: paymentError } = await supabase.from('payment_events').insert({
+      order_id: orderId,
+      user_id: (order as any).user_id,
+      event_type: 'redeem_seized',
+      amount: amt > 0 ? -amt : 0,
+      message: 'Redeem seized (unpaid): access revoked; notional amount reversed',
+      meta: { seized_by: adminUserId },
+    });
+    if (paymentError) console.error('Failed to record redeem seize payment event:', paymentError);
+
+    await supabase.from('order_events').insert({
+      order_id: orderId,
+      user_id: (order as any).user_id,
+      event_type: 'redeem_seized',
+      status: 'cancelled',
+      message: 'Admin seized redeem order (manual payment not received)',
+      meta: { admin_id: adminUserId },
+    });
+
+    return res.json({ success: true, message: 'Access seized, user banned, and amount reversed from records' });
+  } catch (error: any) {
+    console.error('redeem cancel:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/redeem/mark-paid/:orderId', verifyAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    if (!orderId) return res.status(400).json({ error: 'Order ID required' });
+
+    const { data: before, error: beforeErr } = await supabase
+      .from('orders')
+      .select('id, user_id, total_amount, redeem_pending, payment_status')
+      .eq('id', orderId)
+      .single();
+    if (beforeErr || !before) return res.status(404).json({ error: 'Order not found' });
+    if (!(before as any).redeem_pending || (before as any).payment_status !== 'pending') {
+      return res.status(400).json({ error: 'Not awaiting manual payment for this redeem' });
+    }
+
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({
+        status: 'completed',
+        payment_status: 'paid',
+        redeem_pending: false,
+        payment_due_date: null,
+      })
+      .eq('id', orderId)
+      .eq('redeem_pending', true)
+      .eq('payment_status', 'pending');
+    if (updateError) throw updateError;
+
+    const { data: existingEvt } = await supabase
+      .from('payment_events')
+      .select('id')
+      .eq('order_id', orderId)
+      .eq('event_type', 'manual_payment')
+      .maybeSingle();
+    if (!existingEvt?.id) {
+      const { error: paymentError } = await supabase.from('payment_events').insert({
+        order_id: orderId,
+        user_id: (before as any).user_id,
+        event_type: 'manual_payment',
+        amount: (before as any).total_amount,
+        message: 'Manual payment received for redeem order',
+      });
+      if (paymentError) console.error('Failed to record payment:', paymentError);
+    }
+
+    try {
+      await tryProcessReferralRewardsForOrder(supabase, orderId);
+    } catch (e) {
+      console.error('referral after redeem mark-paid:', e);
+    }
+
+    return res.json({ success: true, message: 'Order marked as paid' });
+  } catch (error: any) {
+    console.error('redeem mark paid:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });

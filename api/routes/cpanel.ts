@@ -4,6 +4,7 @@ import imaps from 'imap-simple';
 import { simpleParser } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
 import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
+import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
 
 dotenv.config();
 
@@ -55,7 +56,8 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     
     const { data: userData } = await supabase.from('users').select('role').eq('id', user.id).single();
     if (userData?.role !== 'admin' && userData?.role !== 'super_admin') return res.status(403).json({ error: 'Forbidden: Admin access required' });
-    
+
+    attachAdminActivityLogging(req, res, user.id);
     next();
   } catch (err) {
     console.error('Verify admin error:', err);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   ShoppingBag, 
@@ -8,6 +8,7 @@ import {
   Menu,
   X,
   Bell,
+  BellRing,
   LogOut,
   ShieldAlert,
   Users,
@@ -15,6 +16,8 @@ import {
   Ticket,
   Info,
   TrendingUp,
+  Wallet,
+  ScrollText,
   User as UserIcon,
   Sun,
   Moon,
@@ -26,8 +29,11 @@ import {
   Megaphone,
   Music2,
   MessageCircle,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
+import { PublicMaintenancePage } from '../pages/PublicMaintenancePage';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { clsx, type ClassValue } from 'clsx';
@@ -48,7 +54,9 @@ export const Layout = () => {
   const location = useLocation();
   /** User-facing alerts only; admin workspace stays clean */
   const showGlobalBanners = !location.pathname.startsWith('/admin');
-  const { user, signOut, isAdmin, isSuperAdmin } = useAuth();
+  const { user, signOut, isAdmin, isSuperAdmin, loading: authLoading, role, needsMandatoryPhone } = useAuth();
+  const { platform: maintPlatform, ready: maintReady } = useMaintenanceMode();
+  const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
 
@@ -132,7 +140,9 @@ export const Layout = () => {
       name: 'Overview',
       items: [
         { name: 'Admin Dashboard', href: '/admin?tab=overview', icon: LayoutDashboard },
+        { name: 'Profit & expenses', href: '/admin?tab=finance', icon: Wallet },
         { name: 'Financial Analytics', href: '/admin?tab=analytics', icon: TrendingUp },
+        { name: 'Activity log', href: '/admin?tab=activity', icon: ScrollText },
       ]
     },
     {
@@ -157,6 +167,7 @@ export const Layout = () => {
         { name: 'Support tickets', href: '/admin?tab=support', icon: LifeBuoy },
         { name: 'Help chat (AI)', href: '/admin?tab=support_chat_ai', icon: MessageCircle },
         { name: 'Platform status', href: '/admin?tab=platform_settings', icon: Settings },
+        { name: 'Subscription reminders', href: '/admin?tab=subscription_reminders', icon: BellRing },
         { name: 'Lobby music', href: '/admin?tab=lobby_music', icon: Music2 },
         { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
         { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
@@ -211,6 +222,22 @@ export const Layout = () => {
           ],
     [isAdmin, isSuperAdmin, referralNavVisible, hiddenAdminTabs]
   );
+
+  if (!maintReady || authLoading || (user && !roleResolved)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#050508]">
+        <Loader2 className="h-10 w-10 animate-spin text-violet-500" aria-hidden />
+      </div>
+    );
+  }
+
+  if (maintPlatform.lock_public_site && !isAdmin) {
+    return <PublicMaintenancePage message={maintPlatform.message} />;
+  }
+
+  if (user && needsMandatoryPhone) {
+    return <Navigate to="/phone-required" replace />;
+  }
 
   return (
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">

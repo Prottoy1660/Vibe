@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { runSubscriptionExpiryReminders } from '../lib/subscriptionExpiryReminders.js';
+import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
     if (profileErr) throw profileErr;
     if (profile?.role !== 'admin' && profile?.role !== 'super_admin') return res.status(403).json({ success: false, error: 'Forbidden' });
 
+    attachAdminActivityLogging(req, res, userData.user.id);
     next();
   } catch (err: any) {
     console.error('verifyAdmin error:', err);

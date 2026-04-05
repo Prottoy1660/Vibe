@@ -193,7 +193,7 @@ export function useFingerprint(user: User | null) {
         let latitude: number | null = null;
         let longitude: number | null = null;
         try {
-          const serverGeo = await postJsonWithFallback('/api/telemetry/geo-context', {});
+          const serverGeo = await postJsonWithFallback('/api/telemetry/geo-context', {}, { skipErrorPageRedirect: true });
           ipAddress = serverGeo?.ip_address || '';
           country = serverGeo?.country || '';
           city = serverGeo?.city || '';

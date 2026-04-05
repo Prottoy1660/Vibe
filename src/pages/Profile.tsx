@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Loader2, Camera, Mail, Phone, User, Lock, Save, AlertCircle, CheckCircle2, Languages, Sparkles } from 'lucide-react';
 import { setStoredLanguage, type AppLanguage } from '../lib/language';
+import { hasMinimumPhone } from '../lib/phoneRequired';
 
 export const Profile = () => {
   const { user } = useAuth();
@@ -102,6 +103,15 @@ export const Profile = () => {
 
     try {
       if (!user) throw new Error('Not authenticated');
+
+      if (!hasMinimumPhone(formData.phone)) {
+        setMessage({
+          type: 'error',
+          text: 'মোবাইল নম্বর বাধ্যতামূলক — কমপক্ষে ১১ ডিজিট দিন। / Phone number is required (at least 11 digits).',
+        });
+        setLoading(false);
+        return;
+      }
 
       // 1. Update Auth if email or password changed
       const authUpdates: any = {};
@@ -263,7 +273,7 @@ export const Profile = () => {
                 </div>
                 <div>
                   <label htmlFor="profile-phone" className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
-                    Phone number
+                    Phone number <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500 pointer-events-none" />

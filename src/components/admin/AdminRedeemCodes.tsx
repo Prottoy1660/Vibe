@@ -3,14 +3,29 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
   RefreshCw, ShieldCheck, Hash, Package, Users, X,
-  Download, Layers, Ban,
+  Download, Layers, Ban, Clock, AlertTriangle, CheckCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 interface Product {
   id: string;
   title: string;
   price: number;
+  is_active?: boolean;
+}
+
+const productSelectClassName =
+  'w-full min-h-[42px] px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/30 dark:[color-scheme:dark]';
+
+function sortProductsForAdmin(list: Product[]): Product[] {
+  return [...list].sort((a, b) => {
+    const ac = a.is_active !== false ? 1 : 0;
+    const bc = b.is_active !== false ? 1 : 0;
+    if (ac !== bc) return bc - ac;
+    return (a.title || '').localeCompare(b.title || '');
+  });
 }
 
 interface RedeemCode {
@@ -26,6 +41,27 @@ interface RedeemCode {
   products?: { title: string; price: number };
 }
 
+interface PendingOrder {
+  id: string;
+  user_id: string;
+  product_id: string;
+  total_amount: number;
+  payment_due_date: string;
+  created_at: string;
+  status?: string;
+  payment_status?: string;
+  redeem_code_used?: string | null;
+  provisioned_emails?: string[];
+  users: { id: string; email: string; name: string; phone?: string | null };
+  products: { id: string; title: string; price: number };
+}
+
+interface RevokedOrder extends PendingOrder {
+  redeem_seized_at: string;
+  redeem_seized_by?: string | null;
+  seized_by_admin?: { name: string; email: string } | null;
+}
+
 function generateCode(length = 12): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
   let result = '';
@@ -37,10 +73,15 @@ function generateCode(length = 12): string {
 }
 
 export const AdminRedeemCodes = () => {
+  const [activeTab, setActiveTab] = useState<'codes' | 'pending' | 'revoked'>('codes');
   const [codes, setCodes] = useState<RedeemCode[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
+  const [revokedOrders, setRevokedOrders] = useState<RevokedOrder[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBulkPanel, setShowBulkPanel] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,8 +95,7 @@ export const AdminRedeemCodes = () => {
     is_active: true,
   });
   const [bulkQuantity, setBulkQuantity] = useState(10);
-  const [bulkSaving, setBulkSaving] = useState(false);
-  const [showBulkPanel, setShowBulkPanel] = useState(false);
+  const [productsLoadError, setProductsLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -63,22 +103,85 @@ export const AdminRedeemCodes = () => {
 
   const fetchAll = async () => {
     setLoading(true);
+    setProductsLoadError(null);
     try {
-      const [{ data: codesData }, { data: productsData }] = await Promise.all([
+      const token = await getAccessTokenForApi();
+      const base = getApiBaseUrl();
+      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) authHeaders.Authorization = `Bearer ${token}`;
+
+      const [codesRes, catalogRes, pendingJson, revokedJson] = await Promise.all([
         supabase
           .from('redeem_codes')
           .select('*, products:product_id(title, price)')
           .order('created_at', { ascending: false })
           .limit(10000),
-        supabase.from('products').select('id, title, price').eq('is_active', true),
+        token && base
+          ? fetch(`${base}/api/admin/ops/catalog-products`, { headers: authHeaders }).then(async (r) => ({
+              ok: r.ok,
+              status: r.status,
+              json: (await r.json().catch(() => ({}))) as {
+                success?: boolean;
+                products?: Product[];
+                error?: string;
+              },
+            }))
+          : Promise.resolve({ ok: false, status: 0, json: {} as { success?: boolean; products?: Product[]; error?: string } }),
+        token && base
+          ? fetch(`${base}/api/admin/redeem/pending`, { headers: authHeaders }).then((r) => r.json())
+          : Promise.resolve({ success: false as const, orders: [] }),
+        token && base
+          ? fetch(`${base}/api/admin/redeem/revoked`, { headers: authHeaders }).then((r) => r.json())
+          : Promise.resolve({ success: false as const, orders: [] }),
       ]);
-      setCodes(codesData || []);
-      setProducts(productsData || []);
-      if (productsData && productsData.length > 0 && !form.product_id) {
-        setForm(f => ({ ...f, product_id: productsData[0].id }));
+
+      if (codesRes.error) {
+        console.error('AdminRedeemCodes redeem_codes:', codesRes.error);
       }
+
+      setCodes(codesRes.data || []);
+
+      let rawProducts: Product[] = [];
+      let catalogErr: string | null = null;
+      if (catalogRes.ok && catalogRes.json?.success && Array.isArray(catalogRes.json.products)) {
+        rawProducts = catalogRes.json.products;
+      } else if (token && base) {
+        catalogErr =
+          catalogRes.json?.error ||
+          (catalogRes.ok ? 'Invalid catalog response' : `Catalog API failed (${catalogRes.status || 'network'})`);
+      }
+
+      if (rawProducts.length === 0) {
+        const { data: fallbackRows, error: fallbackErr } = await supabase
+          .from('products')
+          .select('id, title, price, is_active');
+        if (fallbackErr) {
+          console.error('AdminRedeemCodes products fallback:', fallbackErr);
+          setProductsLoadError(catalogErr || fallbackErr.message || 'Could not load products');
+        } else {
+          rawProducts = (fallbackRows || []) as Product[];
+          setProductsLoadError(rawProducts.length > 0 ? null : catalogErr);
+        }
+      } else {
+        setProductsLoadError(null);
+      }
+
+      const productsData = sortProductsForAdmin(rawProducts);
+      setProducts(productsData);
+      setPendingOrders(pendingJson?.success ? pendingJson.orders || [] : []);
+      setRevokedOrders(revokedJson?.success ? revokedJson.orders || [] : []);
+
+      setForm((f) => {
+        if (productsData.length === 0) {
+          return f.product_id ? { ...f, product_id: '' } : f;
+        }
+        const stillValid = productsData.some((p) => p.id === f.product_id);
+        if (stillValid) return f;
+        const preferred = productsData.find((p) => p.is_active !== false) ?? productsData[0];
+        return { ...f, product_id: preferred?.id ?? '' };
+      });
     } catch (err) {
-      console.error('Error fetching redeem codes:', err);
+      console.error('Error fetching data:', err);
     } finally {
       setLoading(false);
     }
@@ -287,6 +390,58 @@ export const AdminRedeemCodes = () => {
     setCodes(prev => prev.filter(c => c.id !== id));
   };
 
+  const cancelOrder = async (orderId: string) => {
+    if (
+      !window.confirm(
+        'Seize this redeem? The user will be banned, shared emails deactivated, and the ৳ amount will be reversed in payment records (not counted as revenue).',
+      )
+    ) {
+      return;
+    }
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      const response = await fetch(`${base}/api/admin/redeem/cancel/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Failed to seize order');
+      setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+      await fetchAll();
+      alert('Redeem seized: access revoked, user banned, amount reversed.');
+    } catch (err: any) {
+      alert('Error: ' + (err.message || 'Could not seize order'));
+    }
+  };
+
+  const markPaid = async (orderId: string) => {
+    if (!window.confirm('Mark manual payment as received? This keeps the user active and records the amount as paid.')) return;
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        alert('Session expired. Please sign in again.');
+        return;
+      }
+      const base = getApiBaseUrl();
+      const response = await fetch(`${base}/api/admin/redeem/mark-paid/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || 'Failed to mark as paid');
+      setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+      await fetchAll();
+      alert('Marked as paid. Amount is now recorded as settled revenue.');
+    } catch (err: any) {
+      alert('Error: ' + (err.message || 'Could not mark as paid'));
+    }
+  };
+
   const toggleActive = async (id: string, current: boolean) => {
     await supabase.from('redeem_codes').update({ is_active: !current }).eq('id', id);
     setCodes(prev => prev.map(c => c.id === id ? { ...c, is_active: !current } : c));
@@ -338,7 +493,8 @@ export const AdminRedeemCodes = () => {
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Redeem code manager</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Generate gift codes, track usage, and enable/disable codes without opening complicated menus.
+                Generate gift codes, track usage, and collect manual payments after redeem. Users get access first; you have 24h to mark paid
+                or seize access — seized rows stay visible with full details for your records.
               </p>
             </div>
           </div>
@@ -374,7 +530,7 @@ export const AdminRedeemCodes = () => {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[
             { label: 'Total', value: codes.length },
             { label: 'Active', value: codes.filter((c) => c.is_active && !c.is_used && c.used_count < c.max_uses).length, accent: 'bg-emerald-600' },
@@ -392,6 +548,43 @@ export const AdminRedeemCodes = () => {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1 p-1 bg-gray-100 dark:bg-[#111113] rounded-xl border border-gray-200 dark:border-[#26262d]">
+        <button
+          type="button"
+          onClick={() => setActiveTab('codes')}
+          className={`flex-1 min-w-[120px] px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            activeTab === 'codes'
+              ? 'bg-white dark:bg-[#151518] text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+          }`}
+        >
+          Redeem Codes
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('pending')}
+          className={`flex-1 min-w-[120px] px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            activeTab === 'pending'
+              ? 'bg-white dark:bg-[#151518] text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+          }`}
+        >
+          Pending payment ({pendingOrders.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('revoked')}
+          className={`flex-1 min-w-[120px] px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+            activeTab === 'revoked'
+              ? 'bg-white dark:bg-[#151518] text-gray-900 dark:text-gray-100 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+          }`}
+        >
+          Seized / revoked ({revokedOrders.length})
+        </button>
+      </div>
+
       {/* Bulk generate */}
       {showBulkPanel && (
         <div className="bg-white dark:bg-[#151518] rounded-2xl border border-emerald-200/50 dark:border-emerald-500/20 shadow-soft overflow-hidden">
@@ -403,65 +596,86 @@ export const AdminRedeemCodes = () => {
               Close
             </button>
           </div>
-          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
-                How many codes (max {BULK_MAX})
-              </label>
-              <input
-                type="number"
-                min={1}
-                max={BULK_MAX}
-                value={bulkQuantity}
-                onChange={(e) => setBulkQuantity(Number(e.target.value))}
-                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-semibold text-gray-900 dark:text-gray-100"
-              />
+          {productsLoadError ? (
+            <div className="px-5 pt-4">
+              <p className="text-sm rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/90 dark:bg-amber-500/10 text-amber-900 dark:text-amber-100 px-4 py-3">
+                Products could not load: {productsLoadError}. Redeem codes need a product — check Supabase RLS and that you are signed in as admin.
+              </p>
             </div>
+          ) : null}
+          <div className="p-5 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                  How many codes (max {BULK_MAX})
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={BULK_MAX}
+                  value={bulkQuantity}
+                  onChange={(e) => setBulkQuantity(Number(e.target.value))}
+                  className="w-full min-h-[42px] px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm font-semibold text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
+                  Max uses each
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.max_uses}
+                  onChange={(e) => setForm((f) => ({ ...f, max_uses: Number(e.target.value) }))}
+                  className="w-full min-h-[42px] px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100"
+                />
+              </div>
+              <div className="flex items-end gap-3 pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                    form.is_active ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+                      form.is_active ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
                 Product
               </label>
               <select
-                value={form.product_id}
+                value={products.some((p) => p.id === form.product_id) ? form.product_id : ''}
                 onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
-                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100"
+                disabled={products.length === 0}
+                className={productSelectClassName}
               >
+                <option value="" disabled>
+                  {products.length === 0 ? 'No products found — add products or check admin session' : 'Select a product…'}
+                </option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.title} — ৳{p.price}
+                    {p.is_active === false ? ' (inactive)' : ''}
                   </option>
                 ))}
               </select>
+              {products.length === 0 && !loading && !productsLoadError ? (
+                <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  No products in the database, or none visible to your account. Store needs at least one product row.
+                </p>
+              ) : null}
             </div>
+
             <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
-                Max uses each
-              </label>
-              <input
-                type="number"
-                min={1}
-                value={form.max_uses}
-                onChange={(e) => setForm((f) => ({ ...f, max_uses: Number(e.target.value) }))}
-                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm"
-              />
-            </div>
-            <div className="flex items-end gap-3 pb-0.5">
-              <button
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, is_active: !f.is_active }))}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${
-                  form.is_active ? 'bg-emerald-500' : 'bg-gray-200 dark:bg-gray-700'
-                }`}
-              >
-                <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
-                    form.is_active ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-              <span className="text-sm text-gray-700 dark:text-gray-300">Active</span>
-            </div>
-            <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
                 Note (optional, added to each code)
               </label>
@@ -469,7 +683,7 @@ export const AdminRedeemCodes = () => {
                 value={form.note}
                 onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
                 placeholder="e.g. January campaign"
-                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm"
+                className="w-full min-h-[42px] px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100"
               />
             </div>
           </div>
@@ -521,12 +735,19 @@ export const AdminRedeemCodes = () => {
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Product (Grant Access To)</label>
               <select
-                value={form.product_id}
-                onChange={e => setForm(f => ({ ...f, product_id: e.target.value }))}
-                className="w-full px-3 py-2.5 bg-gray-50 dark:bg-[#111113] border border-gray-200 dark:border-[#26262d] rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary"
+                value={products.some((p) => p.id === form.product_id) ? form.product_id : ''}
+                onChange={(e) => setForm((f) => ({ ...f, product_id: e.target.value }))}
+                disabled={products.length === 0}
+                className={productSelectClassName}
               >
-                {products.map(p => (
-                  <option key={p.id} value={p.id}>{p.title} — ৳{p.price}</option>
+                <option value="" disabled>
+                  {products.length === 0 ? 'No products available' : 'Select a product…'}
+                </option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title} — ৳{p.price}
+                    {p.is_active === false ? ' (inactive)' : ''}
+                  </option>
                 ))}
               </select>
             </div>
@@ -580,6 +801,7 @@ export const AdminRedeemCodes = () => {
       )}
 
       {/* Codes Table */}
+      {activeTab === 'codes' && (
       <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] overflow-hidden">
         {codes.length === 0 ? (
           <div className="py-20 text-center">
@@ -768,6 +990,221 @@ export const AdminRedeemCodes = () => {
           </div>
         )}
       </div>
+      )}
+
+      {/* Pending Payments Tab */}
+      {activeTab === 'pending' && (
+        <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] shadow-soft overflow-hidden">
+          <div className="p-5 border-b border-gray-100 dark:border-[#26262d]">
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-orange-500" />
+              Pending Redeem Payments
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Access is already granted (email slots). You have until the due time (default 24h) to collect payment. Mark paid to keep revenue;
+              seize to ban the user, revoke access, and reverse the amount in payment history.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50/80 dark:bg-white/[0.02]">
+                <tr>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    User
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Redeem code
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Provisioned emails
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Product
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Amount
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Due
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
+                {pendingOrders.map((order) => {
+                  const dueDate = order.payment_due_date ? new Date(order.payment_due_date) : new Date(order.created_at);
+                  const isOverdue = new Date() > dueDate;
+                  const emails = order.provisioned_emails || [];
+                  return (
+                    <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
+                      <td className="px-5 py-3.5">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown'}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{order.users?.email}</p>
+                          {order.users?.phone ? (
+                            <p className="text-[10px] text-gray-400 dark:text-gray-500">{order.users.phone}</p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="font-mono text-xs font-semibold text-gray-800 dark:text-gray-200">
+                          {order.redeem_code_used || '—'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 max-w-[220px]">
+                        {emails.length === 0 ? (
+                          <span className="text-xs text-gray-400">—</span>
+                        ) : (
+                          <div className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
+                            {emails.slice(0, 2).map((e) => (
+                              <div key={e} className="truncate" title={e}>
+                                {e}
+                              </div>
+                            ))}
+                            {emails.length > 2 ? (
+                              <span className="text-[10px] text-gray-400">+{emails.length - 2} more</span>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2">
+                          <Package className="w-4 h-4 text-indigo-500 shrink-0" />
+                          <div>
+                            <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">{order.products?.title || 'Unknown'}</p>
+                            <p className="text-[10px] text-gray-400 dark:text-gray-500">Redeemed {format(new Date(order.created_at), 'MMM d, yyyy')}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100">৳{order.total_amount}</span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-2">
+                          {isOverdue ? (
+                            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+                          ) : (
+                            <Clock className="w-4 h-4 text-orange-500 shrink-0" />
+                          )}
+                          <span className={`text-sm font-medium ${isOverdue ? 'text-red-600' : 'text-orange-600'}`}>
+                            {format(dueDate, 'MMM d, HH:mm')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => markPaid(order.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-500/10 dark:text-green-400 dark:hover:bg-green-500/20 transition-colors"
+                            type="button"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Mark paid
+                          </button>
+                          <button
+                            onClick={() => cancelOrder(order.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20 transition-colors"
+                            type="button"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            Seize
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {pendingOrders.length === 0 && (
+              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm">
+                No pending manual payments for redeem orders.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'revoked' && (
+        <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] shadow-soft overflow-hidden">
+          <div className="p-5 border-b border-gray-100 dark:border-[#26262d]">
+            <h3 className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <Ban className="w-5 h-5 text-red-500" />
+              Seized redeem orders
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              These accounts were banned and access removed. Order rows are kept with user, code, emails, and amount for your audit trail.
+              Payment events include a matching reversal so totals stay honest.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50/80 dark:bg-white/[0.02]">
+                <tr>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    User
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Code
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Emails (snapshot)
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Product
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Amount
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Seized at
+                  </th>
+                  <th className="px-5 py-3.5 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    By
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-[#26262d]">
+                {revokedOrders.map((order) => {
+                  const emails = order.provisioned_emails || [];
+                  const seizedAt = order.redeem_seized_at ? new Date(order.redeem_seized_at) : null;
+                  return (
+                    <tr key={order.id} className="hover:bg-gray-50/50 dark:hover:bg-white/[0.02]">
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{order.users?.name || 'Unknown'}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{order.users?.email}</p>
+                      </td>
+                      <td className="px-5 py-3.5 font-mono text-xs font-semibold text-gray-800 dark:text-gray-200">
+                        {order.redeem_code_used || '—'}
+                      </td>
+                      <td className="px-5 py-3.5 max-w-[220px] text-xs text-gray-600 dark:text-gray-300">
+                        {emails.length === 0 ? '—' : emails.join(', ')}
+                      </td>
+                      <td className="px-5 py-3.5 text-xs font-semibold text-gray-800 dark:text-gray-200">
+                        {order.products?.title || '—'}
+                      </td>
+                      <td className="px-5 py-3.5 text-sm font-bold text-gray-900 dark:text-gray-100">৳{order.total_amount}</td>
+                      <td className="px-5 py-3.5 text-sm text-gray-600 dark:text-gray-300">
+                        {seizedAt ? format(seizedAt, 'MMM d, yyyy HH:mm') : '—'}
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-300">
+                        {order.seized_by_admin?.name || order.seized_by_admin?.email || order.redeem_seized_by || '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {revokedOrders.length === 0 && (
+              <div className="py-14 text-center text-gray-500 dark:text-gray-400 text-sm">
+                No seized redeem orders yet.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

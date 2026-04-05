@@ -243,15 +243,19 @@ export const Checkout = () => {
       if (orderError) throw orderError;
       createdOrderId = order.id;
 
-      const data = await postJsonWithFallback('/api/payment/create', {
-        order_id: order.id,
-        amount: gatewayAmount,
-        full_name: user.user_metadata?.full_name || 'Customer',
-        email: user.email,
-        frontend_url: window.location.origin,
-        user_id: user.id,
-        wallet_deduction: safeWalletDeduction,
-      });
+      const data = await postJsonWithFallback(
+        '/api/payment/create',
+        {
+          order_id: order.id,
+          amount: gatewayAmount,
+          full_name: user.user_metadata?.full_name || 'Customer',
+          email: user.email,
+          frontend_url: window.location.origin,
+          user_id: user.id,
+          wallet_deduction: safeWalletDeduction,
+        },
+        { skipErrorPageRedirect: true },
+      );
 
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;

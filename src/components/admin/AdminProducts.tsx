@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Plus,
@@ -17,7 +17,25 @@ import {
   RefreshCw,
   Box,
   UserCircle,
+  ImageIcon,
+  Upload,
+  X,
 } from 'lucide-react';
+
+const PRODUCT_IMAGES_BUCKET = 'product-images';
+const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+function storagePathFromProductImageUrl(url: string | undefined | null): string | null {
+  if (!url) return null;
+  const base = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+  const prefix = `${base}/storage/v1/object/public/${PRODUCT_IMAGES_BUCKET}/`;
+  if (!url.startsWith(prefix)) return null;
+  try {
+    return decodeURIComponent(url.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
 
 interface Product {
   id: string;
@@ -426,15 +444,10 @@ export const AdminProducts = () => {
               </Field>
             </div>
             <div className="md:col-span-2">
-              <Field label="Image URL (optional)" hint="Overrides default banner when set.">
-                <input
-                  type="text"
-                  value={formData.image_url || ''}
-                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                  className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
-                  placeholder="https://…"
-                />
-              </Field>
+              <ProductImageUploadField
+                imageUrl={formData.image_url}
+                onChange={(url) => setFormData({ ...formData, image_url: url })}
+              />
             </div>
 
             {!formData.is_personal && (
@@ -666,6 +679,143 @@ export const AdminProducts = () => {
     </div>
   );
 };
+
+function ProductImageUploadField({
+  imageUrl,
+  onChange,
+}: {
+  imageUrl?: string;
+  onChange: (url: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const pickFile = () => inputRef.current?.click();
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setLocalError(null);
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.type)) {
+      setLocalError('Please choose a JPEG, PNG, WebP, or GIF image.');
+      return;
+    }
+    if (file.size > PRODUCT_IMAGE_MAX_BYTES) {
+      setLocalError('Image must be 5 MB or smaller.');
+      return;
+    }
+
+    const ext =
+      file.type === 'image/jpeg'
+        ? 'jpg'
+        : file.type === 'image/png'
+          ? 'png'
+          : file.type === 'image/webp'
+            ? 'webp'
+            : 'gif';
+    const path = `products/${crypto.randomUUID()}.${ext}`;
+    const previousPath = storagePathFromProductImageUrl(imageUrl);
+
+    setUploading(true);
+    try {
+      const { error: upErr } = await supabase.storage.from(PRODUCT_IMAGES_BUCKET).upload(path, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+      if (upErr) throw upErr;
+
+      const { data } = supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+      onChange(publicUrl);
+
+      if (previousPath && previousPath !== path) {
+        await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([previousPath]);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setLocalError(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const clearImage = async () => {
+    setLocalError(null);
+    const p = storagePathFromProductImageUrl(imageUrl);
+    onChange('');
+    if (p) {
+      await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([p]);
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">
+        Product image <span className="text-gray-400 font-normal">(optional)</span>
+      </label>
+      <p className="text-[11px] text-gray-500 mb-3">
+        Upload a banner for the store card. If empty, the default store artwork is used.
+      </p>
+
+      <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1c1c21] overflow-hidden">
+        <div className="relative flex min-h-[160px] items-center justify-center bg-gray-50 dark:bg-black/30 p-4">
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt="Product preview"
+              className="max-h-48 w-auto max-w-full rounded-lg object-contain shadow-sm"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-500 py-6">
+              <ImageIcon className="w-10 h-10 opacity-50" aria-hidden />
+              <span className="text-sm">No image yet</span>
+            </div>
+          )}
+          {uploading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-black/60 backdrop-blur-[2px]">
+              <Loader2 className="w-8 h-8 animate-spin text-indigo-500" aria-hidden />
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 dark:border-[#303038] p-3">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={onFile}
+          />
+          <button
+            type="button"
+            onClick={pickFile}
+            disabled={uploading}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold"
+          >
+            <Upload className="w-4 h-4" aria-hidden />
+            {imageUrl ? 'Replace image' : 'Upload image'}
+          </button>
+          {imageUrl ? (
+            <button
+              type="button"
+              onClick={() => void clearImage()}
+              disabled={uploading}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-[#303038] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50 text-sm font-semibold"
+            >
+              <X className="w-4 h-4" aria-hidden />
+              Remove
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {localError ? <p className="text-[11px] text-red-600 dark:text-red-400 mt-2">{localError}</p> : null}
+    </div>
+  );
+}
 
 function Field({
   label,

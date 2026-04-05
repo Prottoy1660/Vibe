@@ -5,7 +5,9 @@ import { cn } from '../Layout';
 
 const AVAILABLE_TABS = [
   { id: 'overview', label: 'Admin Dashboard' },
+  { id: 'finance', label: 'Profit & expenses' },
   { id: 'analytics', label: 'Financial Analytics' },
+  { id: 'activity', label: 'Activity log' },
   { id: 'products', label: 'Product Management' },
   { id: 'orders', label: 'Manage Orders' },
   { id: 'users', label: 'User Management' },
@@ -20,6 +22,7 @@ const AVAILABLE_TABS = [
   { id: 'support', label: 'Support tickets' },
   { id: 'support_chat_ai', label: 'Help chat (AI)' },
   { id: 'platform_settings', label: 'Platform status' },
+  { id: 'subscription_reminders', label: 'Subscription reminders' },
   { id: 'lobby_music', label: 'Lobby music' },
   { id: 'waitlist', label: 'Waitlist' },
   { id: 'ops', label: 'Ops Center' },
