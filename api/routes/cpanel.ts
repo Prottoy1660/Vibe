@@ -71,6 +71,15 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
     const { accounts, cloudAccess, durationMonths } = req.body; // Array of { email, password }
     const wantAdobeAccess = String(cloudAccess || '').toLowerCase() === 'api';
     const durationMonthsResolved = Math.max(1, Math.min(120, Math.floor(Number(durationMonths) || 1)));
+    const { data: adobeCfgRow } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'adobe_api_config')
+      .maybeSingle();
+    const adobeCfg = (adobeCfgRow?.value || {}) as {
+      organizationId?: number;
+      products?: string[];
+    };
 
     if (!CPANEL_HOST || !CPANEL_USERNAME || !CPANEL_API_TOKEN) {
       return res.status(500).json({ error: 'cPanel credentials not configured' });
@@ -118,7 +127,10 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
         
         if (data.status === 1) {
           if (wantAdobeAccess) {
-            const adobeResult = await grantAdobeCloudAccess(acc.email, durationMonthsResolved);
+            const adobeResult = await grantAdobeCloudAccess(acc.email, durationMonthsResolved, {
+              organizationId: adobeCfg.organizationId,
+              products: adobeCfg.products,
+            });
             if (!adobeResult.success) {
               console.error(`Adobe API error for ${acc.email}:`, adobeResult.error);
               results.push({
@@ -127,6 +139,18 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
                 adobeError: adobeResult.error || 'Adobe provisioning failed',
               });
             } else {
+              const orgFromResponse = Number((adobeResult.data as any)?.user?.organizationId || 0);
+              if (Number.isFinite(orgFromResponse) && orgFromResponse > 0 && orgFromResponse !== Number(adobeCfg.organizationId || 0)) {
+                await supabase
+                  .from('system_settings')
+                  .upsert({
+                    key: 'adobe_api_config',
+                    value: {
+                      organizationId: orgFromResponse,
+                      products: Array.isArray(adobeCfg.products) ? adobeCfg.products : undefined,
+                    },
+                  }, { onConflict: 'key' });
+              }
               console.log(`Adobe API OK for ${acc.email}`, adobeResult.data ?? '');
               results.push({ email: acc.email, success: true, adobeSuccess: true });
             }
