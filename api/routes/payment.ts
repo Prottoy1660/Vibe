@@ -204,7 +204,17 @@ async function fulfillPersonalAdobeAccess(order: {
   const months = productDurationToMonths(order.products?.duration ?? null);
   try {
     const { grantAdobeCloudAccess } = await import('../lib/adobeApi.js');
-    const grantOut = await grantAdobeCloudAccess(email, months);
+    const { data: adobeCfgRow } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'adobe_api_config')
+      .maybeSingle();
+    const adobeCfg = (adobeCfgRow?.value || {}) as { organizationId?: number; products?: string[] };
+
+    const grantOut = await grantAdobeCloudAccess(email, months, {
+      organizationId: adobeCfg.organizationId,
+      products: adobeCfg.products,
+    });
     if (grantOut.success) {
       console.log(`Successfully granted Adobe Cloud Access for personal email: ${email}`);
       await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Personal Adobe access provisioned');
