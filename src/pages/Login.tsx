@@ -7,15 +7,21 @@ import { useTheme } from '../contexts/ThemeContext';
 import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
 import { toast } from '../lib/toast';
 
-const isTauriRuntime = (() => {
+const detectTauriRuntime = async (): Promise<boolean> => {
   if (typeof window === 'undefined' || typeof globalThis === 'undefined') return false;
   const runtimeFlag = Boolean((globalThis as any).isTauri);
   const internalsFlag = '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
   const host = (window.location.hostname || '').toLowerCase();
   const protocol = (window.location.protocol || '').toLowerCase();
   const tauriUrl = protocol === 'tauri:' || host.includes('tauri');
-  return runtimeFlag || internalsFlag || tauriUrl;
-})();
+  if (runtimeFlag || internalsFlag || tauriUrl) return true;
+  try {
+    const { isTauri } = await import('@tauri-apps/api/core');
+    return isTauri();
+  } catch {
+    return false;
+  }
+};
 
 export const Login = () => {
   const [searchParams] = useSearchParams();
@@ -169,12 +175,12 @@ export const Login = () => {
     }
   };
 
-  const oauthRedirect = isTauriRuntime ? 'vibeaccess://auth-callback' : `${window.location.origin}/`;
-
   const startOAuth = async (
     provider: 'google' | 'facebook' | 'azure',
     extra?: { scopes?: string },
   ) => {
+    const isTauriRuntime = await detectTauriRuntime();
+    const oauthRedirect = isTauriRuntime ? 'vibeaccess://auth-callback' : `${window.location.origin}/`;
     const providerLabel =
       provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';
     const { data, error } = await supabase.auth.signInWithOAuth({
