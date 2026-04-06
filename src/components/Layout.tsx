@@ -29,6 +29,7 @@ import {
   Megaphone,
   Music2,
   MessageCircle,
+  Download,
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -102,6 +103,7 @@ export const Layout = () => {
   }, [user, signOut]);
 
   const [referralNavVisible, setReferralNavVisible] = useState<boolean | null>(null);
+  const [downloadsNavVisible, setDownloadsNavVisible] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (isAdmin) {
@@ -118,6 +120,27 @@ export const Layout = () => {
       if (cancelled) return;
       const v = (data?.value || {}) as { enabled?: boolean };
       setReferralNavVisible(v.enabled !== false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setDownloadsNavVisible(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'customer_app_downloads')
+        .maybeSingle();
+      if (cancelled) return;
+      const v = (data?.value || {}) as { enabled?: boolean };
+      setDownloadsNavVisible(v.enabled !== false);
     })();
     return () => {
       cancelled = true;
@@ -171,6 +194,7 @@ export const Layout = () => {
         { name: 'Support tickets', href: '/admin?tab=support', icon: LifeBuoy },
         { name: 'Help chat (AI)', href: '/admin?tab=support_chat_ai', icon: MessageCircle },
         { name: 'Platform status', href: '/admin?tab=platform_settings', icon: Settings },
+        { name: 'App downloads', href: '/admin?tab=app_downloads', icon: Download },
         { name: 'Subscription reminders', href: '/admin?tab=subscription_reminders', icon: BellRing },
         { name: 'Lobby music', href: '/admin?tab=lobby_music', icon: Music2 },
         { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
@@ -214,6 +238,7 @@ export const Layout = () => {
               name: 'Services',
               items: [
                 { name: 'Adobe Email', href: '/adobe-email', icon: Mail, highlight: true },
+                ...(downloadsNavVisible === true ? [{ name: 'Apps download', href: '/downloads', icon: Download }] : []),
                 ...(referralNavVisible === true ? [{ name: 'Refer & earn', href: '/refer', icon: Gift }] : []),
                 { name: 'Tutorial & Help', href: '/tutorial-help', icon: CircleHelp },
                 { name: 'Support', href: '/support', icon: LifeBuoy },
@@ -224,7 +249,7 @@ export const Layout = () => {
               items: [{ name: 'My Profile', href: '/profile', icon: UserIcon }],
             },
           ],
-    [isAdmin, isSuperAdmin, referralNavVisible, hiddenAdminTabs]
+    [isAdmin, isSuperAdmin, referralNavVisible, downloadsNavVisible, hiddenAdminTabs]
   );
 
   if (!maintReady || authLoading || (user && !roleResolved)) {
@@ -246,7 +271,10 @@ export const Layout = () => {
   return (
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">
       {/* Mobile Header */}
-      <div className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
+      <div
+        className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+      >
         <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
             Vibe
@@ -269,7 +297,7 @@ export const Layout = () => {
 
       {/* Sidebar */}
       <div className={cn(
-        "fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-[#111113] border-r border-gray-200 dark:border-[#26262d] transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 flex flex-col",
+        "fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-[#111113] border-r border-gray-200 dark:border-[#26262d] transform transition-all duration-300 ease-in-out md:relative md:translate-x-0 flex flex-col pt-[env(safe-area-inset-top)] md:pt-0",
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="hidden md:flex h-16 items-center px-6 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">

@@ -25,6 +25,7 @@ const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module
 const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
 const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
+const Downloads = React.lazy(() => import('./pages/Downloads').then(module => ({ default: module.Downloads })));
 const PhoneRequired = React.lazy(() => import('./pages/PhoneRequired').then((m) => ({ default: m.PhoneRequired })));
 const HttpErrorPage = React.lazy(() =>
   import('./pages/HttpErrorPage').then((module) => ({ default: module.HttpErrorPage })),
@@ -114,6 +115,7 @@ function AppRoutes() {
           <Route path="/support" element={<Support />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/refer" element={<Referral />} />
+          <Route path="/downloads" element={<Downloads />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/email-team/:teamId" element={<AdminEmailTeamDetail />} />
           {/* Catch-all for logged-in app routes */}
