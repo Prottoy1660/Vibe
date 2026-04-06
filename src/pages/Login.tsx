@@ -203,12 +203,20 @@ export const Login = () => {
       : `${window.location.origin}/`;
     const providerLabel =
       provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';
+    const queryParams: Record<string, string> = (() => {
+      // Goal: on Android, reuse existing signed-in accounts (one-tap / account chooser).
+      // `prompt=select_account` forces the chooser instead of silently using an unexpected account.
+      if (provider === 'google') return { prompt: 'select_account' };
+      if (provider === 'azure') return { prompt: 'select_account' };
+      return {};
+    })();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: oauthRedirect,
         ...(needsExternalBrowser ? { skipBrowserRedirect: true } : {}),
         ...(extra?.scopes ? { scopes: extra.scopes } : {}),
+        ...(Object.keys(queryParams).length ? { queryParams } : {}),
       },
     });
     if (error) throw error;
