@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
@@ -48,16 +48,64 @@ export const Register = () => {
   }, [searchParams]);
 
   useEffect(() => {
+    let cancelled = false;
     const fetchSettings = async () => {
-      const { data } = await supabase.from('system_settings').select('value').eq('key', 'auth_settings').single();
+      const { data } = await supabase.from('system_settings').select('value').eq('key', 'auth_settings').maybeSingle();
+      if (cancelled) return;
       if (data && data.value) {
-        const v = data.value as { enable_google_login?: boolean; enable_facebook_login?: boolean; enable_microsoft_login?: boolean };
+        const v = data.value as {
+          enable_google_login?: boolean;
+          enable_facebook_login?: boolean;
+          enable_microsoft_login?: boolean;
+        };
         setGoogleLoginEnabled(v.enable_google_login !== false);
         setFacebookLoginEnabled(v.enable_facebook_login !== false);
         setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+      } else {
+        setGoogleLoginEnabled(true);
+        setFacebookLoginEnabled(true);
+        setMicrosoftLoginEnabled(true);
       }
     };
-    fetchSettings();
+    void fetchSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Realtime: auth provider buttons should reflect settings changes immediately.
+  const authSettingsRtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const schedule = () => {
+      if (authSettingsRtTimerRef.current) window.clearTimeout(authSettingsRtTimerRef.current);
+      authSettingsRtTimerRef.current = window.setTimeout(async () => {
+        const { data } = await supabase.from('system_settings').select('value').eq('key', 'auth_settings').maybeSingle();
+        if (data && data.value) {
+          const v = data.value as {
+            enable_google_login?: boolean;
+            enable_facebook_login?: boolean;
+            enable_microsoft_login?: boolean;
+          };
+          setGoogleLoginEnabled(v.enable_google_login !== false);
+          setFacebookLoginEnabled(v.enable_facebook_login !== false);
+          setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+        }
+      }, 500);
+    };
+
+    const channel = supabase
+      .channel(`register_auth_settings_rt:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.auth_settings' },
+        () => schedule(),
+      )
+      .subscribe();
+
+    return () => {
+      if (authSettingsRtTimerRef.current) window.clearTimeout(authSettingsRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleRegister = async (e: React.FormEvent) => {

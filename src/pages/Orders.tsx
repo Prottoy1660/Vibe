@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -6,6 +6,7 @@ import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Che
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
 import { isStalePendingOrder, PENDING_CHECKOUT_VISIBLE_MS } from '../lib/orderHistoryVisibility';
+import { toast } from '../lib/toast';
 
 interface Order {
   id: string;
@@ -62,47 +63,74 @@ export const Orders = () => {
     return isStalePendingOrder(order.status, order.created_at, nowMs) ? 'expired' : 'pending';
   };
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (!user) return;
+  const fetchOrders = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          created_at,
+          status,
+          total_amount,
+          product:product_id (title, title_bn)
+        `)
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      try {
-        const { data, error } = await supabase
-          .from('orders')
-          .select(`
-            id,
-            created_at,
-            status,
-            total_amount,
-            product:product_id (title, title_bn)
-          `)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+      if (error) throw error;
 
-        if (error) throw error;
-
-        if (data) {
-          const formattedOrders = data.map((item: any) => ({
-            id: item.id,
-            created_at: item.created_at,
-            status: item.status,
-            total_amount: item.total_amount,
-            product: {
-              title: item.product?.title || 'Unknown Product',
-              title_bn: item.product?.title_bn || '',
-            },
-          }));
-          setOrders(formattedOrders);
-        }
-      } catch (error) {
-        console.error('Error fetching orders:', error);
-      } finally {
-        setLoading(false);
+      if (data) {
+        const formattedOrders = data.map((item: any) => ({
+          id: item.id,
+          created_at: item.created_at,
+          status: item.status,
+          total_amount: item.total_amount,
+          product: {
+            title: item.product?.title || 'Unknown Product',
+            title_bn: item.product?.title_bn || '',
+          },
+        }));
+        setOrders(formattedOrders);
       }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void fetchOrders();
+  }, [fetchOrders]);
+
+  // Realtime: update Orders table without manual refresh.
+  const rtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user) return;
+
+    const schedule = () => {
+      if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
+      rtTimerRef.current = window.setTimeout(() => {
+        void fetchOrders();
+      }, 700);
     };
 
-    fetchOrders();
-  }, [user]);
+    const channel = supabase
+      .channel(`orders_rt:${user.id}:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` },
+        () => schedule(),
+      )
+      .subscribe();
+
+    return () => {
+      if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [user, fetchOrders]);
 
   const activeOrders = useMemo(
     () => orders.filter((order) => getEffectiveStatus(order) !== 'expired'),
@@ -238,7 +266,7 @@ export const Orders = () => {
       }
     } catch (error) {
       console.error('Payment retry error:', error);
-      alert('Failed to process payment retry. Please try creating a new order.');
+      toast.error('Failed to process payment retry. Please try creating a new order.');
     } finally {
       setProcessingId(null);
     }

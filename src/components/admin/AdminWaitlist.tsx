@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Bell, Search, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Loader2, Bell, Search, CheckCircle2, RotateCcw, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Row {
   id: string;
@@ -14,11 +16,13 @@ interface Row {
 }
 
 export const AdminWaitlist: React.FC = () => {
+  const { confirm } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'notified'>('all');
   const [updating, setUpdating] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchRows = useCallback(async () => {
     setLoading(true);
@@ -69,11 +73,36 @@ export const AdminWaitlist: React.FC = () => {
       const { error } = await supabase.from('product_waitlist').update({ notified_at: new Date().toISOString() }).eq('id', id);
       if (error) throw error;
       await fetchRows();
+      toast.success('Marked as notified.');
     } catch (e) {
       console.error(e);
-      alert('Could not update row');
+      toast.error('Could not update row');
     } finally {
       setUpdating(null);
+    }
+  };
+
+  const handleDelete = async (r: Row) => {
+    const ok = await confirm({
+      title: 'Remove this waitlist entry?',
+      description: r.products?.title
+        ? `${r.users?.name || 'This user'} will be removed from the notify list for “${r.products.title}”.`
+        : 'This row will be removed from the product waitlist.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setDeletingId(r.id);
+    try {
+      const { error } = await supabase.from('product_waitlist').delete().eq('id', r.id);
+      if (error) throw error;
+      setRows((prev) => prev.filter((x) => x.id !== r.id));
+      toast.success('Waitlist entry deleted.');
+    } catch (e) {
+      console.error(e);
+      toast.error('Could not delete entry');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -120,7 +149,7 @@ export const AdminWaitlist: React.FC = () => {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search user or product…"
+              placeholder="Search name, email, or product…"
               className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
@@ -174,17 +203,33 @@ export const AdminWaitlist: React.FC = () => {
                     )}
                   </td>
                   <td className="py-2.5 px-3 text-right">
-                    {!r.notified_at && (
+                    <div className="inline-flex flex-wrap items-center justify-end gap-2">
+                      {!r.notified_at && (
+                        <button
+                          type="button"
+                          disabled={updating === r.id || deletingId === r.id}
+                          onClick={() => void markNotified(r.id)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-50"
+                        >
+                          {updating === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          Mark notified
+                        </button>
+                      )}
                       <button
                         type="button"
-                        disabled={updating === r.id}
-                        onClick={() => markNotified(r.id)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline disabled:opacity-50"
+                        disabled={deletingId === r.id || updating === r.id}
+                        title="Delete entry"
+                        onClick={() => void handleDelete(r)}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-gray-500 transition-colors hover:bg-red-500/10 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 disabled:opacity-50"
                       >
-                        {updating === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                        Mark notified
+                        {deletingId === r.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
+                        Delete
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))}

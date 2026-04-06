@@ -8,6 +8,7 @@ import { getStoredLanguage, pickLocalized } from '../lib/language';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseProductDescriptionBullets, productSavePercent } from '../lib/productStoreDisplay';
+import { toast } from '../lib/toast';
 
 interface Product {
   id: string;
@@ -122,7 +123,7 @@ export const Store = () => {
       }
     } catch (e) {
       console.error(e);
-      alert('Could not save notification request. Try again.');
+      toast.error('Could not save notification request. Try again.');
     } finally {
       setNotifyBusy(null);
     }

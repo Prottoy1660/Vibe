@@ -18,6 +18,7 @@ import {
   technicalApiLine,
   rowMatchesSearch,
 } from '../../lib/adminActivityLogLabels';
+import { toast } from '../../lib/toast';
 
 interface LogRow {
   id: string;
@@ -83,7 +84,7 @@ export const AdminActivityLog = () => {
       }
     } catch (e) {
       console.error('admin_activity_logs:', e);
-      alert(e instanceof Error ? e.message : 'Could not load activity log');
+      toast.error(e instanceof Error ? e.message : 'Could not load activity log');
     } finally {
       setLoading(false);
     }

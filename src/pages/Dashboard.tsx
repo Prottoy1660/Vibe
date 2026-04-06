@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { 
@@ -24,6 +24,7 @@ import {
   LightroomMark,
 } from '../components/auth/AdobeCreativeSuiteIcons';
 import { postJsonWithFallback } from '../lib/apiClient';
+import { toast } from '../lib/toast';
 import { isStalePendingOrder } from '../lib/orderHistoryVisibility';
 
 interface Stats {
@@ -71,7 +72,7 @@ export const Dashboard = () => {
     }
   }, [isAdmin, navigate]);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     if (!user || isAdmin) return;
 
     try {
@@ -127,7 +128,7 @@ export const Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, isAdmin]);
 
   useEffect(() => {
     // Check for successful recharge redirect
@@ -135,13 +136,13 @@ export const Dashboard = () => {
     const rechargeStatus = searchParams.get('recharge');
     if (rechargeStatus === 'success') {
       window.history.replaceState({}, document.title, window.location.pathname);
-      alert('Wallet recharge successful! Your balance has been updated.');
+      toast.success('Wallet recharge successful! Your balance has been updated.');
     }
 
     if (user) {
-      fetchDashboardData();
+      void fetchDashboardData();
     }
-  }, [user, isAdmin]);
+  }, [user, isAdmin, fetchDashboardData]);
 
   // Recompute order counts when pending checkouts pass the 30m visibility window (no DB row change until cleanup).
   useEffect(() => {
@@ -150,26 +151,38 @@ export const Dashboard = () => {
       void fetchDashboardData();
     }, 30 * 1000);
     return () => window.clearInterval(id);
-  }, [user, isAdmin]);
+  }, [user, isAdmin, fetchDashboardData]);
 
   // Set up Supabase Realtime Subscriptions
+  const dashboardRtTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!user) return;
-    
-    // Listen to changes on the user's orders and user profile (wallet balance)
-    const channel = supabase.channel('dashboard_realtime')
+    if (!user || isAdmin) return;
+
+    const scheduleRefresh = () => {
+      if (dashboardRtTimerRef.current) window.clearTimeout(dashboardRtTimerRef.current);
+      dashboardRtTimerRef.current = window.setTimeout(() => {
+        void fetchDashboardData();
+      }, 700);
+    };
+
+    // Listen to user-impacting changes and refresh without manual reload.
+    const channel = supabase.channel(`dashboard_realtime:${user.id}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
-        fetchDashboardData();
+        scheduleRefresh();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `id=eq.${user.id}` }, () => {
-        fetchDashboardData();
+        scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
+        scheduleRefresh();
       })
       .subscribe();
 
     return () => {
+      if (dashboardRtTimerRef.current) window.clearTimeout(dashboardRtTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user, isAdmin, fetchDashboardData]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const userInitials = userName.substring(0, 2).toUpperCase();
@@ -177,7 +190,7 @@ export const Dashboard = () => {
   const handleRecharge = async () => {
     const amount = Number(rechargeAmount);
     if (isNaN(amount) || amount < 10) {
-      alert('Please enter a valid amount (minimum 10 BDT)');
+      toast.warning('Please enter a valid amount (minimum 10 BDT)');
       return;
     }
 
@@ -199,7 +212,7 @@ export const Dashboard = () => {
       }
     } catch (error: any) {
       console.error('Recharge error:', error);
-      alert('Failed to process recharge: ' + error.message);
+      toast.error('Failed to process recharge: ' + error.message);
     } finally {
       setRecharging(false);
     }

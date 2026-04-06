@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Ticket, Plus, Save, Search, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Coupon {
   id: string;
@@ -14,6 +16,7 @@ interface Coupon {
 }
 
 export const AdminCoupons = () => {
+  const { confirm } = useConfirmDialog();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -84,7 +87,7 @@ export const AdminCoupons = () => {
       fetchCoupons();
     } catch (error: any) {
       console.error('Error saving coupon:', error);
-      alert(error.message || 'Error saving coupon');
+      toast.error(error.message || 'Error saving coupon');
     }
   };
 
@@ -103,14 +106,21 @@ export const AdminCoupons = () => {
   };
 
   const deleteCoupon = async (id: string) => {
-    if (!window.confirm('Permanently delete this coupon? This cannot be undone. Orders using it will keep running but coupon reference becomes null.')) return;
+    const ok = await confirm({
+      title: 'Delete this coupon?',
+      description:
+        'This cannot be undone. Orders using it will keep running but coupon reference becomes null.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       const { error } = await supabase.from('coupons').delete().eq('id', id);
       if (error) throw error;
       fetchCoupons();
     } catch (error: any) {
       console.error('Error deleting coupon:', error);
-      alert(error?.message || 'Failed to delete coupon');
+      toast.error(error?.message || 'Failed to delete coupon');
     }
   };
 
@@ -193,7 +203,7 @@ export const AdminCoupons = () => {
       setUsesByUser(list);
     } catch (e: any) {
       console.error('fetch coupon usage error:', e);
-      alert(e?.message || 'Failed to fetch coupon usage');
+      toast.error(e?.message || 'Failed to fetch coupon usage');
       setUsesByUser([]);
     } finally {
       setUsesLoading(false);

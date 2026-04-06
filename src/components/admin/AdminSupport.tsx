@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 type TicketCategory = 'general' | 'billing' | 'adobe_access' | 'account' | 'other';
@@ -55,6 +56,7 @@ const STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
 ];
 
 export const AdminSupport = () => {
+  const { confirm } = useConfirmDialog();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [tickets, setTickets] = useState<TicketRow[]>([]);
@@ -150,7 +152,13 @@ export const AdminSupport = () => {
 
   const handleDelete = async () => {
     if (!selected) return;
-    if (!window.confirm('Are you sure you want to delete this ticket? This action cannot be undone.')) return;
+    const ok = await confirm({
+      title: 'Delete this ticket?',
+      description: 'This action cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeleting(true);
     setSaveMsg(null);
     try {

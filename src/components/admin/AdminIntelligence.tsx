@@ -34,6 +34,7 @@ import {
   Table2,
 } from 'lucide-react';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Session {
   id: string;
@@ -151,6 +152,7 @@ const InfoRow = ({
 type MainTab = 'overview' | 'sessions';
 
 export const AdminIntelligence = () => {
+  const { confirm } = useConfirmDialog();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -201,7 +203,13 @@ export const AdminIntelligence = () => {
   }, []);
 
   const handleDeleteAll = async () => {
-    if (!window.confirm('Delete all session snapshots? This cannot be undone.')) return;
+    const ok = await confirm({
+      title: 'Delete all session snapshots?',
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await supabase.from('user_sessions').delete().neq('id', '00000000-0000-0000-0000-000000000000');

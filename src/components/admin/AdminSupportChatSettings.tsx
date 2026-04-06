@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import {
   Loader2,
   Save,
@@ -109,6 +110,7 @@ type TrainingRow = {
 };
 
 export const AdminSupportChatSettings: React.FC = () => {
+  const { confirm } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -235,7 +237,13 @@ export const AdminSupportChatSettings: React.FC = () => {
   };
 
   const clearTraining = async () => {
-    if (!window.confirm('Delete all captured training rows? This cannot be undone.')) return;
+    const ok = await confirm({
+      title: 'Delete all training rows?',
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setClearingTraining(true);
     try {
       await adminFetch('/api/admin/ops/support-chat/training', 'DELETE');

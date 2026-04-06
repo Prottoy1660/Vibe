@@ -36,6 +36,7 @@ import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
 import { PublicMaintenancePage } from '../pages/PublicMaintenancePage';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
@@ -79,7 +80,7 @@ export const Layout = () => {
       if (cancelled) return;
 
       if (data?.is_banned) {
-        alert('Your account has been suspended.');
+        toast.error('Your account has been suspended.');
         void signOut();
         return;
       }

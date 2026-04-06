@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -28,6 +28,7 @@ import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from '
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
+import { toast } from '../lib/toast';
 
 function getNextAdobeSlotUnlockAt(
   orderCreatedAt: string | undefined,
@@ -126,7 +127,7 @@ export const AdobeEmail = () => {
       
       // We assume the webhook handles email assignment, but in development 
       // without webhooks, we could trigger a check or show a success toast here.
-      alert('Payment successful! Your order is being processed.');
+      toast.success('Payment successful! Your order is being processed.');
     }
   }, []);
 
@@ -439,8 +440,13 @@ export const AdobeEmail = () => {
     }
   };
 
+  const fetchEmailDataRef = useRef(fetchEmailData);
   useEffect(() => {
-    fetchEmailData();
+    fetchEmailDataRef.current = fetchEmailData;
+  });
+
+  useEffect(() => {
+    void fetchEmailDataRef.current();
   }, [user]);
 
   const showPersonalTab = personalSubscriptionsEnabled || personalOrders.length > 0;
@@ -454,19 +460,31 @@ export const AdobeEmail = () => {
   }, [personalSubscriptionsEnabled]);
 
   // Set up Realtime Subscriptions for Auto-Updating Emails & Orders
+  const adobeRtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!user) return;
 
-    const channel = supabase.channel('adobe_email_realtime')
+    const scheduleRefresh = () => {
+      if (adobeRtTimerRef.current) window.clearTimeout(adobeRtTimerRef.current);
+      adobeRtTimerRef.current = window.setTimeout(() => {
+        void fetchEmailDataRef.current();
+      }, 850);
+    };
+
+    const channel = supabase.channel(`adobe_email_realtime:${user.id}:${crypto.randomUUID()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
-        fetchEmailData();
+        scheduleRefresh();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails', filter: `user_id=eq.${user.id}` }, () => {
-        fetchEmailData();
+        scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
+        scheduleRefresh();
       })
       .subscribe();
 
     return () => {
+      if (adobeRtTimerRef.current) window.clearTimeout(adobeRtTimerRef.current);
       supabase.removeChannel(channel);
     };
   }, [user]);
@@ -506,7 +524,7 @@ export const AdobeEmail = () => {
       }
       
       if (!orderId) {
-        alert('Could not find a valid active order to link the new email to.');
+        toast.error('Could not find a valid active order to link the new email to.');
         setGenerating(false);
         return;
       }
@@ -522,7 +540,7 @@ export const AdobeEmail = () => {
       }
 
       if (orderEmailCount >= slotLimit) {
-        alert(`You have reached the maximum limit of ${slotLimit} email${slotLimit !== 1 ? 's' : ''} for this order.`);
+        toast.warning(`You have reached the maximum limit of ${slotLimit} email${slotLimit !== 1 ? 's' : ''} for this order.`);
         setGenerating(false);
         return;
       }
@@ -554,11 +572,11 @@ export const AdobeEmail = () => {
         throw new Error(data.message || 'Failed to generate email');
       }
 
-      alert('Email generated successfully!');
+      toast.success('Email generated successfully!');
       fetchEmailData();
     } catch (error: any) {
       console.error('Email generation error:', error);
-      alert(error.message || 'Failed to generate email. Please contact support.');
+      toast.error(error.message || 'Failed to generate email. Please contact support.');
     } finally {
       setGenerating(false);
     }
@@ -604,7 +622,7 @@ export const AdobeEmail = () => {
     } catch (error: unknown) {
       console.error('Error fetching inbox:', error);
       const message = error instanceof Error ? error.message : 'Failed to connect to email server';
-      alert(message);
+      toast.error(message);
       setInboxMessages([]);
       if (closeOnError) setIsInboxOpen(false);
       return false;
@@ -631,7 +649,7 @@ export const AdobeEmail = () => {
   const handleRequestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!requestForm.email || !requestForm.productId) {
-      alert('Please fill in all fields');
+      toast.warning('Please fill in all fields');
       return;
     }
     setIsRequestModalOpen(false);
@@ -672,7 +690,7 @@ export const AdobeEmail = () => {
       )));
     } catch (err: any) {
       console.error('Failed to toggle auto renew:', err);
-      alert(err.message || 'Failed to update auto-renew setting.');
+      toast.error(err.message || 'Failed to update auto-renew setting.');
     } finally {
       setTogglingAutoRenewOrderId(null);
     }

@@ -22,6 +22,8 @@ import {
   X,
 } from 'lucide-react';
 import { productSavePercent } from '../../lib/productStoreDisplay';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 const PRODUCT_IMAGES_BUCKET = 'product-images';
 const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -64,6 +66,7 @@ function slotLabel(n: number) {
 }
 
 export const AdminProducts = () => {
+  const { confirm } = useConfirmDialog();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -123,7 +126,7 @@ export const AdminProducts = () => {
 
       const salePrice = Number(formData.price);
       if (!Number.isFinite(salePrice) || salePrice < 0) {
-        alert('Enter a valid sale price (BDT) — this is what checkout charges.');
+        toast.warning('Enter a valid sale price (BDT) — this is what checkout charges.');
         return;
       }
 
@@ -132,20 +135,20 @@ export const AdminProducts = () => {
       if (lp !== null && lp !== undefined && String(lp).trim() !== '') {
         const n = Number(lp);
         if (!Number.isFinite(n) || n < 0) {
-          alert('Invalid original list price.');
+          toast.warning('Invalid original list price.');
           return;
         }
         listPriceNorm = n;
       }
 
       if (listPriceNorm != null && listPriceNorm < salePrice) {
-        alert('Original list price must be greater than or equal to the sale price.');
+        toast.warning('Original list price must be greater than or equal to the sale price.');
         return;
       }
 
       const title = (formData.title || '').trim();
       if (!title) {
-        alert('Title (English) is required.');
+        toast.warning('Title (English) is required.');
         return;
       }
 
@@ -180,14 +183,19 @@ export const AdminProducts = () => {
       fetchProducts();
     } catch (error: any) {
       console.error('Error saving product:', error);
-      alert(
+      toast.error(
         `Error saving product: ${error.message || 'Unknown database error'}. If you added list pricing, run migration 063 on Supabase.`
       );
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Permanently delete this product?')) return;
+    const ok = await confirm({
+      title: 'Permanently delete this product?',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase.from('products').delete().eq('id', id);
@@ -196,7 +204,7 @@ export const AdminProducts = () => {
       fetchProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
-      alert('Failed to delete product');
+      toast.error('Failed to delete product');
     }
   };
 
@@ -205,12 +213,13 @@ export const AdminProducts = () => {
     const count = filteredProducts.length;
     if (count === 0) return;
     const label = activeTab === 'personal' ? 'personal subscription' : 'regular';
-    if (
-      !window.confirm(
-        `Delete all ${count} ${label} product(s)? This cannot be undone and may break links to existing orders.`
-      )
-    )
-      return;
+    const okAll = await confirm({
+      title: `Delete all ${count} ${label} product(s)?`,
+      description: 'This cannot be undone and may break links to existing orders.',
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    });
+    if (!okAll) return;
 
     try {
       setLoading(true);
@@ -220,7 +229,7 @@ export const AdminProducts = () => {
       await fetchProducts();
     } catch (error) {
       console.error('Error deleting products:', error);
-      alert('Failed to delete products');
+      toast.error('Failed to delete products');
       setLoading(false);
     }
   };

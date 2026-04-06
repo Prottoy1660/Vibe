@@ -12,6 +12,7 @@ import {
   Eye,
   Info,
 } from 'lucide-react';
+import { toast } from '../../lib/toast';
 
 interface TutorialForm {
   hero_title: string;
@@ -99,10 +100,10 @@ export const AdminTutorialHelp = () => {
       const { error } = await supabase.from('tutorial_help_content').upsert(payload, { onConflict: 'page_key' });
 
       if (error) throw error;
-      alert('Tutorial page saved. Customers will see the updated content on the next visit.');
+      toast.success('Tutorial page saved. Customers will see the updated content on the next visit.');
     } catch (err: any) {
       console.error('Failed to save tutorial content:', err);
-      alert(err.message || 'Failed to save content.');
+      toast.error(err.message || 'Failed to save content.');
     } finally {
       setSaving(false);
     }

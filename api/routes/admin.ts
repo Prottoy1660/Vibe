@@ -815,7 +815,9 @@ router.get('/ops/subscription-health', verifyAdmin, async (req, res) => {
     const limit = Math.max(20, Math.min(500, Number(req.query.limit || 120)));
     const { data: orders } = await supabase
       .from('orders')
-      .select('id, user_id, status, auto_renew, created_at, users:user_id(email, name), products:product_id(title, duration)')
+      .select(
+        'id, user_id, status, auto_renew, created_at, users:user_id(email, name, phone), products:product_id(title, duration)'
+      )
       .in('status', ['completed', 'paid'])
       .order('created_at', { ascending: false })
       .limit(limit);
@@ -857,6 +859,7 @@ router.get('/ops/subscription-health', verifyAdmin, async (req, res) => {
         user_id: o.user_id,
         user_name: o.users?.name || '',
         user_email: o.users?.email || '',
+        user_phone: o.users?.phone || '',
         product_title: o.products?.title || 'Unknown',
         auto_renew: !!o.auto_renew,
         days_left: daysLeft,

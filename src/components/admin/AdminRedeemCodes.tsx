@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2, Gift, Plus, Trash2, Copy, Check,
@@ -9,6 +9,8 @@ import { formatInTimeZone } from 'date-fns-tz';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { REDEEM_RESTORE_WINDOW_MS } from '../../lib/redeemManualPaymentPolicy';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Product {
   id: string;
@@ -214,6 +216,7 @@ function generateCode(length = 12): string {
 }
 
 export const AdminRedeemCodes = () => {
+  const { confirm } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<'codes' | 'pending' | 'revoked'>('codes');
   const [codes, setCodes] = useState<RedeemCode[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PendingOrder[]>([]);
@@ -446,6 +449,36 @@ export const AdminRedeemCodes = () => {
     }
   };
 
+  // Realtime: keep redeem tables updated without manual refresh.
+  const redeemRtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const schedule = () => {
+      if (redeemRtTimerRef.current) window.clearTimeout(redeemRtTimerRef.current);
+      redeemRtTimerRef.current = window.setTimeout(() => {
+        void fetchAll();
+      }, 1000);
+    };
+
+    const channel = supabase
+      .channel(`admin_redeem_rt:${crypto.randomUUID()}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'redeem_codes' },
+        () => schedule(),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: 'payment_method=eq.redeem_code' },
+        () => schedule(),
+      )
+      .subscribe();
+
+    return () => {
+      if (redeemRtTimerRef.current) window.clearTimeout(redeemRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const handleCreate = async () => {
     if (!form.product_id || !form.code.trim()) return;
     setSaving(true);
@@ -464,7 +497,7 @@ export const AdminRedeemCodes = () => {
       setForm({ code: generateCode(), product_id: form.product_id, max_uses: 1, note: '', is_active: true });
       await fetchAll();
     } catch (err: any) {
-      alert('Error: ' + (err.message || 'Could not create code. It may already exist.'));
+      toast.error('Error: ' + (err.message || 'Could not create code. It may already exist.'));
     } finally {
       setSaving(false);
     }
@@ -474,7 +507,7 @@ export const AdminRedeemCodes = () => {
 
   const handleBulkCreate = async () => {
     if (!form.product_id) {
-      alert('Select a product first.');
+      toast.warning('Select a product first.');
       return;
     }
     const n = Math.min(BULK_MAX, Math.max(1, Math.floor(Number(bulkQuantity)) || 1));
@@ -507,7 +540,7 @@ export const AdminRedeemCodes = () => {
           }
         }
         if (!code) {
-          alert('Could not generate enough unique codes. Try a smaller batch.');
+          toast.error('Could not generate enough unique codes. Try a smaller batch.');
           return;
         }
         rows.push({
@@ -529,9 +562,9 @@ export const AdminRedeemCodes = () => {
 
       setShowBulkPanel(false);
       await fetchAll();
-      alert(`Created ${n} redeem codes.`);
+      toast.success(`Created ${n} redeem codes.`);
     } catch (err: any) {
-      alert('Bulk create failed: ' + (err.message || 'Unknown error. Some codes may already exist — try again with a new batch.'));
+      toast.error('Bulk create failed: ' + (err.message || 'Unknown error. Some codes may already exist — try again with a new batch.'));
     } finally {
       setBulkSaving(false);
     }
@@ -545,7 +578,7 @@ export const AdminRedeemCodes = () => {
 
   const downloadCsv = () => {
     if (filteredCodes.length === 0) {
-      alert('No codes to export. Adjust your search/filter.');
+      toast.warning('No codes to export. Adjust your search/filter.');
       return;
     }
     const headers = [
@@ -590,13 +623,13 @@ export const AdminRedeemCodes = () => {
 
   const handleBulkDeleteFiltered = async () => {
     if (filteredCodes.length === 0) return;
-    if (
-      !window.confirm(
-        `Delete ${filteredCodes.length} code(s) permanently? This cannot be undone. Codes that already have usage history may fail to delete.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Delete ${filteredCodes.length} code(s) permanently?`,
+      description: 'This cannot be undone. Codes that already have usage history may fail to delete.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setSaving(true);
     try {
       const ids = filteredCodes.map((c) => c.id);
@@ -608,7 +641,7 @@ export const AdminRedeemCodes = () => {
       setCodes((prev) => prev.filter((c) => !ids.includes(c.id)));
       await fetchAll();
     } catch (err: any) {
-      alert('Bulk delete failed: ' + (err.message || 'Some rows may be protected if already used.'));
+      toast.error('Bulk delete failed: ' + (err.message || 'Some rows may be protected if already used.'));
       await fetchAll();
     } finally {
       setSaving(false);
@@ -618,10 +651,15 @@ export const AdminRedeemCodes = () => {
   const handleBulkDeactivateFiltered = async () => {
     const activeIds = filteredCodes.filter((c) => c.is_active).map((c) => c.id);
     if (activeIds.length === 0) {
-      alert('No active codes in the current list.');
+      toast.warning('No active codes in the current list.');
       return;
     }
-    if (!window.confirm(`Deactivate ${activeIds.length} active code(s) in the current list?`)) return;
+    const okDeact = await confirm({
+      title: `Deactivate ${activeIds.length} active code(s)?`,
+      description: 'Only codes in the current filtered list are affected.',
+      confirmLabel: 'Deactivate',
+    });
+    if (!okDeact) return;
     setSaving(true);
     try {
       const chunk = 200;
@@ -636,7 +674,7 @@ export const AdminRedeemCodes = () => {
         prev.map((c) => (activeIds.includes(c.id) ? { ...c, is_active: false } : c)),
       );
     } catch (err: any) {
-      alert('Bulk deactivate failed: ' + (err.message || 'Unknown error'));
+      toast.error('Bulk deactivate failed: ' + (err.message || 'Unknown error'));
       await fetchAll();
     } finally {
       setSaving(false);
@@ -644,23 +682,29 @@ export const AdminRedeemCodes = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Delete this redeem code permanently?')) return;
+    const ok = await confirm({
+      title: 'Delete this redeem code permanently?',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     await supabase.from('redeem_codes').delete().eq('id', id);
     setCodes(prev => prev.filter(c => c.id !== id));
   };
 
   const cancelOrder = async (orderId: string) => {
-    if (
-      !window.confirm(
-        'Seize this redeem? Shared Adobe access will be turned off for this order, the order will be cancelled, and the ৳ amount will be reversed in payment records (not counted as revenue). The user account stays able to sign in — use Admin → Users only if you need a full ban.',
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Seize this redeem?',
+      description:
+        'Shared Adobe access will be turned off for this order, the order will be cancelled, and the ৳ amount will be reversed in payment records (not counted as revenue). The user account stays able to sign in — use Admin → Users only if you need a full ban.',
+      confirmLabel: 'Seize',
+      variant: 'danger',
+    });
+    if (!ok) return;
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
@@ -673,32 +717,31 @@ export const AdminRedeemCodes = () => {
         return next;
       });
       await fetchAll();
-      alert('Redeem seized: access revoked for this order, amount reversed. User account was not banned.');
+      toast.success('Redeem seized: access revoked for this order, amount reversed. User account was not banned.');
     } catch (err: any) {
-      alert('Error: ' + (err.message || 'Could not seize order'));
+      toast.error('Error: ' + (err.message || 'Could not seize order'));
     }
   };
 
   const bulkMarkPaid = async () => {
     const ids = [...pendingSelected];
     if (ids.length === 0) return;
-    if (
-      !window.confirm(
-        `Mark ${ids.length} selected order(s) as paid? Each will record manual payment and settled revenue.`,
-      )
-    ) {
-      return;
-    }
+    const okPaid = await confirm({
+      title: `Mark ${ids.length} order(s) as paid?`,
+      description: 'Each will record manual payment and settled revenue.',
+      confirmLabel: 'Mark paid',
+    });
+    if (!okPaid) return;
     setPendingBulkLoading(true);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
       if (!base) {
-        alert('API URL is not configured.');
+        toast.error('API URL is not configured.');
         return;
       }
       const succeeded: string[] = [];
@@ -714,9 +757,13 @@ export const AdminRedeemCodes = () => {
       }
       await fetchAll();
       const msg = `Marked paid: ${succeeded.length}. Failed: ${failures.length}.`;
-      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+      if (failures.length) {
+        toast.warning(msg, { description: failures.slice(0, 8).join('\n'), duration: 12000 });
+      } else {
+        toast.success(msg);
+      }
     } catch (e: any) {
-      alert(e?.message || 'Bulk mark paid failed');
+      toast.error(e?.message || 'Bulk mark paid failed');
     } finally {
       setPendingBulkLoading(false);
     }
@@ -725,23 +772,24 @@ export const AdminRedeemCodes = () => {
   const bulkSeize = async () => {
     const ids = [...pendingSelected];
     if (ids.length === 0) return;
-    if (
-      !window.confirm(
-        `Seize ${ids.length} selected redeem order(s)? Access will be revoked for each, orders cancelled, amounts reversed. User accounts are not banned.`,
-      )
-    ) {
-      return;
-    }
+    const okSeize = await confirm({
+      title: `Seize ${ids.length} redeem order(s)?`,
+      description:
+        'Access will be revoked for each, orders cancelled, amounts reversed. User accounts are not banned.',
+      confirmLabel: 'Seize all',
+      variant: 'danger',
+    });
+    if (!okSeize) return;
     setPendingBulkLoading(true);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
       if (!base) {
-        alert('API URL is not configured.');
+        toast.error('API URL is not configured.');
         return;
       }
       const succeeded: string[] = [];
@@ -757,31 +805,35 @@ export const AdminRedeemCodes = () => {
       }
       await fetchAll();
       const msg = `Seized: ${succeeded.length}. Failed: ${failures.length}.`;
-      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+      if (failures.length) {
+        toast.warning(msg, { description: failures.slice(0, 8).join('\n'), duration: 12000 });
+      } else {
+        toast.success(msg);
+      }
     } catch (e: any) {
-      alert(e?.message || 'Bulk seize failed');
+      toast.error(e?.message || 'Bulk seize failed');
     } finally {
       setPendingBulkLoading(false);
     }
   };
 
   const restoreOrder = async (orderId: string) => {
-    if (
-      !window.confirm(
-        'Restore this order? Adobe emails for it will be reactivated and a fresh 24-hour manual payment window will start. Any legacy account ban from an old seize will be cleared. (Only within 48 hours after seize — the server will reject if the window has passed.)',
-      )
-    ) {
-      return;
-    }
+    const okRestore = await confirm({
+      title: 'Restore this order?',
+      description:
+        'Adobe emails for it will be reactivated and a fresh 24-hour manual payment window will start. Any legacy account ban from an old seize will be cleared. Only within 48 hours after seize — the server will reject if the window has passed.',
+      confirmLabel: 'Restore',
+    });
+    if (!okRestore) return;
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
       if (!base) {
-        alert('API URL is not configured.');
+        toast.error('API URL is not configured.');
         return;
       }
       const r = await redeemRestoreRequest(orderId, token, base);
@@ -792,9 +844,9 @@ export const AdminRedeemCodes = () => {
         return next;
       });
       await fetchAll();
-      alert(r.message || 'Access restored.');
+      toast.success(r.message || 'Access restored.');
     } catch (err: any) {
-      alert('Error: ' + (err.message || 'Could not restore order'));
+      toast.error('Error: ' + (err.message || 'Could not restore order'));
     }
   };
 
@@ -805,29 +857,28 @@ export const AdminRedeemCodes = () => {
       return o != null && redeemOrderRestoreAllowed(o);
     });
     if (restoreableIds.length === 0) {
-      alert('No selected orders are still within the 48-hour restore window.');
+      toast.warning('No selected orders are still within the 48-hour restore window.');
       return;
     }
     const skipped = selected.length - restoreableIds.length;
     const skipNote =
       skipped > 0 ? ` ${skipped} selected row(s) are past the window and will be skipped.` : '';
-    if (
-      !window.confirm(
-        `Restore ${restoreableIds.length} order(s)?${skipNote} Adobe emails will be reactivated and a fresh manual payment window will start for each.`,
-      )
-    ) {
-      return;
-    }
+    const okBulkRestore = await confirm({
+      title: `Restore ${restoreableIds.length} order(s)?`,
+      description: `${skipNote.trim()} Adobe emails will be reactivated and a fresh manual payment window will start for each.`.trim(),
+      confirmLabel: 'Restore',
+    });
+    if (!okBulkRestore) return;
     setRevokedBulkLoading(true);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
       if (!base) {
-        alert('API URL is not configured.');
+        toast.error('API URL is not configured.');
         return;
       }
       const succeeded: string[] = [];
@@ -849,20 +900,29 @@ export const AdminRedeemCodes = () => {
       }
       await fetchAll();
       const msg = `Restored: ${succeeded.length}. Failed: ${failures.length}.`;
-      alert(failures.length ? `${msg}\n\n${failures.slice(0, 8).join('\n')}${failures.length > 8 ? '\n…' : ''}` : msg);
+      if (failures.length) {
+        toast.warning(msg, { description: failures.slice(0, 8).join('\n'), duration: 12000 });
+      } else {
+        toast.success(msg);
+      }
     } catch (e: any) {
-      alert(e?.message || 'Bulk restore failed');
+      toast.error(e?.message || 'Bulk restore failed');
     } finally {
       setRevokedBulkLoading(false);
     }
   };
 
   const markPaid = async (orderId: string) => {
-    if (!window.confirm('Mark manual payment as received? This keeps the user active and records the amount as paid.')) return;
+    const ok = await confirm({
+      title: 'Mark manual payment as received?',
+      description: 'This keeps the user active and records the amount as paid.',
+      confirmLabel: 'Mark paid',
+    });
+    if (!ok) return;
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const base = getApiBaseUrl();
@@ -875,9 +935,9 @@ export const AdminRedeemCodes = () => {
         return next;
       });
       await fetchAll();
-      alert('Marked as paid. Amount is now recorded as settled revenue.');
+      toast.success('Marked as paid. Amount is now recorded as settled revenue.');
     } catch (err: any) {
-      alert('Error: ' + (err.message || 'Could not mark as paid'));
+      toast.error('Error: ' + (err.message || 'Could not mark as paid'));
     }
   };
 

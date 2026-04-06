@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import {
   Loader2,
   Mail,
@@ -30,6 +32,7 @@ import {
   Building2,
   Plus,
   ArrowRight,
+  Search,
 } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
@@ -60,6 +63,11 @@ interface EmailPool {
   email_teams?: { name: string } | null;
 }
 
+/** Strip ILIKE wildcards so user input cannot broaden the pattern. */
+function sanitizeEmailSearchFragment(s: string): string {
+  return s.replace(/\\/g, '').replace(/%/g, '').replace(/_/g, '').trim();
+}
+
 function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
   const groups: Record<string, EmailPool[]> = {};
   for (const email of emails) {
@@ -77,6 +85,7 @@ function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
 type TabId = 'overview' | 'teams' | 'generate' | 'inventory';
 
 export const AdminEmails = () => {
+  const { confirm } = useConfirmDialog();
   const [emails, setEmails] = useState<EmailPool[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabId | 'burned'>('overview');
@@ -101,6 +110,10 @@ export const AdminEmails = () => {
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
   const [inventoryTeamFilter, setInventoryTeamFilter] = useState<string>('');
   const [teamStats, setTeamStats] = useState<Record<string, { emailCount: number; userCount: number }>>({});
+  const [teamsListSearchQuery, setTeamsListSearchQuery] = useState('');
+  const [teamsEmailSearchTeamIds, setTeamsEmailSearchTeamIds] = useState<string[]>([]);
+  const [teamsEmailSearchLoading, setTeamsEmailSearchLoading] = useState(false);
+  const teamsEmailSearchReqId = useRef(0);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -175,6 +188,58 @@ export const AdminEmails = () => {
     void loadTeamStats();
   }, [loadTeamStats, emails.length]);
 
+  useEffect(() => {
+    const requestId = ++teamsEmailSearchReqId.current;
+
+    if (activeTab !== 'teams') {
+      setTeamsEmailSearchLoading(false);
+      return;
+    }
+
+    const raw = teamsListSearchQuery.trim();
+    if (!raw) {
+      setTeamsEmailSearchTeamIds([]);
+      setTeamsEmailSearchLoading(false);
+      return;
+    }
+    const q = sanitizeEmailSearchFragment(raw);
+    if (!q) {
+      setTeamsEmailSearchTeamIds([]);
+      setTeamsEmailSearchLoading(false);
+      return;
+    }
+    setTeamsEmailSearchTeamIds([]);
+    setTeamsEmailSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const { data, error } = await supabase
+          .from('emails_pool')
+          .select('team_id')
+          .not('team_id', 'is', null)
+          .ilike('email', `%${q}%`);
+        if (requestId !== teamsEmailSearchReqId.current) return;
+        setTeamsEmailSearchLoading(false);
+        if (error) {
+          console.error('teams email search:', error);
+          setTeamsEmailSearchTeamIds([]);
+          return;
+        }
+        const ids = [...new Set((data || []).map((r: { team_id: string | null }) => r.team_id).filter(Boolean))] as string[];
+        setTeamsEmailSearchTeamIds(ids);
+      })();
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [teamsListSearchQuery, activeTab]);
+
+  const teamsEmailSearchIdSet = useMemo(() => new Set(teamsEmailSearchTeamIds), [teamsEmailSearchTeamIds]);
+
+  const filteredTeamsForTable = useMemo(() => {
+    const q = teamsListSearchQuery.trim().toLowerCase();
+    if (!q) return teams;
+    const nameMatch = (t: EmailTeam) => t.name.toLowerCase().includes(q);
+    return teams.filter((t) => nameMatch(t) || teamsEmailSearchIdSet.has(t.id));
+  }, [teams, teamsListSearchQuery, teamsEmailSearchIdSet]);
+
   const fetchTeams = async () => {
     try {
       const { data, error } = await supabase.from('email_teams').select('id, name, note, created_at').order('name');
@@ -199,20 +264,21 @@ export const AdminEmails = () => {
       setTeams((prev) => [...prev, data as EmailTeam].sort((a, b) => a.name.localeCompare(b.name)));
       setTeamsTabName('');
     } catch (err: any) {
-      alert(err?.message || 'Could not add team (duplicate name?)');
+      toast.error(err?.message || 'Could not add team (duplicate name?)');
     } finally {
       setSavingTeam(false);
     }
   };
 
   const handleDeleteTeam = async (id: string) => {
-    if (
-      !window.confirm(
-        'Delete this team? Generated emails that used this label will keep the mailbox; only the team tag is removed from those rows.',
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete this team?',
+      description:
+        'Generated emails that used this label will keep the mailbox; only the team tag is removed from those rows.',
+      confirmLabel: 'Delete team',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeletingTeamId(id);
     try {
       const { error } = await supabase.from('email_teams').delete().eq('id', id);
@@ -221,7 +287,7 @@ export const AdminEmails = () => {
       if (genTeamId === id) setGenTeamId('');
       if (inventoryTeamFilter === id) setInventoryTeamFilter('');
     } catch (err: any) {
-      alert(err?.message || 'Could not delete team');
+      toast.error(err?.message || 'Could not delete team');
     } finally {
       setDeletingTeamId(null);
     }
@@ -260,6 +326,36 @@ export const AdminEmails = () => {
     }
   };
 
+  // Realtime: keep email inventory + team counts updated.
+  const emailsRtTimerRef = useRef<number | null>(null);
+  const loadTeamStatsLatestRef = useRef(loadTeamStats);
+  useEffect(() => {
+    loadTeamStatsLatestRef.current = loadTeamStats;
+  }, [loadTeamStats]);
+
+  useEffect(() => {
+    const schedule = () => {
+      if (emailsRtTimerRef.current) window.clearTimeout(emailsRtTimerRef.current);
+      emailsRtTimerRef.current = window.setTimeout(() => {
+        void fetchEmails();
+        void fetchUnfulfilledCount();
+        void loadTeamStatsLatestRef.current();
+      }, 950);
+    };
+
+    const channel = supabase
+      .channel(`admin_emails_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emails_pool' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'email_teams' }, () => schedule())
+      .subscribe();
+
+    return () => {
+      if (emailsRtTimerRef.current) window.clearTimeout(emailsRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const togglePasswordVisibility = (id: string) =>
     setShowPasswords((prev) => ({ ...prev, [id]: !prev[id] }));
 
@@ -274,32 +370,44 @@ export const AdminEmails = () => {
 
   const handleDelete = async (id: string, status: string) => {
     if (status !== 'available') {
-      if (!window.confirm(`This email is '${status}'. Deleting might affect user access. Continue?`)) return;
+      const ok = await confirm({
+        title: `This email is “${status}”`,
+        description: 'Deleting might affect user access. Continue?',
+        confirmLabel: 'Delete anyway',
+        variant: 'danger',
+      });
+      if (!ok) return;
     } else {
-      if (!window.confirm('Delete this email from the pool?')) return;
+      const ok = await confirm({
+        title: 'Delete this email from the pool?',
+        confirmLabel: 'Delete',
+        variant: 'danger',
+      });
+      if (!ok) return;
     }
     try {
       const { error } = await supabase.from('emails_pool').delete().eq('id', id);
       if (error) throw error;
       setEmails((prev) => prev.filter((e) => e.id !== id));
     } catch {
-      alert('Failed to delete email');
+      toast.error('Failed to delete email');
     }
   };
 
   const handleDeleteAll = async () => {
-    if (
-      !window.confirm(
-        `Delete ALL ${emails.length} emails from the pool? This cannot be undone and may break active subscriptions.`
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Delete all ${emails.length} emails?`,
+      description: 'This cannot be undone and may break active subscriptions.',
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeletingAll(true);
     try {
       await supabase.from('emails_pool').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       setEmails([]);
     } catch {
-      alert('Failed to delete all emails');
+      toast.error('Failed to delete all emails');
     } finally {
       setDeletingAll(false);
     }
@@ -341,12 +449,17 @@ export const AdminEmails = () => {
   };
 
   const handleBulkAssign = async () => {
-    if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
+    const ok = await confirm({
+      title: 'Bulk-assign emails to unfulfilled orders?',
+      description: 'Matching pool emails will be assigned to all unfulfilled paid orders.',
+      confirmLabel: 'Run bulk assign',
+    });
+    if (!ok) return;
     setAssigningBulk(true);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const API_URL = getApiBaseUrl();
@@ -356,15 +469,15 @@ export const AdminEmails = () => {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
+        toast.success(data.message);
         fetchEmails();
         fetchUnfulfilledCount();
       } else {
-        alert(data.message || 'Failed to bulk assign emails.');
+        toast.error(data.message || 'Failed to bulk assign emails.');
       }
     } catch (err) {
       console.error(err);
-      alert('Server error during bulk assign.');
+      toast.error('Server error during bulk assign.');
     } finally {
       setAssigningBulk(false);
     }
@@ -372,22 +485,21 @@ export const AdminEmails = () => {
 
   const handleAutoGenerate = async () => {
     if (!genPrefix || !genDomain) {
-      alert('Prefix and domain are required.');
+      toast.warning('Prefix and domain are required.');
       return;
     }
     if (genCount < 1 || genCount > 50) {
-      alert('Generate between 1 and 50 emails.');
+      toast.warning('Generate between 1 and 50 emails.');
       return;
     }
     const teamLabel = teams.find((t) => t.id === genTeamId)?.name || '(no team)';
     const slotLabel = genSlotIntent === 'exclusive' ? 'Exclusive (1 user)' : 'Shared (2 users)';
-    if (
-      !window.confirm(
-        `Generate ${genCount} addresses?\nFormat: ${genPrefix}.xxxx@${genDomain}\nSlot: ${slotLabel}\nTeam: ${teamLabel}`,
-      )
-    ) {
-      return;
-    }
+    const okGen = await confirm({
+      title: `Generate ${genCount} addresses?`,
+      description: `Format: ${genPrefix}.xxxx@${genDomain}\nSlot: ${slotLabel}\nTeam: ${teamLabel}`,
+      confirmLabel: 'Generate',
+    });
+    if (!okGen) return;
 
     setGenerating(true);
     try {
@@ -403,7 +515,7 @@ export const AdminEmails = () => {
       const API_URL = getApiBaseUrl();
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
@@ -468,12 +580,15 @@ export const AdminEmails = () => {
           : '',
       ].filter(Boolean);
 
-      alert(summaryLines.join('\n\n'));
+      toast.success('Mailbox generation complete', {
+        description: summaryLines.join('\n\n'),
+        duration: 14000,
+      });
       fetchEmails();
       fetchTeams();
       setActiveTab('inventory');
     } catch (error: any) {
-      alert(`Failed: ${error.message}`);
+      toast.error(`Failed: ${error.message}`);
     } finally {
       setGenerating(false);
     }
@@ -483,7 +598,7 @@ export const AdminEmails = () => {
     const normalizedCurrentStatus = currentStatus === 'manual' ? 'api' : currentStatus || 'none';
     const newStatus = prompt('Update cloud access (none or api):', normalizedCurrentStatus);
     if (!newStatus || !['none', 'api'].includes(newStatus)) {
-      if (newStatus) alert('Invalid status. Use none or api.');
+      if (newStatus) toast.warning('Invalid status. Use none or api.');
       return;
     }
 
@@ -494,7 +609,7 @@ export const AdminEmails = () => {
         prev.map((e) => (e.id === id ? { ...e, cloud_access_type: newStatus as any } : e))
       );
     } catch (err: any) {
-      alert(`Failed to update: ${err.message}`);
+      toast.error(`Failed to update: ${err.message}`);
     }
   };
 
@@ -575,121 +690,178 @@ export const AdminEmails = () => {
 
       {/* Teams — names only; used when generating & filtering inventory */}
       {activeTab === 'teams' && (
-        <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 md:p-6 shadow-sm">
-          <div className="flex items-start gap-3 mb-6">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-violet-700 text-sm font-bold dark:bg-violet-500/20 dark:text-violet-300">
-              <Building2 className="w-4 h-4" />
+        <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 md:p-7 shadow-sm">
+          <div className="flex items-start gap-3 md:gap-4 mb-6 md:mb-8">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300">
+              <Building2 className="w-5 h-5" />
             </span>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Teams &amp; organizations</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-2xl leading-relaxed">
-                Internal labels for generated mailboxes. When you add emails, pick a team from the list. Each row shows
-                how many pool emails and distinct users are linked. Open a team to see the full mailbox and assignment
-                table on its own page (CSV export there).
+            <div className="min-w-0 flex-1">
+              <h3 className="text-lg md:text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+                Teams &amp; organizations
+              </h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1.5 leading-relaxed max-w-3xl">
+                Labels for generated mailboxes. Counts show pool size and linked users; open a team for the full list and
+                CSV export.
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 max-w-2xl">
-            <input
-              type="text"
-              value={teamsTabName}
-              onChange={(e) => setTeamsTabName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  void handleAddTeam();
-                }
-              }}
-              placeholder="e.g. Team Alpha, Client Org"
-              className="flex-1 min-w-0 p-3 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100"
-            />
-            <button
-              type="button"
-              onClick={() => void handleAddTeam()}
-              disabled={savingTeam || !teamsTabName.trim()}
-              className="px-6 py-3 rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-700 text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 shrink-0"
-            >
-              {savingTeam ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Add team
-            </button>
+          <div className="rounded-2xl border border-gray-200/90 dark:border-white/[0.08] bg-gray-50/80 dark:bg-black/25 overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-gray-200/80 dark:border-white/[0.06]">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+                Add a team
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 sm:items-stretch">
+                <input
+                  type="text"
+                  value={teamsTabName}
+                  onChange={(e) => setTeamsTabName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void handleAddTeam();
+                    }
+                  }}
+                  placeholder="e.g. Team Alpha, Client Org"
+                  aria-label="New team name"
+                  className="flex-1 min-w-0 min-h-[44px] px-3.5 py-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/40"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleAddTeam()}
+                  disabled={savingTeam || !teamsTabName.trim()}
+                  className="min-h-[44px] sm:w-[148px] shrink-0 rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-sm shadow-violet-900/20 transition-colors"
+                >
+                  {savingTeam ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Add team
+                </button>
+              </div>
+            </div>
+            <div className="p-4 sm:p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
+                Find a team
+              </p>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  aria-hidden
+                />
+                {teamsEmailSearchLoading ? (
+                  <Loader2
+                    className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-violet-500"
+                    aria-hidden
+                  />
+                ) : null}
+                <input
+                  type="search"
+                  value={teamsListSearchQuery}
+                  onChange={(e) => setTeamsListSearchQuery(e.target.value)}
+                  placeholder="Team name or any part of a pool email address…"
+                  aria-label="Search teams by name or pool email"
+                  className="w-full min-h-[44px] pl-10 pr-10 py-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/40"
+                />
+              </div>
+              <p className="mt-2.5 text-xs text-gray-500 dark:text-gray-500 leading-snug">
+                Matches inventory mailboxes—handy if you only have an address, not the team label.
+              </p>
+            </div>
           </div>
 
-          <div className="mt-8 overflow-x-auto rounded-xl border border-gray-100 dark:border-[#26262d]">
-            <table className="w-full min-w-[52rem] text-left text-sm table-fixed">
+          {teams.length > 0 && teamsListSearchQuery.trim() ? (
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-gray-200/90 dark:border-white/[0.08] bg-gray-50/90 dark:bg-white/[0.04] px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300">
+              <span className="font-medium text-gray-900 dark:text-gray-100">{filteredTeamsForTable.length}</span>
+              <span className="text-gray-400 dark:text-gray-500">/</span>
+              <span>{teams.length}</span>
+              <span className="text-gray-500 dark:text-gray-400">teams shown</span>
+            </div>
+          ) : null}
+
+          <div className="mt-6 overflow-x-auto rounded-xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#111113]/40">
+            <table className="w-full min-w-[min(100%,42rem)] text-left text-sm">
               <thead>
-                <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5">
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[28%]">
+                <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-white/[0.04]">
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Name
                   </th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap w-[12%]">
-                    Pool emails
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                    Pool
                   </th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap w-[12%]">
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
                     Users
                   </th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[22%]">Added</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
+                    Added
+                  </th>
                   <th
                     scope="col"
-                    aria-label="Team actions"
-                    className="py-3 px-4 text-right w-[26%]"
-                  />
+                    className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right w-[1%] whitespace-nowrap"
+                  >
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {teams.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 px-4 text-center text-gray-500 dark:text-gray-400">
-                      No teams yet. Enter a name above and click Add team.
+                    <td colSpan={5} className="py-14 px-4 text-center">
+                      <p className="text-gray-600 dark:text-gray-400 text-sm">No teams yet.</p>
+                      <p className="text-gray-500 dark:text-gray-500 text-xs mt-1">Add a name above to create your first team.</p>
+                    </td>
+                  </tr>
+                ) : filteredTeamsForTable.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-14 px-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                      No teams match “{teamsListSearchQuery.trim()}”. Try another name or email fragment.
                     </td>
                   </tr>
                 ) : (
-                  teams.map((t) => {
+                  filteredTeamsForTable.map((t) => {
                     const st = teamStats[t.id];
                     return (
                       <tr
                         key={t.id}
-                        className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/50 dark:hover:bg-white/[0.02] align-top"
+                        className="hover:bg-violet-500/[0.04] dark:hover:bg-white/[0.03] transition-colors align-middle"
                       >
-                        <td className="py-4 px-4">
-                          <p className="font-semibold text-gray-900 dark:text-gray-100 leading-snug">{t.name}</p>
+                        <td className="py-3.5 px-4 min-w-0 max-w-[14rem] sm:max-w-none">
+                          <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{t.name}</p>
+                          {t.created_at ? (
+                            <p className="text-[11px] text-gray-500 mt-0.5 tabular-nums sm:hidden">
+                              {format(parseISO(t.created_at), 'MMM d, yyyy · HH:mm')}
+                            </p>
+                          ) : null}
                         </td>
-                        <td className="py-4 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200">
+                        <td className="py-3.5 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200 whitespace-nowrap">
                           {st?.emailCount ?? '—'}
                         </td>
-                        <td className="py-4 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200">
+                        <td className="py-3.5 px-4 tabular-nums text-[13px] text-gray-800 dark:text-gray-200 whitespace-nowrap">
                           {st?.userCount ?? '—'}
                         </td>
-                        <td className="py-4 px-4 text-xs text-gray-500 whitespace-nowrap">
+                        <td className="py-3.5 px-4 text-xs text-gray-500 whitespace-nowrap hidden sm:table-cell">
                           {t.created_at ? format(parseISO(t.created_at), 'MMM d, yyyy HH:mm') : '—'}
                         </td>
-                        <td className="py-4 px-4 text-right">
-                          <div className="inline-flex items-center justify-end gap-1 sm:gap-2">
+                        <td className="py-3 px-2 sm:px-4">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             <button
                               type="button"
                               onClick={() => navigate(`/admin/email-team/${t.id}`)}
-                              className="group inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-sm font-medium text-violet-600 transition-colors hover:bg-violet-500/[0.08] hover:text-violet-700 dark:text-violet-400 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600/12 hover:bg-violet-600/20 dark:bg-violet-500/15 dark:hover:bg-violet-500/25 px-3 py-2 text-xs font-semibold text-violet-700 dark:text-violet-300 transition-colors"
                             >
-                              <span className="border-b border-transparent group-hover:border-violet-500/40 pb-px transition-colors">
-                                View team
-                              </span>
-                              <ArrowRight
-                                className="h-4 w-4 shrink-0 opacity-70 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"
-                                aria-hidden
-                              />
+                              Open
+                              <ArrowRight className="h-3.5 w-3.5 opacity-80" aria-hidden />
                             </button>
                             <button
                               type="button"
                               onClick={() => void handleDeleteTeam(t.id)}
                               disabled={deletingTeamId === t.id}
-                              title="Delete team"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition-colors hover:bg-red-500/10 hover:text-red-600 dark:text-gray-500 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40"
+                              title="Remove team label"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200/90 dark:border-white/[0.08] px-2.5 py-2 text-xs font-medium text-gray-600 hover:bg-red-500/10 hover:border-red-500/25 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 disabled:pointer-events-none disabled:opacity-40 transition-colors"
                             >
                               {deletingTeamId === t.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : (
-                                <Trash2 className="h-4 w-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               )}
+                              <span className="hidden sm:inline">Remove</span>
                             </button>
                           </div>
                         </td>
@@ -1332,16 +1504,17 @@ export const AdminEmails = () => {
                         <button
                           type="button"
                           onClick={async () => {
-                            if (
-                              !window.confirm(
-                                `Permanently remove ${email.email} from the system and cPanel? This cannot be undone.`
-                              )
-                            )
-                              return;
+                            const ok = await confirm({
+                              title: 'Permanently remove this mailbox?',
+                              description: `${email.email} will be removed from the system and cPanel. This cannot be undone.`,
+                              confirmLabel: 'Remove',
+                              variant: 'danger',
+                            });
+                            if (!ok) return;
                             try {
                               const token = await getAccessTokenForApi();
                               if (!token) {
-                                alert('Session expired. Please sign in again.');
+                                toast.error('Session expired. Please sign in again.');
                                 return;
                               }
                               const API_URL = getApiBaseUrl();
@@ -1358,9 +1531,9 @@ export const AdminEmails = () => {
                                 throw new Error(out.error || 'Failed to delete email');
                               }
                               setEmails((prev) => prev.filter((e) => e.id !== email.id));
-                              alert('Mailbox and database row deleted.');
+                              toast.success('Mailbox and database row deleted.');
                             } catch (err: any) {
-                              alert(err.message || 'Failed to delete burned email');
+                              toast.error(err.message || 'Failed to delete burned email');
                             }
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"

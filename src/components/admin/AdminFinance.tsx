@@ -27,6 +27,8 @@ import {
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { ADMIN_ORDERS_QUERY_LIMIT } from '../../lib/adminDataLimits';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface PaidOrderRow {
   id: string;
@@ -49,6 +51,7 @@ function money(n: number): string {
 
 export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
   const navigate = useNavigate();
+  const { confirm } = useConfirmDialog();
   const [rangeStart, setRangeStart] = useState(() => format(startOfDay(new Date()), 'yyyy-MM-dd'));
   const [rangeEnd, setRangeEnd] = useState(() => format(endOfDay(new Date()), 'yyyy-MM-dd'));
 
@@ -149,7 +152,7 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
       setPartnerPercent(Math.min(100, Math.max(0, pct)));
     } catch (e) {
       console.error('AdminFinance load:', e);
-      alert(e instanceof Error ? e.message : 'Failed to load finance data');
+      toast.error(e instanceof Error ? e.message : 'Failed to load finance data');
     } finally {
       setLoading(false);
     }
@@ -188,7 +191,7 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
       if (error) throw error;
       setPartnerPercent(p);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not save partner share');
+      toast.error(err instanceof Error ? err.message : 'Could not save partner share');
     } finally {
       setSavingPartner(false);
     }
@@ -242,11 +245,11 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
     const cat = expCategory.trim();
     const amt = parseFloat(expAmount);
     if (!cat) {
-      alert('Enter a category (e.g. server, ads, tools).');
+      toast.warning('Enter a category (e.g. server, ads, tools).');
       return;
     }
     if (!Number.isFinite(amt) || amt < 0) {
-      alert('Enter a valid amount.');
+      toast.warning('Enter a valid amount.');
       return;
     }
     setSavingExpense(true);
@@ -271,21 +274,27 @@ export const AdminFinance = ({ embedded = false }: { embedded?: boolean }) => {
       setExpNote('');
       setExpDate(format(new Date(), 'yyyy-MM-dd'));
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not save expense');
+      toast.error(e instanceof Error ? e.message : 'Could not save expense');
     } finally {
       setSavingExpense(false);
     }
   };
 
   const handleDeleteExpense = async (id: string) => {
-    if (!window.confirm('Delete this expense row?')) return;
+    const ok = await confirm({
+      title: 'Delete this expense?',
+      description: 'This row will be removed from operational expenses.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       const { error } = await supabase.from('operational_expenses').delete().eq('id', id);
       if (error) throw error;
       setExpenses((prev) => prev.filter((e) => e.id !== id));
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Delete failed');
+      toast.error(e instanceof Error ? e.message : 'Delete failed');
     } finally {
       setDeletingId(null);
     }

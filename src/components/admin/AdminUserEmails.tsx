@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Users, Mail, Clock, AlertTriangle, CheckCircle2, XCircle, Search, Filter, ShieldAlert, Zap, ZapOff } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
+import { toast } from '../../lib/toast';
 
 interface UserEmailRecord {
   id: string;
@@ -287,7 +288,7 @@ export const AdminUserEmails = () => {
     const activeRows = activeTab === 'regular' ? filteredEmails : filteredPersonalSubs;
     if (!activeRows.length) return;
     if (!showCredentials) {
-      alert('Enable "Show credentials" first, then export CSV.');
+      toast.warning('Enable "Show credentials" first, then export CSV.');
       return;
     }
 

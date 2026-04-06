@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import {
   Loader2,
@@ -15,10 +15,13 @@ import {
   User,
   CreditCard,
   Package,
+  Search,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Order {
   id: string;
@@ -70,6 +73,35 @@ function isRedeemAwaitingManualPayment(o: Order): boolean {
   );
 }
 
+function orderMatchesSearch(o: Order, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  const compactQ = q.replace(/[#\s-]/g, '');
+  if (!q) return true;
+  const shortId = o.id.slice(0, 8).toLowerCase();
+  const compactOrderId = o.id.toLowerCase().replace(/-/g, '');
+  const compactShortId = shortId.replace(/-/g, '');
+  const haystack = [
+    o.id,
+    `#${shortId}`,
+    shortId,
+    o.users?.email,
+    o.users?.name,
+    o.users?.phone,
+    o.products?.title,
+    o.personal_email,
+    o.payment_method,
+    o.status,
+    o.payment_status,
+  ]
+    .filter(Boolean)
+    .map((x) => String(x).toLowerCase());
+  return (
+    haystack.some((s) => s.includes(q)) ||
+    compactOrderId.includes(compactQ) ||
+    compactShortId.includes(compactQ)
+  );
+}
+
 function paymentLabel(method: string, paymentStatus: string) {
   const m = (method || '').toLowerCase().replace(/_/g, ' ');
   const pretty =
@@ -89,12 +121,14 @@ function paymentLabel(method: string, paymentStatus: string) {
 }
 
 export const AdminOrders = () => {
+  const { confirm } = useConfirmDialog();
   const [rawOrders, setRawOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterKey>('all');
   const [assigningBulk, setAssigningBulk] = useState(false);
   const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
   const [renewingOrderId, setRenewingOrderId] = useState<string | null>(null);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -136,11 +170,33 @@ export const AdminOrders = () => {
       setRawOrders((data as unknown as Order[]) || []);
     } catch (error) {
       console.error('Error fetching orders:', error);
-      alert(error instanceof Error ? error.message : 'Failed to load orders. Check API URL, login, and server logs.');
+      toast.error(error instanceof Error ? error.message : 'Failed to load orders. Check API URL, login, and server logs.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Realtime: auto-refresh orders list without manual refresh.
+  const rtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const schedule = () => {
+      if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
+      rtTimerRef.current = window.setTimeout(() => {
+        void fetchOrders();
+      }, 850);
+    };
+
+    const channel = supabase
+      .channel(`admin_orders_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())
+      .subscribe();
+
+    return () => {
+      if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const o = rawOrders;
@@ -172,6 +228,10 @@ export const AdminOrders = () => {
     }
     return rawOrders.filter((o) => o.status === filter);
   }, [rawOrders, filter]);
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => orderMatchesSearch(o, orderSearchQuery));
+  }, [orders, orderSearchQuery]);
 
   const updateOrderStatus = async (id: string, newStatus: string, userId?: string, isPersonal?: boolean) => {
     try {
@@ -209,17 +269,22 @@ export const AdminOrders = () => {
       fetchOrders();
     } catch (error) {
       console.error('Error updating order status:', error);
-      alert('Failed to update order status');
+      toast.error('Failed to update order status');
     }
   };
 
   const handleBulkAssign = async () => {
-    if (!window.confirm('Attempt to assign matching emails to ALL unfulfilled paid orders?')) return;
+    const okBulk = await confirm({
+      title: 'Bulk-assign emails to unfulfilled orders?',
+      description: 'Matching pool emails will be assigned to all unfulfilled paid orders.',
+      confirmLabel: 'Run bulk assign',
+    });
+    if (!okBulk) return;
     setAssigningBulk(true);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const API_URL = getApiBaseUrl();
@@ -229,14 +294,14 @@ export const AdminOrders = () => {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
+        toast.success(data.message);
         fetchOrders();
       } else {
-        alert(data.message || 'Failed to bulk assign emails.');
+        toast.error(data.message || 'Failed to bulk assign emails.');
       }
     } catch (err) {
       console.error(err);
-      alert('Server error during bulk assign.');
+      toast.error('Server error during bulk assign.');
     } finally {
       setAssigningBulk(false);
     }
@@ -247,7 +312,7 @@ export const AdminOrders = () => {
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const API_URL = getApiBaseUrl();
@@ -261,23 +326,28 @@ export const AdminOrders = () => {
         await supabase.from('orders').update({ status: 'completed' }).eq('id', orderId);
         fetchOrders();
       } else {
-        alert(data.message || 'Failed to assign email.');
+        toast.error(data.message || 'Failed to assign email.');
       }
     } catch (err) {
       console.error(err);
-      alert('Server error during assign.');
+      toast.error('Server error during assign.');
     } finally {
       setAssigningSingle(null);
     }
   };
 
   const handleAdminRenew = async (oldOrderId: string) => {
-    if (!window.confirm('Admin renew: create a renewed order and provision fresh access?')) return;
+    const ok = await confirm({
+      title: 'Admin renew this order?',
+      description: 'Creates a renewed order and provisions fresh access.',
+      confirmLabel: 'Renew',
+    });
+    if (!ok) return;
     setRenewingOrderId(oldOrderId);
     try {
       const token = await getAccessTokenForApi();
       if (!token) {
-        alert('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         return;
       }
       const API_URL = getApiBaseUrl();
@@ -293,20 +363,24 @@ export const AdminOrders = () => {
         throw new Error(data.error || data.message || 'Renew failed');
       }
 
-      alert('Order renewed successfully.');
+      toast.success('Order renewed successfully.');
       fetchOrders();
     } catch (err: any) {
       console.error('Admin renew error:', err);
-      alert(err?.message || 'Failed to renew order');
+      toast.error(err?.message || 'Failed to renew order');
     } finally {
       setRenewingOrderId(null);
     }
   };
 
   const handleRefund = async (orderId: string) => {
-    if (!window.confirm("Refund this order? This will revoke the user's email access where applicable.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Refund this order?',
+      description: "This will revoke the user's email access where applicable.",
+      confirmLabel: 'Refund',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       const { data: userEmails } = await supabase.from('user_emails').select('email_id').eq('order_id', orderId);
@@ -374,18 +448,22 @@ export const AdminOrders = () => {
 
       if (error) throw error;
 
-      alert('Order refunded and email access released where linked.');
+      toast.success('Order refunded and email access released where linked.');
       fetchOrders();
     } catch (error) {
       console.error('Error processing refund:', error);
-      alert('Failed to process refund');
+      toast.error('Failed to process refund');
     }
   };
 
   const handleDeleteAllPending = async () => {
-    if (!window.confirm('Delete every pending order? This cannot be undone.')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Delete every pending order?',
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete all pending',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       setLoading(true);
@@ -397,19 +475,22 @@ export const AdminOrders = () => {
 
       if (error) throw error;
 
-      alert('All pending orders removed.');
+      toast.success('All pending orders removed.');
       fetchOrders();
     } catch (error) {
       console.error('Error deleting pending orders:', error);
-      alert('Failed to delete pending orders');
+      toast.error('Failed to delete pending orders');
       setLoading(false);
     }
   };
 
   const handleDeleteOrder = async (orderId: string) => {
-    if (!window.confirm('Permanently delete this order?')) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Permanently delete this order?',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase.from('orders').delete().eq('id', orderId);
@@ -419,7 +500,7 @@ export const AdminOrders = () => {
       fetchOrders();
     } catch (error) {
       console.error('Error deleting order:', error);
-      alert('Failed to delete order');
+      toast.error('Failed to delete order');
     }
   };
 
@@ -519,6 +600,36 @@ export const AdminOrders = () => {
             );
           })}
         </div>
+
+        <div className="relative mt-5 max-w-xl">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={orderSearchQuery}
+            onChange={(e) => setOrderSearchQuery(e.target.value)}
+            placeholder="Search email, name, phone, order ID, product…"
+            aria-label="Search orders"
+            className="w-full min-h-[42px] pl-10 pr-10 py-2.5 text-sm rounded-xl border border-gray-200/90 dark:border-[#303038] bg-white/90 dark:bg-[#111113] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500/40"
+          />
+          {orderSearchQuery.trim() ? (
+            <button
+              type="button"
+              onClick={() => setOrderSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 dark:hover:bg-white/10 dark:text-gray-400"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+        {orderSearchQuery.trim() && orders.length > 0 ? (
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            Showing <span className="font-semibold text-gray-800 dark:text-gray-200">{filteredOrders.length}</span> of{' '}
+            {orders.length} in this filter
+          </p>
+        ) : null}
       </div>
 
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] overflow-hidden shadow-sm dark:shadow-none">
@@ -553,8 +664,9 @@ export const AdminOrders = () => {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((order) => {
+                {filteredOrders.map((order) => {
                   const pay = paymentLabel(order.payment_method, order.payment_status);
+                  const shortOrderId = order.id.slice(0, 8).toUpperCase();
                   const durationMonths = durationToMonths(order.products?.duration);
                   const exp = new Date(order.created_at);
                   exp.setMonth(exp.getMonth() + durationMonths);
@@ -577,7 +689,10 @@ export const AdminOrders = () => {
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] font-mono text-gray-500 dark:text-gray-400 mt-1 truncate" title={order.id}>
+                        <p className="text-xs font-mono font-semibold text-indigo-700 dark:text-indigo-300 mt-1" title={order.id}>
+                          #{shortOrderId}
+                        </p>
+                        <p className="text-[11px] font-mono text-gray-500 dark:text-gray-400 mt-0.5 truncate" title={order.id}>
                           {order.id}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">
@@ -762,6 +877,25 @@ export const AdminOrders = () => {
                             : `No orders with status “${filter}”.`}
                       </p>
                       <p className="text-sm mt-1">Try another filter or refresh.</p>
+                    </td>
+                  </tr>
+                )}
+                {orders.length > 0 && filteredOrders.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
+                      <Search className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600 opacity-80" />
+                      <p className="font-medium text-gray-700 dark:text-gray-300">No orders match your search.</p>
+                      <p className="text-sm mt-1 max-w-md mx-auto">
+                        Try another email fragment, name, or order ID—or{' '}
+                        <button
+                          type="button"
+                          onClick={() => setOrderSearchQuery('')}
+                          className="text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+                        >
+                          clear search
+                        </button>
+                        .
+                      </p>
                     </td>
                   </tr>
                 )}

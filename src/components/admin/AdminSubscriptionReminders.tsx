@@ -17,6 +17,7 @@ import { getApiBaseUrl } from '../../lib/apiBase';
 import { BellRing, Loader2, Mail, MessageCircle, RefreshCw, Smartphone, Eye, Play, Send } from 'lucide-react';
 import { parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 const BD_TZ = 'Asia/Dhaka';
 
@@ -163,6 +164,7 @@ function statusClass(code: string): string {
 }
 
 export const AdminSubscriptionReminders = () => {
+  const { confirm: confirmAction } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
   const [savingChannels, setSavingChannels] = useState(false);
   const [savingCopy, setSavingCopy] = useState(false);
@@ -379,7 +381,13 @@ export const AdminSubscriptionReminders = () => {
   };
 
   const clearStoredKeys = async () => {
-    if (!confirm('Remove Resend and WhatsApp tokens saved in the database? (Server env keys are untouched.)')) return;
+    const ok = await confirmAction({
+      title: 'Clear stored API tokens?',
+      description: 'Removes Resend and WhatsApp tokens saved in the database. Server env keys are untouched.',
+      confirmLabel: 'Clear tokens',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setSavingIntegrations(true);
     setMsg(null);
     try {
@@ -398,7 +406,13 @@ export const AdminSubscriptionReminders = () => {
   };
 
   const runJobNow = async () => {
-    if (!confirm('Run the full subscription expiry reminder job now? Real customers may receive inbox/email/WhatsApp if they match d3/d1 rules.')) return;
+    const ok = await confirmAction({
+      title: 'Run reminder job now?',
+      description:
+        'Runs the full subscription expiry reminder job. Real customers may receive inbox, email, or WhatsApp if they match d3/d1 rules.',
+      confirmLabel: 'Run job',
+    });
+    if (!ok) return;
     setRunningJob(true);
     setMsg(null);
     try {

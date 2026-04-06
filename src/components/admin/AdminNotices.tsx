@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Info, Plus, Edit2, Trash2, Save, AlertCircle, Search, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface Notice {
   id: string;
@@ -13,6 +15,7 @@ interface Notice {
 }
 
 export const AdminNotices = () => {
+  const { confirm } = useConfirmDialog();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -20,6 +23,8 @@ export const AdminNotices = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'info' | 'warning' | 'error'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const pendingDeleteRef = useRef<Notice | null>(null);
+  const pendingDeleteTimerRef = useRef<number | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<Partial<Notice>>({
@@ -31,6 +36,35 @@ export const AdminNotices = () => {
 
   useEffect(() => {
     fetchNotices();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pendingDeleteTimerRef.current) {
+        window.clearTimeout(pendingDeleteTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Realtime: keep notices list updated without manual refresh.
+  const noticesRtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    const schedule = () => {
+      if (noticesRtTimerRef.current) window.clearTimeout(noticesRtTimerRef.current);
+      noticesRtTimerRef.current = window.setTimeout(() => {
+        void fetchNotices();
+      }, 650);
+    };
+
+    const channel = supabase
+      .channel(`admin_notices_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => schedule())
+      .subscribe();
+
+    return () => {
+      if (noticesRtTimerRef.current) window.clearTimeout(noticesRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchNotices = async () => {
@@ -53,7 +87,7 @@ export const AdminNotices = () => {
   const handleSave = async () => {
     try {
       if (!formData.title || !formData.content) {
-        alert('Title and content are required');
+        toast.warning('Title and content are required');
         return;
       }
 
@@ -85,7 +119,7 @@ export const AdminNotices = () => {
       fetchNotices();
     } catch (error: any) {
       console.error('Error saving notice:', error);
-      alert(error.message || 'Error saving notice');
+      toast.error(error.message || 'Error saving notice');
     }
   };
 
@@ -126,19 +160,67 @@ export const AdminNotices = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to permanently delete this notice?')) return;
-    
-    try {
-      const { error } = await supabase
-        .from('notices')
-        .delete()
-        .eq('id', id);
+    const ok = await confirm({
+      title: 'Delete this notice?',
+      description: 'This permanently removes the notice.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
 
-      if (error) throw error;
-      fetchNotices();
-    } catch (error) {
-      console.error('Error deleting notice:', error);
+    const target = notices.find((n) => n.id === id) || null;
+    if (!target) return;
+
+    // Optimistic remove with Undo grace period.
+    pendingDeleteRef.current = target;
+    setNotices((prev) => prev.filter((n) => n.id !== id));
+
+    if (pendingDeleteTimerRef.current) {
+      window.clearTimeout(pendingDeleteTimerRef.current);
+      pendingDeleteTimerRef.current = null;
     }
+
+    const undoDelete = () => {
+      if (!pendingDeleteRef.current) return;
+      const toRestore = pendingDeleteRef.current;
+      pendingDeleteRef.current = null;
+      if (pendingDeleteTimerRef.current) {
+        window.clearTimeout(pendingDeleteTimerRef.current);
+        pendingDeleteTimerRef.current = null;
+      }
+      setNotices((prev) => {
+        const next = [toRestore, ...prev];
+        return next.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+      });
+      toast.success('Delete cancelled.');
+    };
+
+    toast('Notice deleted', {
+      description: 'You can undo within 5 seconds.',
+      duration: 5000,
+      action: {
+        label: 'Undo',
+        onClick: undoDelete,
+      },
+    });
+
+    pendingDeleteTimerRef.current = window.setTimeout(async () => {
+      const row = pendingDeleteRef.current;
+      pendingDeleteRef.current = null;
+      pendingDeleteTimerRef.current = null;
+      if (!row) return;
+      try {
+        const { error } = await supabase.from('notices').delete().eq('id', row.id);
+        if (error) throw error;
+      } catch (error) {
+        console.error('Error deleting notice:', error);
+        toast.error('Could not delete notice. Restored.');
+        setNotices((prev) => {
+          const next = [row, ...prev];
+          return next.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
+        });
+      }
+    }, 5200);
   };
 
   const stats = {

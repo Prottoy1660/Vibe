@@ -1,4 +1,4 @@
-import React, { useEffect, useState, Suspense } from 'react';
+import React, { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
@@ -94,16 +94,13 @@ export const AdminDashboard = () => {
     }
   }, [user, isAdmin, role, authLoading, navigate]);
 
-  // Fetch admin stats (skips the role query since AuthContext already has it)
-  useEffect(() => {
-    if (!user || !isAdmin) return;
-    let cancelled = false;
-
-    const fetchAdminStats = async () => {
-      setLoading(true);
+  const fetchAdminStats = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!user || !isAdmin) return;
+      const silent = opts?.silent === true;
+      if (!silent) setLoading(true);
       try {
-        
-        // 2. Fetch all stats in parallel (2-3x faster than sequential)
+        // Fetch all stats in parallel (2-3x faster than sequential)
         const [usersResult, emailsResult, userEmailsResult] = await Promise.all([
           supabase
             .from('users')
@@ -130,8 +127,8 @@ export const AdminDashboard = () => {
         const emails = emailsResult.data;
         const userEmails = userEmailsResult.data;
 
-        const emailsUsed = emails?.filter(e => e.status === 'assigned' || e.status === 'used').length || 0;
-        const emailsRemaining = emails?.filter(e => e.status === 'available').length || 0;
+        const emailsUsed = emails?.filter((e) => e.status === 'assigned' || e.status === 'used').length || 0;
+        const emailsRemaining = emails?.filter((e) => e.status === 'available').length || 0;
 
         let expiringSoon = 0;
         let expired = 0;
@@ -150,7 +147,7 @@ export const AdminDashboard = () => {
             orderGroup.forEach((item: any, index: number) => {
               const isReplaced = index > 0;
               const isRevoked = item.orders?.status === 'refunded' || item.orders?.status === 'cancelled';
-              
+
               if (isRevoked) return; // Skip revoked in these specific counts
 
               if (isReplaced) {
@@ -184,26 +181,55 @@ export const AdminDashboard = () => {
             });
           });
         }
-        
+
         setStats({
           activeUsers: activeUsers || 0,
           emailsUsed,
           emailsRemaining,
           expiringSoon,
           expired,
-          replaced
+          replaced,
         });
-        
       } catch (error) {
         console.error('Error in admin dashboard:', error);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
+    },
+    [user, isAdmin],
+  );
+
+  // Initial load for overview stats.
+  useEffect(() => {
+    if (!user || !isAdmin) return;
+    void fetchAdminStats();
+  }, [user, isAdmin, fetchAdminStats]);
+
+  // Realtime auto-refresh for the Overview cards.
+  const adminOverviewRtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user || !isAdmin || activeTab !== 'overview') return;
+
+    const schedule = () => {
+      if (adminOverviewRtTimerRef.current) window.clearTimeout(adminOverviewRtTimerRef.current);
+      adminOverviewRtTimerRef.current = window.setTimeout(() => {
+        void fetchAdminStats({ silent: true });
+      }, 900);
     };
 
-    fetchAdminStats();
-    return () => { cancelled = true; };
-  }, [user, isAdmin]);
+    const channel = supabase
+      .channel(`admin_overview_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emails_pool' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => schedule())
+      .subscribe();
+
+    return () => {
+      if (adminOverviewRtTimerRef.current) window.clearTimeout(adminOverviewRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [user, isAdmin, activeTab, fetchAdminStats]);
 
   if (authLoading || loading || role === null) {
     return (

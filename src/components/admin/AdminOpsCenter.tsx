@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import {
   Loader2,
   Search,
+  Copy,
   AlertTriangle,
   Shield,
   Wallet,
@@ -17,6 +18,7 @@ import {
   Inbox,
   Info,
 } from 'lucide-react';
+import { toast } from '../../lib/toast';
 
 async function adminGet(path: string) {
   const { data } = await supabase.auth.getSession();
@@ -37,6 +39,7 @@ export const AdminOpsCenter = () => {
   const [activeTab, setActiveTab] = useState<TabId>('support');
 
   const [userId, setUserId] = useState('');
+  const [resolvedUser, setResolvedUser] = useState<{ id: string; email?: string | null; name?: string | null } | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summary, setSummary] = useState<any>(null);
   const [risk, setRisk] = useState<any>(null);
@@ -48,14 +51,45 @@ export const AdminOpsCenter = () => {
   const [healthRows, setHealthRows] = useState<any[]>([]);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  const resolveUserId = async (rawInput: string) => {
+    const value = rawInput.trim();
+    if (!value) return null;
+    if (UUID_RE.test(value)) return { id: value };
+
+    const normalized = value.toLowerCase();
+    // Accept email OR short user-id prefix from customer-facing screens.
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, email, name')
+      .or(`email.ilike.${normalized},id.ilike.${normalized}%`)
+      .order('created_at', { ascending: false })
+      .limit(3);
+    if (error) throw error;
+    const rows = data || [];
+    if (rows.length === 0) return null;
+    if (rows.length > 1) {
+      throw new Error('Multiple users matched. Paste full UUID or full email.');
+    }
+    const user = rows[0] as { id: string; email?: string | null; name?: string | null };
+    return user;
+  };
+
   const loadSupportSummary = async () => {
     if (!userId.trim()) return;
     setLoadingSummary(true);
     try {
-      const data = await adminGet(`/api/admin/ops/support-summary/${encodeURIComponent(userId.trim())}`);
+      const resolved = await resolveUserId(userId);
+      if (!resolved) {
+        throw new Error('No user found for this input.');
+      }
+      const data = await adminGet(`/api/admin/ops/support-summary/${encodeURIComponent(resolved.id)}`);
+      setResolvedUser(resolved);
       setSummary(data);
     } catch (e: any) {
-      alert(e?.message || 'Failed to load support summary');
+      setResolvedUser(null);
+      toast.error(e?.message || 'Failed to load support summary');
     } finally {
       setLoadingSummary(false);
     }
@@ -67,7 +101,7 @@ export const AdminOpsCenter = () => {
       const data = await adminGet(`/api/admin/ops/risk-overview?hours=${riskHours}`);
       setRisk(data);
     } catch (e: any) {
-      alert(e?.message || 'Failed to load risk overview');
+      toast.error(e?.message || 'Failed to load risk overview');
     } finally {
       setLoadingRisk(false);
     }
@@ -87,10 +121,12 @@ export const AdminOpsCenter = () => {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Failed to run policies');
-      alert(`Policies executed.\nQueued reminders: ${json.reminders_queued}\nThrottle flags: ${json.throttle_flags_created}`);
+      toast.success('Policies executed', {
+        description: `Queued reminders: ${json.reminders_queued}. Throttle flags: ${json.throttle_flags_created}.`,
+      });
       await loadRisk();
     } catch (e: any) {
-      alert(e?.message || 'Failed to run policies');
+      toast.error(e?.message || 'Failed to run policies');
     } finally {
       setRunningPolicies(false);
     }
@@ -110,9 +146,9 @@ export const AdminOpsCenter = () => {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Failed to run reminders');
-      alert(`Reminder queue updated. New queued: ${json.queued}`);
+      toast.success(`Reminder queue updated. New queued: ${json.queued}`);
     } catch (e: any) {
-      alert(e?.message || 'Failed to run reminders');
+      toast.error(e?.message || 'Failed to run reminders');
     } finally {
       setRunningReminders(false);
     }
@@ -124,7 +160,7 @@ export const AdminOpsCenter = () => {
       const data = await adminGet('/api/admin/ops/subscription-health?limit=150');
       setHealthRows(data.rows || []);
     } catch (e: any) {
-      alert(e?.message || 'Failed to load subscription health');
+      toast.error(e?.message || 'Failed to load subscription health');
     } finally {
       setLoadingHealth(false);
     }
@@ -145,9 +181,11 @@ export const AdminOpsCenter = () => {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || 'Failed to process queue');
-      alert(`Queue processed.\nScanned: ${json.scanned}\nProcessed: ${json.processed}`);
+      toast.success('Queue processed', {
+        description: `Scanned: ${json.scanned}. Processed: ${json.processed}.`,
+      });
     } catch (e: any) {
-      alert(e?.message || 'Failed to process notification queue');
+      toast.error(e?.message || 'Failed to process notification queue');
     } finally {
       setProcessingQueue(false);
     }
@@ -216,7 +254,7 @@ export const AdminOpsCenter = () => {
             <div>
               <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Support Copilot</h3>
               <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-w-xl">
-                Paste a user UUID to see orders, failed payments, wallet balance, and recent timeline events for faster triage.
+                Paste user UUID, email, or short ID to see orders, failed payments, wallet balance, and recent timeline events.
               </p>
             </div>
           </div>
@@ -225,7 +263,7 @@ export const AdminOpsCenter = () => {
             <input
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
-              placeholder="User ID (UUID)"
+              placeholder="User UUID / email / short ID"
               className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-sm font-mono focus:ring-2 focus:ring-indigo-500/40 outline-none"
             />
             <button
@@ -238,6 +276,17 @@ export const AdminOpsCenter = () => {
               Load summary
             </button>
           </div>
+          {resolvedUser ? (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Loaded user: <span className="font-semibold text-gray-800 dark:text-gray-200">{resolvedUser.name || resolvedUser.email || 'Unknown'}</span>{' '}
+              · <span className="font-mono">#{resolvedUser.id.slice(0, 8)}</span> ·{' '}
+              <span className="font-mono text-[11px]">{resolvedUser.id}</span>
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              Tip: You can copy the full UUID from the Admin → Users page; lookup also works with short ID / email.
+            </p>
+          )}
 
           {!summary && (
             <div className="mt-8 rounded-xl border border-dashed border-gray-200 dark:border-[#303038] bg-gray-50/50 dark:bg-white/5 p-8 text-center">
@@ -450,7 +499,37 @@ export const AdminOpsCenter = () => {
                 <tbody>
                   {healthRows.slice(0, 60).map((r) => (
                     <tr key={r.order_id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-white/5">
-                      <td className="py-2.5 px-4">{r.user_name || r.user_email}</td>
+                      <td className="py-2.5 px-4">
+                        <div className="space-y-1">
+                          <div className="font-semibold text-gray-800 dark:text-gray-200">
+                            {r.user_name || r.user_email || '—'}
+                          </div>
+                          {r.user_email ? (
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{r.user_email}</div>
+                          ) : null}
+                          {r.user_phone ? (
+                            <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{r.user_phone}</div>
+                          ) : null}
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="font-mono text-[11px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              #{String(r.user_id || '').slice(0, 8)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void navigator.clipboard.writeText(String(r.user_id || ''));
+                                toast.success('Copied user ID');
+                              }}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-gray-200/90 dark:border-white/[0.08] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors disabled:opacity-50"
+                              disabled={!r.user_id}
+                              title="Copy user ID"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
                       <td className="py-2.5 px-4">{r.product_title}</td>
                       <td className="py-2.5 px-4">{r.days_left}</td>
                       <td className="py-2.5 px-4 font-semibold">{r.score}</td>

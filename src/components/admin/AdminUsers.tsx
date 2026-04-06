@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound } from 'lucide-react';
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 interface User {
   id: string;
@@ -19,6 +21,7 @@ interface User {
 }
 
 export const AdminUsers = () => {
+  const { confirm } = useConfirmDialog();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -48,9 +51,37 @@ export const AdminUsers = () => {
     fetchUsers();
   }, []);
 
+  // Realtime: keep users list updated without manual refresh.
+  const usersRtTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (selectedUserId) return;
+
+    const schedule = () => {
+      if (usersRtTimerRef.current) window.clearTimeout(usersRtTimerRef.current);
+      usersRtTimerRef.current = window.setTimeout(() => {
+        void fetchUsers();
+      }, 850);
+    };
+
+    const channel = supabase
+      .channel(`admin_users_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => schedule())
+      .subscribe();
+
+    return () => {
+      if (usersRtTimerRef.current) window.clearTimeout(usersRtTimerRef.current);
+      supabase.removeChannel(channel);
+    };
+  }, [selectedUserId]);
+
   const toggleUserRole = async (userId: string, currentRole: string) => {
     const newRole = currentRole === 'admin' ? 'user' : 'admin';
-    if (!window.confirm(`Are you sure you want to change this user's role to ${newRole}?`)) return;
+    const ok = await confirm({
+      title: `Change role to ${newRole}?`,
+      description: 'This updates the user’s access level immediately.',
+      confirmLabel: 'Change role',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase
@@ -62,13 +93,18 @@ export const AdminUsers = () => {
       fetchUsers();
     } catch (error) {
       console.error('Error updating user role:', error);
-      alert('Failed to update user role');
+      toast.error('Failed to update user role');
     }
   };
 
   const toggleBanStatus = async (userId: string, currentBanStatus: boolean) => {
     const action = currentBanStatus ? 'unban' : 'ban';
-    if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+    const ok = await confirm({
+      title: `${action === 'ban' ? 'Ban' : 'Unban'} this user?`,
+      confirmLabel: action === 'ban' ? 'Ban user' : 'Unban',
+      variant: action === 'ban' ? 'danger' : 'default',
+    });
+    if (!ok) return;
 
     try {
       const { error } = await supabase
@@ -80,7 +116,7 @@ export const AdminUsers = () => {
       fetchUsers();
     } catch (error) {
       console.error(`Error trying to ${action} user:`, error);
-      alert(`Failed to ${action} user`);
+      toast.error(`Failed to ${action} user`);
     }
   };
 
@@ -88,11 +124,17 @@ export const AdminUsers = () => {
     // Admins are protected from deletion.
     const target = users.find((u) => u.id === userId);
     if (target?.role === 'admin') {
-      alert('Admins cannot be deleted.');
+      toast.error('Admins cannot be deleted.');
       return;
     }
 
-    if (!window.confirm('Are you sure you want to PERMANENTLY delete this user? This action cannot be undone and will delete all their data.')) return;
+    const okDel = await confirm({
+      title: 'Permanently delete this user?',
+      description: 'This cannot be undone and will delete all their data.',
+      confirmLabel: 'Delete user',
+      variant: 'danger',
+    });
+    if (!okDel) return;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -118,7 +160,7 @@ export const AdminUsers = () => {
       fetchUsers();
     } catch (error: any) {
       console.error(`Error trying to delete user:`, error);
-      alert(`Failed to delete user: ${error.message}`);
+      toast.error(`Failed to delete user: ${error.message}`);
     }
   };
 
@@ -184,12 +226,17 @@ export const AdminUsers = () => {
     const protectedAdmins = filteredUsers.filter((u) => u.role === 'admin');
 
     if (idsToDelete.length === 0) {
-      alert(protectedAdmins.length ? 'No deletable users found. Admins are protected.' : 'No users to delete.');
+      toast.error(protectedAdmins.length ? 'No deletable users found. Admins are protected.' : 'No users to delete.');
       return;
     }
 
-    const confirmMsg = `Delete ALL ${idsToDelete.length} user(s)? (Admins protected: ${protectedAdmins.length}). This cannot be undone.`;
-    if (!window.confirm(confirmMsg)) return;
+    const okAll = await confirm({
+      title: `Delete ${idsToDelete.length} user(s)?`,
+      description: `Admins protected: ${protectedAdmins.length}. This cannot be undone.`,
+      confirmLabel: 'Delete all',
+      variant: 'danger',
+    });
+    if (!okAll) return;
 
     try {
       // Sequential to avoid rate-limit spikes.
@@ -201,7 +248,7 @@ export const AdminUsers = () => {
       setSelectedUserId(null);
     } catch (error: any) {
       console.error('All delete failed:', error);
-      alert(`All delete failed: ${error.message || 'Unknown error'}`);
+      toast.error(`All delete failed: ${error.message || 'Unknown error'}`);
     }
   };
 

@@ -6,11 +6,54 @@ import {
   shouldAutoRedirectToHttpErrorPage,
   statusShouldUseErrorPage,
 } from './httpErrorNavigation';
+import { toast } from './toast';
 
 type Json = Record<string, any>;
 
 /** Default: redirect to /error/:status for these codes (unless skipErrorPageRedirect). */
 const DEFAULT_ERROR_PAGE_STATUSES: readonly number[] = [...HTTP_ERROR_PAGE_CODES];
+const API_TOAST_COOLDOWN_MS = 15_000;
+const lastApiToastAt: Record<string, number> = {};
+
+function notifyApiStatus(status: number, message?: string) {
+  if (typeof window === 'undefined') return;
+  const key = String(status);
+  const now = Date.now();
+  if (lastApiToastAt[key] && now - lastApiToastAt[key] < API_TOAST_COOLDOWN_MS) return;
+  lastApiToastAt[key] = now;
+
+  if (status === 429) {
+    toast.warning('Too many requests', {
+      description: 'Please wait a bit and try again.',
+    });
+    return;
+  }
+  if (status === 403) {
+    toast.error('Permission denied', {
+      description: 'You do not have access to do this action.',
+    });
+    return;
+  }
+  if (status === 401) {
+    toast.warning('Session required', {
+      description: 'Please sign in again to continue.',
+    });
+    return;
+  }
+
+  if (status >= 500) {
+    toast.error('Server issue', {
+      description: 'Please try again shortly.',
+    });
+    return;
+  }
+
+  if (status >= 400 && message) {
+    toast.error('Request failed', {
+      description: message,
+    });
+  }
+}
 
 export type JsonFetchOptions = {
   /** When true, never navigate to full-screen error pages (use for forms, widgets, silent retries). */
@@ -266,6 +309,7 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json, op
           request_id: rid,
           message
         });
+        notifyApiStatus(res.status, data?.message || data?.error);
         maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;
@@ -363,6 +407,7 @@ export async function getJsonWithFallback<T = any>(path: string, opts?: JsonFetc
           request_id: rid,
           message,
         });
+        notifyApiStatus(res.status, data?.message || data?.error);
         maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;

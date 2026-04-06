@@ -13,6 +13,8 @@ import {
   Gift,
   Trash2,
 } from 'lucide-react';
+import { toast } from '../../lib/toast';
+import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
 async function adminRequest(path: string, method: string = 'GET', body?: any) {
   const { data } = await supabase.auth.getSession();
@@ -33,6 +35,7 @@ async function adminRequest(path: string, method: string = 'GET', body?: any) {
 type TabId = 'bulk' | 'campaigns' | 'insights';
 
 export const AdminGrowthOps = () => {
+  const { confirm } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<TabId>('bulk');
 
   const [orderIds, setOrderIds] = useState('');
@@ -72,7 +75,7 @@ export const AdminGrowthOps = () => {
         return list[0]?.id || '';
       });
     } catch (e: any) {
-      alert(e?.message || 'Failed to load campaigns');
+      toast.error(e?.message || 'Failed to load campaigns');
     } finally {
       setLoadingCampaigns(false);
     }
@@ -92,7 +95,7 @@ export const AdminGrowthOps = () => {
       setRefSettings(s.settings || {});
       setRefRewards(r.rows || []);
     } catch (e: any) {
-      alert(e?.message || 'Failed to load referral admin data');
+      toast.error(e?.message || 'Failed to load referral admin data');
     } finally {
       setReferralAdminLoading(false);
     }
@@ -106,16 +109,19 @@ export const AdminGrowthOps = () => {
 
   const runBulkOrderStatus = async () => {
     const ids = parseLines(orderIds);
-    if (ids.length === 0) return alert('Add order IDs first (one per line).');
+    if (ids.length === 0) {
+      toast.warning('Add order IDs first (one per line).');
+      return;
+    }
     setRunning(true);
     try {
       const res = await adminRequest('/api/admin/ops/bulk/orders/status', 'POST', {
         order_ids: ids,
         new_status: newStatus,
       });
-      alert(`Updated ${res.updated} orders.`);
+      toast.success(`Updated ${res.updated} orders.`);
     } catch (e: any) {
-      alert(e?.message || 'Bulk order update failed');
+      toast.error(e?.message || 'Bulk order update failed');
     } finally {
       setRunning(false);
     }
@@ -123,8 +129,14 @@ export const AdminGrowthOps = () => {
 
   const runBulkNotices = async () => {
     const ids = parseLines(userIds);
-    if (ids.length === 0) return alert('Add user IDs first (one per line).');
-    if (!noticeTitle || !noticeBody) return alert('Title and message are required.');
+    if (ids.length === 0) {
+      toast.warning('Add user IDs first (one per line).');
+      return;
+    }
+    if (!noticeTitle || !noticeBody) {
+      toast.warning('Title and message are required.');
+      return;
+    }
     setRunning(true);
     try {
       const res = await adminRequest('/api/admin/ops/bulk/notices', 'POST', {
@@ -133,9 +145,9 @@ export const AdminGrowthOps = () => {
         content: noticeBody,
         type: 'info',
       });
-      alert(`Queued ${res.queued} notices.`);
+      toast.success(`Queued ${res.queued} notices.`);
     } catch (e: any) {
-      alert(e?.message || 'Bulk notice failed');
+      toast.error(e?.message || 'Bulk notice failed');
     } finally {
       setRunning(false);
     }
@@ -149,16 +161,19 @@ export const AdminGrowthOps = () => {
         user_ids: ids.length ? ids : undefined,
         days,
       });
-      alert(`Queued ${res.queued} renewal offers.`);
+      toast.success(`Queued ${res.queued} renewal offers.`);
     } catch (e: any) {
-      alert(e?.message || 'Bulk renew offers failed');
+      toast.error(e?.message || 'Bulk renew offers failed');
     } finally {
       setRunning(false);
     }
   };
 
   const createCampaign = async () => {
-    if (!campaignName.trim()) return alert('Campaign name is required.');
+    if (!campaignName.trim()) {
+      toast.warning('Campaign name is required.');
+      return;
+    }
     const budgetNum = Math.max(0, Number(campaignBudgetInput) || 0);
     setRunning(true);
     try {
@@ -171,9 +186,9 @@ export const AdminGrowthOps = () => {
       setCampaignName('');
       setCampaignBudgetInput('');
       await loadCampaigns();
-      alert('Campaign created.');
+      toast.success('Campaign created.');
     } catch (e: any) {
-      alert(e?.message || 'Campaign create failed');
+      toast.error(e?.message || 'Campaign create failed');
     } finally {
       setRunning(false);
     }
@@ -186,21 +201,27 @@ export const AdminGrowthOps = () => {
       const data = await adminRequest(`/api/admin/ops/campaigns/${roiCampaignId}/roi`);
       setRoi(data.metrics);
     } catch (e: any) {
-      alert(e?.message || 'ROI load failed');
+      toast.error(e?.message || 'ROI load failed');
     } finally {
       setRunning(false);
     }
   };
 
   const deleteCampaign = async (id: string) => {
-    if (!window.confirm('Delete this campaign? Tracked ROI events for it will be removed. This cannot be undone.')) return;
+    const ok = await confirm({
+      title: 'Delete this campaign?',
+      description: 'Tracked ROI events for it will be removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setRunning(true);
     try {
       await adminRequest(`/api/admin/ops/campaigns/${encodeURIComponent(id)}`, 'DELETE');
       if (roiCampaignId === id) setRoi(null);
       await loadCampaigns();
     } catch (e: any) {
-      alert(e?.message || 'Delete failed');
+      toast.error(e?.message || 'Delete failed');
     } finally {
       setRunning(false);
     }
@@ -220,38 +241,46 @@ export const AdminGrowthOps = () => {
       setLtvRows(ltv.rows || []);
       setRenewalRows(renewalPacks.rows || []);
     } catch (e: any) {
-      alert(e?.message || 'Analytics load failed');
+      toast.error(e?.message || 'Analytics load failed');
     } finally {
       setRunning(false);
     }
   };
 
   const runChurnCampaign = async () => {
-    if (!window.confirm('Queue churn prevention messages for inactive users?')) return;
+    const ok = await confirm({
+      title: 'Queue churn prevention messages?',
+      description: 'Inactive users may receive churn prevention outreach.',
+      confirmLabel: 'Queue messages',
+    });
+    if (!ok) return;
     setRunning(true);
     try {
       const data = await adminRequest('/api/admin/ops/churn/run-campaign', 'POST', { days: 7, inactive_days: 14 });
-      alert(`Queued ${data.queued} churn campaign messages.`);
+      toast.success(`Queued ${data.queued} churn campaign messages.`);
     } catch (e: any) {
-      alert(e?.message || 'Churn campaign failed');
+      toast.error(e?.message || 'Churn campaign failed');
     } finally {
       setRunning(false);
     }
   };
 
   const processReferralByOrder = async () => {
-    if (!referralOrderId.trim()) return alert('Order ID is required.');
+    if (!referralOrderId.trim()) {
+      toast.warning('Order ID is required.');
+      return;
+    }
     setRunning(true);
     try {
       const data = await adminRequest(`/api/admin/ops/referral/process-order/${encodeURIComponent(referralOrderId.trim())}`, 'POST', {});
       if (data.reward_amount) {
-        alert(`Referral processed: ৳${data.reward_amount} (status: ${data.status || 'granted'})`);
+        toast.success(`Referral processed: ৳${data.reward_amount} (status: ${data.status || 'granted'})`);
       } else {
-        alert(`Result: ${data.skipped || data.status || 'done'}`);
+        toast.info(`Result: ${data.skipped || data.status || 'done'}`);
       }
       await loadReferralAdmin();
     } catch (e: any) {
-      alert(e?.message || 'Referral process failed');
+      toast.error(e?.message || 'Referral process failed');
     } finally {
       setRunning(false);
     }
@@ -263,35 +292,45 @@ export const AdminGrowthOps = () => {
     try {
       const data = await adminRequest('/api/admin/ops/referral/settings', 'PATCH', refSettings);
       setRefSettings(data.settings || refSettings);
-      alert('Referral settings saved.');
+      toast.success('Referral settings saved.');
     } catch (e: any) {
-      alert(e?.message || 'Save failed');
+      toast.error(e?.message || 'Save failed');
     } finally {
       setRunning(false);
     }
   };
 
   const approveReferralReward = async (id: string) => {
-    if (!window.confirm('Grant promotional credits for this row?')) return;
+    const ok = await confirm({
+      title: 'Grant promotional credits?',
+      description: 'Credits will be applied for this referral reward row.',
+      confirmLabel: 'Grant',
+    });
+    if (!ok) return;
     setRunning(true);
     try {
       await adminRequest(`/api/admin/ops/referral/rewards/${encodeURIComponent(id)}/approve`, 'POST', {});
       await loadReferralAdmin();
     } catch (e: any) {
-      alert(e?.message || 'Approve failed');
+      toast.error(e?.message || 'Approve failed');
     } finally {
       setRunning(false);
     }
   };
 
   const rejectReferralReward = async (id: string) => {
-    if (!window.confirm('Reject this referral reward?')) return;
+    const ok = await confirm({
+      title: 'Reject this referral reward?',
+      confirmLabel: 'Reject',
+      variant: 'danger',
+    });
+    if (!ok) return;
     setRunning(true);
     try {
       await adminRequest(`/api/admin/ops/referral/rewards/${encodeURIComponent(id)}/reject`, 'POST', {});
       await loadReferralAdmin();
     } catch (e: any) {
-      alert(e?.message || 'Reject failed');
+      toast.error(e?.message || 'Reject failed');
     } finally {
       setRunning(false);
     }
