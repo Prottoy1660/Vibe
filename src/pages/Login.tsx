@@ -208,6 +208,9 @@ export const Login = () => {
       // `prompt=select_account` forces the chooser instead of silently using an unexpected account.
       if (provider === 'google') return { prompt: 'select_account' };
       if (provider === 'azure') return { prompt: 'select_account' };
+      // Facebook sometimes opens in desktop layout on mobile depending on user agent / flow.
+      // `display=touch` encourages the mobile-optimized login UI.
+      if (provider === 'facebook') return { display: 'touch' };
       return {};
     })();
     const { data, error } = await supabase.auth.signInWithOAuth({

@@ -28,6 +28,16 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="vibeaccess" android:host="auth-callback" />
             </intent-filter>
+            <!-- App Links / HTTPS callback (more reliable than custom schemes on some devices) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="vibeaccessbd.shop"
+                    android:pathPrefix="/oauth/desktop-callback" />
+            </intent-filter>
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
             
             <!-- DEEP LINK PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->

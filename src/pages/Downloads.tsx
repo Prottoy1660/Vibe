@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 
 type PlatformDownload = {
   enabled: boolean;
+  comingSoon: boolean;
   title: string;
   subtitle: string;
   version: string;
@@ -13,6 +14,8 @@ type PlatformDownload = {
 
 type DownloadConfig = {
   enabled: boolean;
+  // Legacy global switch (kept for backward compatibility with saved settings).
+  // Coming-soon is now controlled per platform.
   forceComingSoon: boolean;
   windows: PlatformDownload;
   android: PlatformDownload;
@@ -23,6 +26,7 @@ const defaultConfig: DownloadConfig = {
   enabled: false,
   windows: {
     enabled: true,
+    comingSoon: false,
     title: 'Windows App',
     subtitle: 'Optimized desktop application for Windows 10/11.',
     version: '',
@@ -31,6 +35,7 @@ const defaultConfig: DownloadConfig = {
   },
   android: {
     enabled: true,
+    comingSoon: false,
     title: 'Android App',
     subtitle: 'Fast mobile app with your full customer panel.',
     version: '',
@@ -39,6 +44,7 @@ const defaultConfig: DownloadConfig = {
   },
   macos: {
     enabled: true,
+    comingSoon: false,
     title: 'macOS App',
     subtitle: 'Native-feel desktop app for MacBook and iMac.',
     version: '',
@@ -50,23 +56,27 @@ const defaultConfig: DownloadConfig = {
 
 function normalizeConfig(value: unknown): DownloadConfig {
   const v = (value ?? {}) as Partial<DownloadConfig>;
+  const forceComingSoon = v.forceComingSoon === true;
   const windows = (v.windows ?? {}) as Partial<PlatformDownload>;
   const android = (v.android ?? {}) as Partial<PlatformDownload>;
   const macos = (v.macos ?? {}) as Partial<PlatformDownload>;
   return {
     enabled: v.enabled === true,
-    forceComingSoon: v.forceComingSoon === true,
+    forceComingSoon,
     windows: {
       ...defaultConfig.windows,
       ...windows,
+      comingSoon: forceComingSoon || windows.comingSoon === true,
     },
     android: {
       ...defaultConfig.android,
       ...android,
+      comingSoon: forceComingSoon || android.comingSoon === true,
     },
     macos: {
       ...defaultConfig.macos,
       ...macos,
+      comingSoon: forceComingSoon || macos.comingSoon === true,
     },
   };
 }
@@ -263,7 +273,7 @@ export const Downloads = () => {
 
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {visibleCards.map(({ key, data }) => {
-          const canDownload = !config.forceComingSoon && Boolean(data.url.trim());
+          const canDownload = !data.comingSoon && Boolean(data.url.trim());
           const meta = platformMeta[key];
           return (
             <section

@@ -6,6 +6,7 @@ import { toast } from '../../lib/toast';
 
 type PlatformDownload = {
   enabled: boolean;
+  comingSoon: boolean;
   title: string;
   subtitle: string;
   version: string;
@@ -15,6 +16,8 @@ type PlatformDownload = {
 
 type DownloadConfig = {
   enabled: boolean;
+  // Legacy global switch (kept for backward compatibility with saved settings).
+  // Coming-soon is now controlled per platform.
   forceComingSoon: boolean;
   windows: PlatformDownload;
   android: PlatformDownload;
@@ -25,6 +28,7 @@ const defaultConfig: DownloadConfig = {
   enabled: false,
   windows: {
     enabled: true,
+    comingSoon: false,
     title: 'Windows App',
     subtitle: 'Optimized desktop application for Windows 10/11.',
     version: '',
@@ -33,6 +37,7 @@ const defaultConfig: DownloadConfig = {
   },
   android: {
     enabled: true,
+    comingSoon: false,
     title: 'Android App',
     subtitle: 'Fast mobile app with your full customer panel.',
     version: '',
@@ -41,6 +46,7 @@ const defaultConfig: DownloadConfig = {
   },
   macos: {
     enabled: true,
+    comingSoon: false,
     title: 'macOS App',
     subtitle: 'Native-feel desktop app for MacBook and iMac.',
     version: '',
@@ -267,17 +273,8 @@ export const AdminAppDownloads = () => {
           />
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Force "Coming soon" for all platforms</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Temporarily hide all real download buttons without removing URLs.</p>
-          </div>
-          <ToggleSwitch
-            checked={config.forceComingSoon}
-            onToggle={() => setConfig((prev) => ({ ...prev, forceComingSoon: !prev.forceComingSoon }))}
-            tone="amber"
-            ariaLabel='Force "Coming soon" for all platforms'
-          />
+        <div className="mt-5 rounded-xl border border-amber-200/60 bg-amber-50/60 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+          Coming soon is now controlled per platform (Windows/Android/macOS) below.
         </div>
       </div>
 
@@ -308,6 +305,25 @@ export const AdminAppDownloads = () => {
                     }))
                   }
                   ariaLabel={`Show ${title} card`}
+                />
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5">
+                <p className="text-xs font-medium text-amber-900 dark:text-amber-200">Show &ldquo;Coming soon&rdquo; for this platform</p>
+                <ToggleSwitch
+                  checked={Boolean(config.forceComingSoon) || Boolean(config[key].comingSoon)}
+                  onToggle={() =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      [key]: {
+                        ...prev[key],
+                        // If legacy global switch is still enabled, keep UI consistent by toggling platform flag only.
+                        comingSoon: !prev[key].comingSoon,
+                      },
+                    }))
+                  }
+                  tone="amber"
+                  ariaLabel={`Show coming soon for ${title}`}
                 />
               </div>
 
@@ -393,7 +409,7 @@ export const AdminAppDownloads = () => {
 
       <div className="rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] p-4">
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          Tip: upload your `.exe`, `.apk`, or `.dmg` files and keep URLs ready. You can hide any single platform or force "Coming soon" globally anytime.
+          Tip: upload your `.exe`, `.apk`, or `.dmg` files and keep URLs ready. You can hide any single platform card or mark specific platforms as "Coming soon" anytime.
         </p>
       </div>
 

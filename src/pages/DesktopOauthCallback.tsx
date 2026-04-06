@@ -43,12 +43,36 @@ export const DesktopOauthCallback = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    // Try immediate handoff back to the app after OAuth.
-    // Note: some browsers block automatic app openings; the button below is the reliable fallback.
-    // Only auto-redirect for desktop. On Android, browsers often block automatic intent navigations.
-    if (links.isAndroid) return;
-    const t = window.setTimeout(() => window.location.replace(links.intentUrl), 250);
-    return () => window.clearTimeout(t);
+    // Best-effort handoff back to the app after OAuth.
+    // Browsers may block automatic app openings; the button below is the reliable fallback.
+    const timers: number[] = [];
+
+    if (links.isAndroid) {
+      // On Android, some browsers block immediate intent navigation but allow a delayed attempt.
+      timers.push(
+        window.setTimeout(() => {
+          try {
+            window.location.href = links.intentUrl;
+          } catch {
+            // ignore
+          }
+        }, 650),
+      );
+      // Secondary attempt via direct scheme.
+      timers.push(
+        window.setTimeout(() => {
+          try {
+            window.location.href = links.deepLinkUrl;
+          } catch {
+            // ignore
+          }
+        }, 1200),
+      );
+    } else {
+      timers.push(window.setTimeout(() => window.location.replace(links.intentUrl), 250));
+    }
+
+    return () => timers.forEach((t) => window.clearTimeout(t));
   }, [links.intentUrl]);
 
   return (
