@@ -478,7 +478,13 @@ export const AdobeEmail = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails', filter: `user_id=eq.${user.id}` }, () => {
         scheduleRefresh();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: 'is_personal=eq.true' }, () => {
+        scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.personal_subscriptions' }, () => {
+        scheduleRefresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.adobe_email_slots' }, () => {
         scheduleRefresh();
       })
       .subscribe();
@@ -488,6 +494,15 @@ export const AdobeEmail = () => {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Personal tab safety net: keep subscriptions fresh even if a realtime event is missed.
+  useEffect(() => {
+    if (!user || activeTab !== 'personal') return;
+    const id = window.setInterval(() => {
+      void fetchEmailDataRef.current();
+    }, 20_000);
+    return () => window.clearInterval(id);
+  }, [user, activeTab]);
 
   const handleGenerateEmail = async (specificOrderId?: string) => {
     // Determine which order to link to
@@ -923,7 +938,7 @@ export const AdobeEmail = () => {
                     How to sign in
                   </button>
                   <a
-                    href="https://account.adobe.com/"
+                    href="https://adobe.com/"
                     target="_blank"
                     rel="noopener noreferrer"
                     className={btnOutline}
