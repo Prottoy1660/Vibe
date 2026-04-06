@@ -199,7 +199,7 @@ export const Login = () => {
     const needsExternalBrowser = isTauriRuntime || isEmbeddedWebView();
     const publicOrigin = getPublicSiteOrigin();
     const oauthRedirect = needsExternalBrowser
-      ? `${publicOrigin}/oauth/desktop-callback`
+      ? `${publicOrigin}/oauth/desktop-callback.html`
       : `${window.location.origin}/`;
     const providerLabel =
       provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';

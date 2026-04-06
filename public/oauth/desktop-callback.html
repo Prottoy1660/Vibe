@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Open Vibe Access</title>
+    <meta name="color-scheme" content="light dark" />
+    <style>
+      :root {
+        --bg: #f8fafc;
+        --card: rgba(255, 255, 255, 0.92);
+        --border: rgba(15, 23, 42, 0.12);
+        --text: #0f172a;
+        --muted: rgba(15, 23, 42, 0.6);
+        --primary: #4f46e5;
+        --primaryHover: #4338ca;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #09090b;
+          --card: rgba(21, 21, 24, 0.92);
+          --border: rgba(255, 255, 255, 0.12);
+          --text: rgba(255, 255, 255, 0.92);
+          --muted: rgba(255, 255, 255, 0.62);
+          --primary: #6366f1;
+          --primaryHover: #818cf8;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Helvetica Neue", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+      .wrap {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .card {
+        width: 100%;
+        max-width: 520px;
+        border-radius: 28px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        backdrop-filter: blur(14px);
+        padding: 22px 22px 18px;
+        box-shadow: 0 20px 55px rgba(0, 0, 0, 0.18);
+        text-align: center;
+      }
+      .badge {
+        width: 52px;
+        height: 52px;
+        border-radius: 18px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 14px;
+        background: color-mix(in srgb, var(--primary) 14%, transparent);
+        color: var(--primary);
+        font-weight: 900;
+        letter-spacing: 0.02em;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 8px;
+        line-height: 1.2;
+      }
+      p {
+        margin: 0 0 16px;
+        color: var(--muted);
+        font-size: 13.5px;
+        line-height: 1.5;
+      }
+      a.btn {
+        display: inline-flex;
+        width: 100%;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 18px;
+        background: var(--primary);
+        color: white;
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      a.btn:hover { background: var(--primaryHover); }
+      a.alt {
+        display: inline-flex;
+        width: 100%;
+        justify-content: center;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 18px;
+        border: 1px solid var(--border);
+        color: var(--text);
+        text-decoration: none;
+        font-weight: 700;
+        font-size: 14px;
+        margin-top: 10px;
+        background: transparent;
+      }
+      .hint {
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .small {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div class="badge">VA</div>
+        <h1>Open Vibe Access</h1>
+        <p>Login is complete. Tap below to return to the Android app and finish signing in.</p>
+        <a id="openApp" class="btn" href="#">Open app</a>
+        <a id="altLink" class="alt" href="#" style="display:none;">Try alternative link</a>
+        <div class="hint" id="hint"></div>
+        <div class="small">If nothing happens, make sure the app is installed and allow “Open supported links”.</div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var ua = (navigator.userAgent || "").toLowerCase();
+        var isAndroid = ua.indexOf("android") !== -1;
+
+        function mergeParams() {
+          var hash = (location.hash || "").replace(/^#/, "");
+          var hashParams = new URLSearchParams(hash);
+          var queryParams = new URLSearchParams(location.search || "");
+          var merged = new URLSearchParams();
+          queryParams.forEach(function (v, k) { merged.set(k, v); });
+          hashParams.forEach(function (v, k) { merged.set(k, v); });
+          return merged.toString();
+        }
+
+        var qs = mergeParams();
+        var deepLinkUrl = "vibeaccess://auth-callback" + (qs ? "?" + qs : "");
+        var base = location.origin + location.pathname;
+        var fallbackHttpUrl = base + (qs ? "?" + qs + "&manual=1" : "?manual=1");
+        var intentUrl = isAndroid
+          ? "intent://auth-callback" + (qs ? "?" + qs : "") +
+            "#Intent;scheme=vibeaccess;package=com.vibeaccess.desktop;" +
+            "S.browser_fallback_url=" + encodeURIComponent(fallbackHttpUrl) + ";end"
+          : deepLinkUrl;
+
+        var openApp = document.getElementById("openApp");
+        var alt = document.getElementById("altLink");
+        var hint = document.getElementById("hint");
+
+        openApp.href = intentUrl;
+        if (isAndroid) {
+          alt.style.display = "inline-flex";
+          alt.href = deepLinkUrl;
+          hint.textContent = "If you stay on the website, tap “Open app”.";
+        } else {
+          hint.textContent = "Returning to the app…";
+        }
+
+        // Best-effort auto handoff
+        setTimeout(function () { try { location.href = intentUrl; } catch (e) {} }, isAndroid ? 650 : 250);
+        if (isAndroid) {
+          setTimeout(function () { try { location.href = deepLinkUrl; } catch (e) {} }, 1200);
+        }
+      })();
+    </script>
+  </body>
+</html>
+
