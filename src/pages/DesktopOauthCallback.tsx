@@ -28,8 +28,14 @@ export const DesktopOauthCallback = () => {
     const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '').toLowerCase() : '';
     const isAndroid = ua.includes('android');
     const isWindows = ua.includes('windows');
+    const fallbackHttpUrl = (() => {
+      // Keep tokens when falling back to this page (Android Chrome requires http(s) fallback).
+      const base = `${window.location.origin}${window.location.pathname}`;
+      return `${base}${qs ? `?${qs}&manual=1` : '?manual=1'}`;
+    })();
+
     const intentUrl = isAndroid
-      ? `intent://auth-callback${qs ? `?${qs}` : ''}#Intent;scheme=vibeaccess;package=com.vibeaccess.desktop;end`
+      ? `intent://auth-callback${qs ? `?${qs}` : ''}#Intent;scheme=vibeaccess;package=com.vibeaccess.desktop;S.browser_fallback_url=${encodeURIComponent(fallbackHttpUrl)};end`
       : deepLinkUrl;
 
     return { deepLinkUrl, intentUrl, isAndroid, isWindows };
@@ -39,9 +45,9 @@ export const DesktopOauthCallback = () => {
     if (typeof window === 'undefined') return;
     // Try immediate handoff back to the app after OAuth.
     // Note: some browsers block automatic app openings; the button below is the reliable fallback.
-    const t = window.setTimeout(() => {
-      window.location.replace(links.intentUrl);
-    }, 250);
+    // Only auto-redirect for desktop. On Android, browsers often block automatic intent navigations.
+    if (links.isAndroid) return;
+    const t = window.setTimeout(() => window.location.replace(links.intentUrl), 250);
     return () => window.clearTimeout(t);
   }, [links.intentUrl]);
 
@@ -63,21 +69,27 @@ export const DesktopOauthCallback = () => {
             {links.isWindows ? 'Open Vibe Access (Windows)' : links.isAndroid ? 'Open Vibe Access (Android)' : 'Open Vibe Access'}
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-            Login is complete. Click the button below to return to the app and finish signing in.
+            Login is complete. Tap the button below to return to the app and finish signing in.
           </p>
 
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = links.intentUrl;
-            }}
+          <a
+            href={links.intentUrl}
             className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
           >
             Open app
-          </button>
+          </a>
+
+          {links.isAndroid ? (
+            <a
+              href={links.deepLinkUrl}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:border-[#2b2d34] dark:bg-[#111113] dark:text-gray-100 dark:hover:bg-[#151518]"
+            >
+              Try alternative link
+            </a>
+          ) : null}
 
           <p className="mt-4 text-xs text-gray-500 dark:text-gray-500">
-            If nothing happens, make sure the Vibe Access app is installed and try again.
+            If nothing happens, make sure the Vibe Access app is installed and try again. On Android, you may also need to allow “Open supported links”.
           </p>
         </div>
       </div>
