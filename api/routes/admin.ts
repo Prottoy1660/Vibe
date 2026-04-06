@@ -1,6 +1,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import {
   tryProcessReferralRewardsForOrder,
   loadReferralSettings,
@@ -236,6 +237,104 @@ router.post('/ops/sidebar-config', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('sidebar config error:', error);
     res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/app-downloads', verifyAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'customer_app_downloads')
+      .maybeSingle();
+    if (error) throw error;
+    return res.json({ success: true, settings: (data?.value as any) || {} });
+  } catch (error: any) {
+    console.error('app downloads get error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/app-downloads', verifyAdmin, async (req, res) => {
+  try {
+    const incoming = (req.body || {}) as Record<string, unknown>;
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'customer_app_downloads')
+      .maybeSingle();
+    const merged = { ...((data?.value as any) || {}), ...incoming };
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: 'customer_app_downloads',
+        value: merged,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+    if (error) throw error;
+    return res.json({ success: true, settings: merged });
+  } catch (error: any) {
+    console.error('app downloads patch error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/app-downloads/upload-sign-url', verifyAdmin, async (req, res) => {
+  try {
+    const { platform, file_name, content_type } = (req.body || {}) as {
+      platform?: 'windows' | 'android' | 'macos';
+      file_name?: string;
+      content_type?: string;
+    };
+    if (!platform || (platform !== 'windows' && platform !== 'android' && platform !== 'macos')) {
+      return res.status(400).json({ error: 'Invalid platform' });
+    }
+    if (!file_name || typeof file_name !== 'string') {
+      return res.status(400).json({ error: 'file_name is required' });
+    }
+
+    const lower = file_name.toLowerCase();
+    const allowedWindows = ['.exe', '.msi', '.zip'];
+    const allowedAndroid = ['.apk', '.aab', '.zip'];
+    const allowedMacos = ['.dmg', '.pkg', '.zip'];
+    const allowed = platform === 'windows' ? allowedWindows : platform === 'android' ? allowedAndroid : allowedMacos;
+    const extOk = allowed.some((ext) => lower.endsWith(ext));
+    if (!extOk) {
+      return res.status(400).json({ error: `Invalid file type for ${platform}` });
+    }
+
+    const bucket = 'app-downloads';
+    const cleaned = file_name.replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const filePath = `${platform}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${cleaned}`;
+
+    const { data: bucketInfo } = await supabase.storage.getBucket(bucket);
+    if (!bucketInfo) {
+      const { error: createErr } = await supabase.storage.createBucket(bucket, {
+        public: true,
+        fileSizeLimit: '300MB',
+      });
+      if (createErr && !String(createErr.message || '').toLowerCase().includes('already')) {
+        throw createErr;
+      }
+    }
+
+    const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(filePath);
+    if (error || !data) throw error || new Error('Failed to create signed upload URL');
+
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(filePath);
+    return res.json({
+      success: true,
+      bucket,
+      path: filePath,
+      token: data.token,
+      signed_url: data.signedUrl,
+      public_url: pub.publicUrl,
+      content_type: content_type || '',
+    });
+  } catch (error: any) {
+    console.error('app downloads signed upload error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
 

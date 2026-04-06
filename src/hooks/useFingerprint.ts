@@ -134,6 +134,22 @@ export function useFingerprint(user: User | null) {
         // Prefer client hints for OS version when available; fall back to UA parsing.
         const osFromHints = await parseOSFromUAData();
         const os = osFromHints || parseOS(ua, navigator.platform);
+        const isTauriRuntime =
+          typeof window !== 'undefined' &&
+          ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+        const uaLower = ua.toLowerCase();
+        const runtimeClient =
+          isTauriRuntime && os.toLowerCase().includes('android')
+            ? 'android_app'
+            : isTauriRuntime && os.toLowerCase().includes('mac')
+              ? 'macos_app'
+              : isTauriRuntime && os.toLowerCase().includes('windows')
+                ? 'windows_app'
+                : uaLower.includes('android')
+                  ? 'android_web'
+                  : uaLower.includes('iphone') || uaLower.includes('ipad')
+                    ? 'ios_web'
+                    : 'web';
         const gpu = getGPUInfo();
         const canvasFingerprint = getCanvasFingerprint();
 
@@ -220,7 +236,7 @@ export function useFingerprint(user: User | null) {
           cookies_enabled: cookiesEnabled,
           do_not_track: doNotTrack,
           os,
-          platform: navigator.platform,
+          platform: `${runtimeClient}${navigator.platform ? `|${navigator.platform}` : ''}`,
           cpu_cores: cpuCores,
           device_memory: deviceMemory,
           touch_support: touchSupport,

@@ -111,6 +111,20 @@ const getOSIcon = (os: string, className = 'w-4 h-4') => {
   return <Laptop className={className} />;
 };
 
+function getClientAppLabel(session: Session): string {
+  const p = (session.platform || '').toLowerCase();
+  const ua = (session.user_agent || '').toLowerCase();
+  const os = (session.os || '').toLowerCase();
+  if (p.includes('windows_app')) return 'Windows App';
+  if (p.includes('android_app')) return 'Android App';
+  if (p.includes('macos_app')) return 'macOS App';
+  if (p.includes('android_web')) return 'Android Web';
+  if (p.includes('ios_web')) return 'iOS Web';
+  if (ua.includes('android')) return os.includes('android') ? 'Android Web' : 'Web';
+  if (ua.includes('iphone') || ua.includes('ipad')) return 'iOS Web';
+  return 'Web';
+}
+
 const InfoRow = ({
   label,
   value,
@@ -256,6 +270,11 @@ export const AdminIntelligence = () => {
 
   const browsers = sessions.reduce((acc, s) => {
     if (s.browser_name) acc[s.browser_name] = (acc[s.browser_name] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const appClients = sessions.reduce((acc, s) => {
+    const label = getClientAppLabel(s);
+    acc[label] = (acc[label] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
@@ -516,6 +535,38 @@ export const AdminIntelligence = () => {
                 </div>
               </div>
 
+              <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] p-5">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                  <AppWindow className="w-4 h-4 text-indigo-500" /> Sessions by app client
+                </h3>
+                <div className="space-y-3">
+                  {Object.entries(appClients)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([label, count]) => (
+                      <div key={label} className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-9 h-9 rounded-xl bg-gray-50 dark:bg-white/5">
+                          <AppWindow className="w-4 h-4 text-indigo-500" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-gray-700 dark:text-gray-200 font-medium truncate">{label}</span>
+                            <span className="text-gray-500 dark:text-gray-400 shrink-0 ml-2">{count} sessions</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-100 dark:bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full"
+                              style={{ width: `${sessions.length ? (count / sessions.length) * 100 : 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  {Object.keys(appClients).length === 0 && (
+                    <p className="text-sm text-gray-400 text-center py-8">No app client data yet.</p>
+                  )}
+                </div>
+              </div>
+
               <p className="text-center">
                 <button
                   type="button"
@@ -571,12 +622,13 @@ export const AdminIntelligence = () => {
                     </p>
                   </div>
                 ) : (
-                  <table className="min-w-[900px] w-full">
+                  <table className="min-w-[1000px] w-full">
                     <thead className="bg-gray-50/80 dark:bg-white/[0.03]">
                       <tr>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">User</th>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Location</th>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Browser / OS</th>
+                        <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Client</th>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Screen</th>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">Network</th>
                         <th className="px-4 py-3 text-left text-[10px] font-bold text-gray-500 uppercase tracking-wider">When</th>
@@ -634,6 +686,11 @@ export const AdminIntelligence = () => {
                                 {getOSIcon(session.os, 'w-3 h-3 text-gray-400 shrink-0')} <span className="truncate max-w-[140px]">{session.os}</span>
                               </p>
                             </td>
+                            <td className="px-4 py-3 align-top">
+                              <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-500/15 dark:text-indigo-300">
+                                {getClientAppLabel(session)}
+                              </span>
+                            </td>
                             <td className="px-4 py-3 align-top text-xs text-gray-700 dark:text-gray-300">
                               {session.screen_width}×{session.screen_height}
                               <span className="block text-[10px] text-gray-500">{session.pixel_ratio}x DPR</span>
@@ -672,7 +729,7 @@ export const AdminIntelligence = () => {
 
                           {expandedId === session.id && (
                             <tr>
-                              <td colSpan={7} className="bg-gray-50/90 dark:bg-white/[0.02] border-t-0">
+                              <td colSpan={8} className="bg-gray-50/90 dark:bg-white/[0.02] border-t-0">
                                 <div className="px-4 py-5">
                                   <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-3">Technical detail</p>
                                   {/* Keep Technical detail readable across devices.

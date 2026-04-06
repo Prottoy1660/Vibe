@@ -20,6 +20,7 @@ import {
   MessageCircle,
   Wallet,
   BellRing,
+  Download,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -49,6 +50,9 @@ const AdminSupportChatSettings = React.lazy(() =>
 );
 const AdminSidebarConfig = React.lazy(() =>
   import('../components/admin/AdminSidebarConfig').then((m) => ({ default: m.AdminSidebarConfig }))
+);
+const AdminAppDownloads = React.lazy(() =>
+  import('../components/admin/AdminAppDownloads').then((m) => ({ default: m.AdminAppDownloads }))
 );
 const AdminActivityLog = React.lazy(() =>
   import('../components/admin/AdminActivityLog').then((m) => ({ default: m.AdminActivityLog }))
@@ -256,6 +260,8 @@ export const AdminDashboard = () => {
                 ? 'Activity log'
                 : activeTab === 'subscription_reminders'
                   ? 'Subscription reminders'
+                  : activeTab === 'app_downloads'
+                    ? 'App downloads'
                   : 'Admin Panel'}
         </h1>
         {(activeTab === 'analytics' ||
@@ -334,6 +340,12 @@ export const AdminDashboard = () => {
               </span>
             )}
             {activeTab === 'waitlist' && 'Waitlist'}
+            {activeTab === 'app_downloads' && (
+              <span className="flex items-center gap-2">
+                <Download className="w-6 h-6" />
+                App downloads
+              </span>
+            )}
           </h1>
           <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
             <ShieldAlert className="w-5 h-5 text-indigo-500" />
@@ -365,6 +377,7 @@ export const AdminDashboard = () => {
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
+        {activeTab === 'app_downloads' && <AdminAppDownloads />}
         {activeTab === 'sidebar_config' && isSuperAdmin && <AdminSidebarConfig />}
       </Suspense>
 

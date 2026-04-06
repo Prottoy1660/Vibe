@@ -86,6 +86,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user]);
 
   useEffect(() => {
+    const applyAuthTokensFromDeepLinkUrl = async (url: string) => {
+      try {
+        const parsed = new URL(url);
+        const hash = parsed.hash.startsWith('#') ? parsed.hash.slice(1) : '';
+        const hashParams = new URLSearchParams(hash);
+        const queryParams = parsed.searchParams;
+        const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+        if (!accessToken || !refreshToken) return;
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+      } catch (error) {
+        console.error('Failed to apply auth tokens from deep link', error);
+      }
+    };
+
+    const applyAuthTokensFromUrl = async () => {
+      if (typeof window === 'undefined') return;
+      try {
+        const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : '';
+        const hashParams = new URLSearchParams(hash);
+        const queryParams = new URLSearchParams(window.location.search);
+        const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+        if (!accessToken || !refreshToken) return;
+
+        await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        // Clean URL so tokens are not left in browser history.
+        const clean = `${window.location.origin}${window.location.pathname}`;
+        window.history.replaceState({}, document.title, clean);
+      } catch (error) {
+        console.error('Failed to apply auth tokens from URL callback', error);
+      }
+    };
+
+    const initDeepLinkAuth = async () => {
+      const isTauriRuntime =
+        typeof window !== 'undefined' &&
+        ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+      if (!isTauriRuntime) return;
+      try {
+        const { getCurrent, onOpenUrl } = await import('@tauri-apps/plugin-deep-link');
+        const current = await getCurrent();
+        for (const url of current || []) {
+          await applyAuthTokensFromDeepLinkUrl(url);
+        }
+        await onOpenUrl(async (urls) => {
+          for (const url of urls || []) {
+            await applyAuthTokensFromDeepLinkUrl(url);
+          }
+        });
+      } catch (error) {
+        console.error('Deep-link auth bridge is unavailable', error);
+      }
+    };
+
+    void applyAuthTokensFromUrl();
+    void initDeepLinkAuth();
+
     // Check active sessions and sets the user
     supabase.auth.getSession().then(({ data: { session } }) => {
       const nextUserId = session?.user?.id ?? null;

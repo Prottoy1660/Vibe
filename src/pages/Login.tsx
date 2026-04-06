@@ -7,6 +7,16 @@ import { useTheme } from '../contexts/ThemeContext';
 import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
 import { toast } from '../lib/toast';
 
+const isTauriRuntime = (() => {
+  if (typeof window === 'undefined' || typeof globalThis === 'undefined') return false;
+  const runtimeFlag = Boolean((globalThis as any).isTauri);
+  const internalsFlag = '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
+  const host = (window.location.hostname || '').toLowerCase();
+  const protocol = (window.location.protocol || '').toLowerCase();
+  const tauriUrl = protocol === 'tauri:' || host.includes('tauri');
+  return runtimeFlag || internalsFlag || tauriUrl;
+})();
+
 export const Login = () => {
   const [searchParams] = useSearchParams();
   const [identifier, setIdentifier] = useState('');
@@ -21,6 +31,7 @@ export const Login = () => {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
+  const oauthFallbackTimerRef = useRef<number | null>(null);
   const isDark = theme === 'dark';
 
   useEffect(() => {
@@ -158,15 +169,58 @@ export const Login = () => {
     }
   };
 
-  const oauthRedirect = `${window.location.origin}/`;
+  const oauthRedirect = isTauriRuntime ? 'vibeaccess://auth-callback' : `${window.location.origin}/`;
+
+  const startOAuth = async (
+    provider: 'google' | 'facebook' | 'azure',
+    extra?: { scopes?: string },
+  ) => {
+    const providerLabel =
+      provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: oauthRedirect,
+        ...(isTauriRuntime ? { skipBrowserRedirect: true } : {}),
+        ...(extra?.scopes ? { scopes: extra.scopes } : {}),
+      },
+    });
+    if (error) throw error;
+    if (isTauriRuntime && data?.url) {
+      toast.info(`Opening ${providerLabel} sign-in`, {
+        description: 'Browser will open. Complete sign-in and the app will log in automatically.',
+      });
+      if (oauthFallbackTimerRef.current) {
+        window.clearTimeout(oauthFallbackTimerRef.current);
+      }
+      oauthFallbackTimerRef.current = window.setTimeout(() => {
+        toast.warning('Still waiting for app callback', {
+          description: 'If browser finished sign-in, reopen the app once.',
+        });
+      }, 18000);
+      try {
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(data.url);
+      } catch {
+        toast.error('Could not open browser automatically', {
+          description: 'Please copy and open this URL in your browser to continue sign-in.',
+        });
+        await navigator.clipboard.writeText(data.url).catch(() => {});
+      }
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (oauthFallbackTimerRef.current) {
+        window.clearTimeout(oauthFallbackTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleGoogleLogin = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: oauthRedirect },
-      });
-      if (error) throw error;
+      await startOAuth('google');
     } catch (error: any) {
       setError(error.message);
     }
@@ -174,11 +228,7 @@ export const Login = () => {
 
   const handleFacebookLogin = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'facebook',
-        options: { redirectTo: oauthRedirect },
-      });
-      if (error) throw error;
+      await startOAuth('facebook');
     } catch (error: any) {
       setError(error.message);
     }
@@ -186,14 +236,7 @@ export const Login = () => {
 
   const handleMicrosoftLogin = async () => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'azure',
-        options: {
-          redirectTo: oauthRedirect,
-          scopes: 'email profile openid',
-        },
-      });
-      if (error) throw error;
+      await startOAuth('azure', { scopes: 'email profile openid' });
     } catch (error: any) {
       setError(error.message);
     }
