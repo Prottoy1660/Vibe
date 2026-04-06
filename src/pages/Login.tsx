@@ -23,6 +23,22 @@ const detectTauriRuntime = async (): Promise<boolean> => {
   }
 };
 
+const isEmbeddedWebView = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  // Android/iOS embedded webviews often include "wv" or missing regular browser signatures.
+  return /\bwv\b/i.test(ua) || /Version\/[\d.]+.*Chrome\/[\d.]+ Mobile/i.test(ua);
+};
+
+const getPublicSiteOrigin = (): string => {
+  // IMPORTANT: In Tauri (desktop/mobile) `window.location.origin` is not your public website origin.
+  // OAuth providers must redirect back to an allow-listed HTTPS origin (your real domain).
+  const env = (import.meta as any)?.env as Record<string, any> | undefined;
+  const fromEnv = (env?.VITE_PUBLIC_SITE_URL || env?.VITE_FRONTEND_URL || '').toString().trim();
+  if (fromEnv.startsWith('http://') || fromEnv.startsWith('https://')) return fromEnv.replace(/\/$/, '');
+  return 'https://vibeaccessbd.shop';
+};
+
 export const Login = () => {
   const [searchParams] = useSearchParams();
   const [identifier, setIdentifier] = useState('');
@@ -180,8 +196,10 @@ export const Login = () => {
     extra?: { scopes?: string },
   ) => {
     const isTauriRuntime = await detectTauriRuntime();
-    const oauthRedirect = isTauriRuntime
-      ? `${window.location.origin}/oauth/desktop-callback`
+    const needsExternalBrowser = isTauriRuntime || isEmbeddedWebView();
+    const publicOrigin = getPublicSiteOrigin();
+    const oauthRedirect = needsExternalBrowser
+      ? `${publicOrigin}/oauth/desktop-callback`
       : `${window.location.origin}/`;
     const providerLabel =
       provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';
@@ -189,12 +207,12 @@ export const Login = () => {
       provider,
       options: {
         redirectTo: oauthRedirect,
-        ...(isTauriRuntime ? { skipBrowserRedirect: true } : {}),
+        ...(needsExternalBrowser ? { skipBrowserRedirect: true } : {}),
         ...(extra?.scopes ? { scopes: extra.scopes } : {}),
       },
     });
     if (error) throw error;
-    if (isTauriRuntime && data?.url) {
+    if (needsExternalBrowser && data?.url) {
       toast.info(`Opening ${providerLabel} sign-in`, {
         description: 'Browser will open. Complete sign-in and the app will log in automatically.',
       });
