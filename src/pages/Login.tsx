@@ -180,7 +180,9 @@ export const Login = () => {
     extra?: { scopes?: string },
   ) => {
     const isTauriRuntime = await detectTauriRuntime();
-    const oauthRedirect = isTauriRuntime ? 'vibeaccess://auth-callback' : `${window.location.origin}/`;
+    const oauthRedirect = isTauriRuntime
+      ? `${window.location.origin}/oauth/desktop-callback`
+      : `${window.location.origin}/`;
     const providerLabel =
       provider === 'google' ? 'Google' : provider === 'facebook' ? 'Facebook' : 'Microsoft';
     const { data, error } = await supabase.auth.signInWithOAuth({

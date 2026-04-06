@@ -26,6 +26,9 @@ const Support = React.lazy(() => import('./pages/Support').then(module => ({ def
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
 const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
 const Downloads = React.lazy(() => import('./pages/Downloads').then(module => ({ default: module.Downloads })));
+const DesktopOauthCallback = React.lazy(() =>
+  import('./pages/DesktopOauthCallback').then((module) => ({ default: module.DesktopOauthCallback })),
+);
 const PhoneRequired = React.lazy(() => import('./pages/PhoneRequired').then((m) => ({ default: m.PhoneRequired })));
 const HttpErrorPage = React.lazy(() =>
   import('./pages/HttpErrorPage').then((module) => ({ default: module.HttpErrorPage })),
@@ -83,6 +86,7 @@ function AppRoutes() {
       <Routes>
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+        <Route path="/oauth/desktop-callback" element={<DesktopOauthCallback />} />
         <Route path="/status" element={<Status />} />
         <Route path="/error/:code" element={<HttpErrorPage />} />
 
