@@ -14,7 +14,9 @@ export default defineConfig({
     }),
     tsconfigPaths(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Avoid unexpected reloads while the user is filling forms / doing admin work.
+      // We'll show an in-app prompt instead (see src/main.tsx).
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       workbox: {
         // Default precache pulls every hashed chunk (~2MB) — slows first SW install/update.

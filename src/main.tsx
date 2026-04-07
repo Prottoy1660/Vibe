@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { RootErrorBoundary } from './components/RootErrorBoundary';
+import { toast } from './lib/toast';
 import './index.css';
 
 if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID !== 'function') {
@@ -30,7 +31,19 @@ const isTauriRuntime =
 
 if ('serviceWorker' in navigator && !isTauriRuntime && !isAndroidRuntime) {
   import('virtual:pwa-register').then(({ registerSW }) => {
-    registerSW({ immediate: true });
+    const updateSW = registerSW({
+      immediate: true,
+      onNeedRefresh() {
+        toast.message('New version available', {
+          description: 'Reload to update. Your current page will not auto-reload.',
+          duration: Infinity,
+          action: {
+            label: 'Reload now',
+            onClick: () => updateSW(true),
+          },
+        });
+      },
+    });
   }).catch(() => {});
 }
 

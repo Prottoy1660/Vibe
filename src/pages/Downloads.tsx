@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Download } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 type PlatformDownload = {
@@ -313,12 +314,12 @@ export const Downloads = () => {
                 </a>
               ) : (
                 <div className="mt-5 grid gap-2">
-                  <a
-                    href="/support"
+                  <Link
+                    to="/support"
                     className="inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:border-[#343844] dark:bg-[#1c1f29] dark:text-gray-100 dark:hover:bg-[#232635]"
                   >
                     Contact support
-                  </a>
+                  </Link>
                   <button
                     type="button"
                     disabled

@@ -95,6 +95,8 @@ export const AdminFinance = ({
 }) => {
   const navigate = useNavigate();
   const { confirm } = useConfirmDialog();
+  const isLocalRuntime =
+    typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const [rangeStart, setRangeStart] = useState(() => format(startOfDay(new Date()), 'yyyy-MM-dd'));
   const [rangeEnd, setRangeEnd] = useState(() => format(endOfDay(new Date()), 'yyyy-MM-dd'));
 
@@ -301,7 +303,7 @@ export const AdminFinance = ({
         ]);
         paidOrders = oRes;
         expenseRows = eRes;
-      } else {
+      } else if (isLocalRuntime) {
         const [oRes, eRes] = await Promise.all([
           supabase
             .from('orders')
@@ -322,6 +324,9 @@ export const AdminFinance = ({
         if (eRes.error) throw eRes.error;
         paidOrders = (oRes.data as PaidOrderRow[]) || [];
         expenseRows = (eRes.data as OperationalExpense[]) || [];
+      } else {
+        // In production, always use admin API (service-role) to avoid RLS making saved rows "disappear" after reload.
+        throw new Error('Admin API unavailable. Please refresh/login again or ensure API base URL is configured.');
       }
 
       const sRes = await supabase.from('system_settings').select('value').eq('key', 'partner_profit_share').maybeSingle();
@@ -512,7 +517,7 @@ export const AdminFinance = ({
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
         row = (j.expense || null) as OperationalExpense | null;
-      } else {
+      } else if (isLocalRuntime) {
         // Local/dev fallback when admin API isn't available
         const { data, error } = await supabase
           .from('operational_expenses')
@@ -537,6 +542,8 @@ export const AdminFinance = ({
           .single();
         if (error) throw error;
         row = data as OperationalExpense;
+      } else {
+        throw new Error('Admin API unavailable. Please refresh/login again or ensure API base URL is configured.');
       }
 
       if (!row) throw new Error('Expense was not returned by server');
