@@ -42,6 +42,85 @@ if (!supabaseUrl || !supabaseServiceKey) {
   console.error('[admin] Set SUPABASE_URL (or VITE_SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY for admin API.');
 }
 
+type AppDownloadsPlatform = {
+  enabled: boolean;
+  comingSoon: boolean;
+  title: string;
+  subtitle: string;
+  version: string;
+  url: string;
+  note: string;
+};
+
+type AppDownloadsConfig = {
+  enabled: boolean;
+  forceComingSoon: boolean;
+  windows: AppDownloadsPlatform;
+  android: AppDownloadsPlatform;
+  macos: AppDownloadsPlatform;
+};
+
+const APP_DOWNLOADS_DEFAULT: AppDownloadsConfig = {
+  enabled: false,
+  forceComingSoon: false,
+  windows: {
+    enabled: true,
+    comingSoon: false,
+    title: 'Windows App',
+    subtitle: 'Optimized desktop application for Windows 10/11.',
+    version: '',
+    url: '',
+    note: '',
+  },
+  android: {
+    enabled: true,
+    comingSoon: false,
+    title: 'Android App',
+    subtitle: 'Fast mobile app with your full customer panel.',
+    version: '',
+    url: '',
+    note: '',
+  },
+  macos: {
+    enabled: true,
+    comingSoon: false,
+    title: 'macOS App',
+    subtitle: 'Native-feel desktop app for MacBook and iMac.',
+    version: '',
+    url: '',
+    note: '',
+  },
+};
+
+function clampStr(v: unknown, maxLen: number) {
+  const s = typeof v === 'string' ? v : v == null ? '' : String(v);
+  return s.length > maxLen ? s.slice(0, maxLen) : s;
+}
+
+function sanitizeAppDownloadsPlatform(v: unknown, fallback: AppDownloadsPlatform): AppDownloadsPlatform {
+  const obj = (v && typeof v === 'object') ? (v as Record<string, unknown>) : {};
+  return {
+    enabled: obj.enabled === true,
+    comingSoon: obj.comingSoon === true,
+    title: clampStr(obj.title ?? fallback.title, 120),
+    subtitle: clampStr(obj.subtitle ?? fallback.subtitle, 220),
+    version: clampStr(obj.version ?? '', 60),
+    url: clampStr(obj.url ?? '', 900),
+    note: clampStr(obj.note ?? '', 500),
+  };
+}
+
+function sanitizeAppDownloadsConfig(value: unknown): AppDownloadsConfig {
+  const v = (value && typeof value === 'object') ? (value as Record<string, unknown>) : {};
+  return {
+    enabled: v.enabled === true,
+    forceComingSoon: v.forceComingSoon === true,
+    windows: sanitizeAppDownloadsPlatform(v.windows, APP_DOWNLOADS_DEFAULT.windows),
+    android: sanitizeAppDownloadsPlatform(v.android, APP_DOWNLOADS_DEFAULT.android),
+    macos: sanitizeAppDownloadsPlatform(v.macos, APP_DOWNLOADS_DEFAULT.macos),
+  };
+}
+
 function durationToMonths(duration: string | null | undefined) {
   const raw = String(duration || '').toLowerCase();
   if (!raw) return 1;
@@ -451,7 +530,10 @@ router.get('/ops/app-downloads', verifyAdmin, async (_req, res) => {
       .eq('key', 'customer_app_downloads')
       .maybeSingle();
     if (error) throw error;
-    return res.json({ success: true, settings: (data?.value as any) || {} });
+    // IMPORTANT: Always return a small fixed-shape payload.
+    // This prevents admin UI crashes if this settings row ever got polluted with a huge object.
+    const sanitized = sanitizeAppDownloadsConfig((data?.value as any) || {});
+    return res.json({ success: true, settings: sanitized });
   } catch (error: any) {
     console.error('app downloads get error:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
@@ -466,7 +548,17 @@ router.patch('/ops/app-downloads', verifyAdmin, async (req, res) => {
       .select('value')
       .eq('key', 'customer_app_downloads')
       .maybeSingle();
-    const merged = { ...((data?.value as any) || {}), ...incoming };
+    const existingSanitized = sanitizeAppDownloadsConfig((data?.value as any) || {});
+    const incomingSanitized = sanitizeAppDownloadsConfig(incoming || {});
+    // Shallow-merge safe top-level toggles, deep-merge per platform, discard unknown keys.
+    const merged: AppDownloadsConfig = {
+      ...existingSanitized,
+      enabled: incomingSanitized.enabled,
+      forceComingSoon: incomingSanitized.forceComingSoon,
+      windows: { ...existingSanitized.windows, ...incomingSanitized.windows },
+      android: { ...existingSanitized.android, ...incomingSanitized.android },
+      macos: { ...existingSanitized.macos, ...incomingSanitized.macos },
+    };
     const { error } = await supabase.from('system_settings').upsert(
       {
         key: 'customer_app_downloads',
