@@ -101,7 +101,8 @@ export const AdminEmails = () => {
   const [genDomain, setGenDomain] = useState('vibeaccess.space');
   const [genPrefix, setGenPrefix] = useState('adobe');
   const [genCloudAccess, setGenCloudAccess] = useState<'none' | 'api'>('none');
-  const [genDuration, setGenDuration] = useState(1);
+  const [genDurationValue, setGenDurationValue] = useState(1);
+  const [genDurationUnit, setGenDurationUnit] = useState<'months' | 'years'>('months');
   const [teams, setTeams] = useState<EmailTeam[]>([]);
   const [genSlotIntent, setGenSlotIntent] = useState<'exclusive' | 'shared'>('exclusive');
   const [genTeamId, setGenTeamId] = useState<string>('');
@@ -187,6 +188,12 @@ export const AdminEmails = () => {
   useEffect(() => {
     void loadTeamStats();
   }, [loadTeamStats, emails.length]);
+
+  const genDurationMonths = useMemo(() => {
+    const v = Math.max(1, Math.min(120, Math.floor(Number(genDurationValue) || 1)));
+    const months = genDurationUnit === 'years' ? v * 12 : v;
+    return Math.max(1, Math.min(120, months));
+  }, [genDurationUnit, genDurationValue]);
 
   useEffect(() => {
     const requestId = ++teamsEmailSearchReqId.current;
@@ -521,7 +528,7 @@ export const AdminEmails = () => {
       const response = await fetch(`${API_URL}/api/cpanel/create-emails`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ accounts: newAccounts, cloudAccess: genCloudAccess, durationMonths: genDuration }),
+        body: JSON.stringify({ accounts: newAccounts, cloudAccess: genCloudAccess, durationMonths: genDurationMonths }),
       });
 
       const text = await response.text();
@@ -1051,16 +1058,30 @@ export const AdminEmails = () => {
                   <option value="api">Auto API access</option>
                 </select>
               </Field>
-              <Field label="Duration (months)" hint="Only used when cloud access is API">
-                <input
-                  type="number"
-                  min={1}
-                  max={12}
-                  value={genDuration}
-                  onChange={(e) => setGenDuration(parseInt(e.target.value, 10) || 1)}
-                  disabled={genCloudAccess !== 'api'}
-                  className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 disabled:opacity-50"
-                />
+              <Field label="Duration" hint="Only used when cloud access is API (supports up to 120 months)">
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px] gap-3">
+                  <input
+                    type="number"
+                    min={1}
+                    max={120}
+                    value={genDurationValue}
+                    onChange={(e) => setGenDurationValue(parseInt(e.target.value, 10) || 1)}
+                    disabled={genCloudAccess !== 'api'}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                  />
+                  <select
+                    value={genDurationUnit}
+                    onChange={(e) => setGenDurationUnit(e.target.value as 'months' | 'years')}
+                    disabled={genCloudAccess !== 'api'}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 disabled:opacity-50"
+                  >
+                    <option value="months">Months</option>
+                    <option value="years">Years</option>
+                  </select>
+                </div>
+                <p className="mt-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  Will be sent to API as <span className="font-semibold">{genDurationMonths}</span> month(s).
+                </p>
               </Field>
             </div>
 

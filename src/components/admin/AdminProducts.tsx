@@ -492,6 +492,26 @@ export const AdminProducts = () => {
                 onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[
+                  { label: '1 month', value: '1 month' },
+                  { label: '2 months', value: '2 months' },
+                  { label: '3 months', value: '3 months' },
+                  { label: '4 months', value: '4 months' },
+                  { label: '6 months', value: '6 months' },
+                  { label: '1 year', value: '1 year' },
+                  { label: '2 years', value: '2 years' },
+                ].map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, duration: p.value })}
+                    className="inline-flex items-center justify-center rounded-full border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1c1c21] px-3 py-1.5 text-[11px] font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/[0.04]"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </Field>
             <Field label="Icons" hint="Comma-separated keys for the store UI (e.g. ps, ai, pr).">
               <input
