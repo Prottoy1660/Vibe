@@ -35,6 +35,7 @@ const AdminEmails = React.lazy(() => import('../components/admin/AdminEmails').t
 const AdminUserEmails = React.lazy(() => import('../components/admin/AdminUserEmails').then((m) => ({ default: m.AdminUserEmails })));
 const AdminAnalytics = React.lazy(() => import('../components/admin/AdminAnalytics').then((m) => ({ default: m.AdminAnalytics })));
 const AdminFinance = React.lazy(() => import('../components/admin/AdminFinance').then((m) => ({ default: m.AdminFinance })));
+const AdminExpenses = React.lazy(() => import('../components/admin/AdminExpenses.tsx').then((m) => ({ default: m.AdminExpenses })));
 const AdminIntelligence = React.lazy(() => import('../components/admin/AdminIntelligence').then((m) => ({ default: m.AdminIntelligence })));
 const AdminRedeemCodes = React.lazy(() => import('../components/admin/AdminRedeemCodes').then((m) => ({ default: m.AdminRedeemCodes })));
 const AdminTutorialHelp = React.lazy(() => import('../components/admin/AdminTutorialHelp').then((m) => ({ default: m.AdminTutorialHelp })));
@@ -255,7 +256,9 @@ export const AdminDashboard = () => {
           {activeTab === 'analytics'
             ? 'Financial Analytics'
             : activeTab === 'finance'
-              ? 'Profit & expenses'
+              ? 'Profit'
+              : activeTab === 'expenses'
+                ? 'Expenses'
               : activeTab === 'activity'
                 ? 'Activity log'
                 : activeTab === 'subscription_reminders'
@@ -266,6 +269,7 @@ export const AdminDashboard = () => {
         </h1>
         {(activeTab === 'analytics' ||
           activeTab === 'finance' ||
+          activeTab === 'expenses' ||
           activeTab === 'activity' ||
           activeTab === 'subscription_reminders') && (
           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -363,6 +367,7 @@ export const AdminDashboard = () => {
         {activeTab === 'emails' && <AdminEmails />}
         {activeTab === 'analytics' && <AdminAnalytics />}
         {activeTab === 'finance' && <AdminFinance />}
+        {activeTab === 'expenses' && <AdminExpenses />}
         {activeTab === 'activity' && <AdminActivityLog />}
         {activeTab === 'user_emails' && <AdminUserEmails />}
         {activeTab === 'intelligence' && <AdminIntelligence />}

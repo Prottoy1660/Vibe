@@ -17,6 +17,7 @@ import {
   Info,
   TrendingUp,
   Wallet,
+  Receipt,
   ScrollText,
   User as UserIcon,
   Sun,
@@ -167,7 +168,8 @@ export const Layout = () => {
       name: 'Overview',
       items: [
         { name: 'Admin Dashboard', href: '/admin?tab=overview', icon: LayoutDashboard },
-        { name: 'Profit & expenses', href: '/admin?tab=finance', icon: Wallet },
+        { name: 'Profit', href: '/admin?tab=finance', icon: Wallet },
+        { name: 'Expenses', href: '/admin?tab=expenses', icon: Receipt },
         { name: 'Financial Analytics', href: '/admin?tab=analytics', icon: TrendingUp },
         { name: 'Activity log', href: '/admin?tab=activity', icon: ScrollText },
       ]

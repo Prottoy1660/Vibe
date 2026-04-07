@@ -273,8 +273,20 @@ export const AdminAppDownloads = () => {
           />
         </div>
 
-        <div className="mt-5 rounded-xl border border-amber-200/60 bg-amber-50/60 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-          Coming soon is now controlled per platform (Windows/Android/macOS) below.
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200/60 bg-amber-50/60 p-3 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+          <span>
+            Coming soon is controlled per platform below.
+            {config.forceComingSoon ? ' (Legacy global coming soon is currently ON — turn it off to use per-platform toggles.)' : ''}
+          </span>
+          {config.forceComingSoon ? (
+            <button
+              type="button"
+              onClick={() => setConfig((prev) => ({ ...prev, forceComingSoon: false }))}
+              className="inline-flex items-center justify-center rounded-lg bg-amber-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-amber-500"
+            >
+              Disable global coming soon
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -311,13 +323,14 @@ export const AdminAppDownloads = () => {
               <div className="flex items-center justify-between rounded-lg border border-amber-200/60 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/10 px-3 py-2.5">
                 <p className="text-xs font-medium text-amber-900 dark:text-amber-200">Show &ldquo;Coming soon&rdquo; for this platform</p>
                 <ToggleSwitch
-                  checked={Boolean(config.forceComingSoon) || Boolean(config[key].comingSoon)}
+                  checked={Boolean(config[key].comingSoon)}
                   onToggle={() =>
                     setConfig((prev) => ({
                       ...prev,
+                      // If old global setting is ON from earlier versions, turning on/off per platform should disable it.
+                      forceComingSoon: false,
                       [key]: {
                         ...prev[key],
-                        // If legacy global switch is still enabled, keep UI consistent by toggling platform flag only.
                         comingSoon: !prev[key].comingSoon,
                       },
                     }))

@@ -17,6 +17,7 @@ interface Product {
   title: string;
   price: number;
   is_active?: boolean;
+  is_personal?: boolean;
 }
 
 const productSelectClassName =
@@ -398,7 +399,7 @@ export const AdminRedeemCodes = () => {
       if (rawProducts.length === 0) {
         const { data: fallbackRows, error: fallbackErr } = await supabase
           .from('products')
-          .select('id, title, price, is_active');
+          .select('id, title, price, is_active, is_personal');
         if (fallbackErr) {
           console.error('AdminRedeemCodes products fallback:', fallbackErr);
           setProductsLoadError(catalogErr || fallbackErr.message || 'Could not load products');
@@ -410,7 +411,9 @@ export const AdminRedeemCodes = () => {
         setProductsLoadError(null);
       }
 
-      const productsData = sortProductsForAdmin(rawProducts);
+      // Personal subscriptions should not be redeemable via redeem codes.
+      const redeemableProducts = rawProducts.filter((p) => p?.is_personal !== true);
+      const productsData = sortProductsForAdmin(redeemableProducts);
       setProducts(productsData);
 
       const pendingJson = pendingRes.body;

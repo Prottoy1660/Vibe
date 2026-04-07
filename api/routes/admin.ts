@@ -157,6 +157,209 @@ router.get('/finance/operational-expenses', verifyAdmin, async (req, res) => {
   }
 });
 
+router.post('/finance/operational-expenses', verifyAdmin, async (req, res) => {
+  try {
+    const body = (req.body || {}) as Record<string, any>;
+
+    const category = typeof body.category === 'string' ? body.category.trim() : '';
+    const expense_date = typeof body.expense_date === 'string' ? body.expense_date.trim() : '';
+    const currency = body.currency === 'USD' ? 'USD' : 'BDT';
+    const amount = Number(body.amount);
+    const amount_original = body.amount_original == null ? null : Number(body.amount_original);
+    const fx_rate_to_bdt = body.fx_rate_to_bdt == null ? null : Number(body.fx_rate_to_bdt);
+
+    if (!category) return res.status(400).json({ error: 'category is required' });
+    if (!expense_date) return res.status(400).json({ error: 'expense_date is required' });
+    if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'amount must be >= 0' });
+    if (amount_original != null && (!Number.isFinite(amount_original) || amount_original < 0)) {
+      return res.status(400).json({ error: 'amount_original must be >= 0' });
+    }
+    if (fx_rate_to_bdt != null && (!Number.isFinite(fx_rate_to_bdt) || fx_rate_to_bdt <= 0)) {
+      return res.status(400).json({ error: 'fx_rate_to_bdt must be > 0' });
+    }
+
+    const payload: any = {
+      category,
+      amount,
+      currency,
+      amount_original,
+      fx_rate_to_bdt: fx_rate_to_bdt ?? 1,
+      fx_source: typeof body.fx_source === 'string' ? body.fx_source.trim() : null,
+      vendor_name: typeof body.vendor_name === 'string' ? body.vendor_name.trim() : null,
+      payment_method: typeof body.payment_method === 'string' ? body.payment_method.trim() : null,
+      tags: Array.isArray(body.tags) ? body.tags.filter((t: any) => typeof t === 'string' && t.trim()) : [],
+      attachment_urls: Array.isArray(body.attachment_urls)
+        ? body.attachment_urls.filter((u: any) => typeof u === 'string' && u.startsWith('http'))
+        : [],
+      expense_date,
+      note: typeof body.note === 'string' ? body.note.trim() || null : null,
+      is_recurring_template: body.is_recurring_template === true,
+      recurrence_interval: typeof body.recurrence_interval === 'string' ? body.recurrence_interval : null,
+      next_due_date: typeof body.next_due_date === 'string' ? body.next_due_date : null,
+      template_active: body.template_active === true,
+      template_id: typeof body.template_id === 'string' ? body.template_id : null,
+    };
+
+    const { data, error } = await supabase.from('operational_expenses').insert(payload).select('*').single();
+    if (error) throw error;
+    return res.json({ success: true, expense: data });
+  } catch (e: any) {
+    console.error('finance/operational-expenses create:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to create expense' });
+  }
+});
+
+router.delete('/finance/operational-expenses/:id', verifyAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id is required' });
+    const { error } = await supabase.from('operational_expenses').delete().eq('id', id);
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('finance/operational-expenses delete:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to delete expense' });
+  }
+});
+
+router.patch('/finance/presets', verifyAdmin, async (req, res) => {
+  try {
+    const { key, value } = (req.body || {}) as { key?: string; value?: any };
+    const allowed = new Set([
+      'operational_expense_categories',
+      'operational_payment_methods',
+      'operational_category_budgets',
+    ]);
+    if (!key || typeof key !== 'string' || !allowed.has(key)) {
+      return res.status(400).json({ error: 'Invalid key' });
+    }
+    if (value === null || value === undefined || typeof value !== 'object') {
+      return res.status(400).json({ error: 'Invalid value' });
+    }
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (e: any) {
+    console.error('finance/presets patch:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to save preset' });
+  }
+});
+
+router.post('/finance/expense-attachments/upload-sign-url', verifyAdmin, async (req, res) => {
+  try {
+    const { file_name, content_type } = (req.body || {}) as {
+      file_name?: string;
+      content_type?: string;
+    };
+    if (!file_name || typeof file_name !== 'string') {
+      return res.status(400).json({ error: 'file_name is required' });
+    }
+    const lower = file_name.toLowerCase();
+    const allowed = ['.png', '.jpg', '.jpeg', '.webp', '.pdf'];
+    if (!allowed.some((ext) => lower.endsWith(ext))) {
+      return res.status(400).json({ error: 'Invalid file type (allowed: png, jpg, webp, pdf)' });
+    }
+
+    const bucket = 'expense-attachments';
+    const cleaned = file_name.replace(/[^a-zA-Z0-9._-]+/g, '-');
+    const filePath = `expenses/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${cleaned}`;
+
+    const { data: bucketInfo } = await supabase.storage.getBucket(bucket);
+    if (!bucketInfo) {
+      const { error: createErr } = await supabase.storage.createBucket(bucket, {
+        public: true,
+        fileSizeLimit: '20MB',
+      });
+      if (createErr && !String(createErr.message || '').toLowerCase().includes('already')) {
+        throw createErr;
+      }
+    }
+
+    const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(filePath);
+    if (error || !data) throw error || new Error('Failed to create signed upload URL');
+    const { data: pub } = supabase.storage.from(bucket).getPublicUrl(filePath);
+
+    return res.json({
+      success: true,
+      bucket,
+      path: filePath,
+      token: data.token,
+      signed_url: data.signedUrl,
+      public_url: pub.publicUrl,
+      content_type: content_type || '',
+    });
+  } catch (error: any) {
+    console.error('expense attachments signed upload error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/finance/recurring/run', verifyAdmin, async (_req, res) => {
+  try {
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    const { data: templates, error } = await supabase
+      .from('operational_expenses')
+      .select('*')
+      .eq('is_recurring_template', true)
+      .eq('template_active', true)
+      .lte('next_due_date', todayStr)
+      .limit(500);
+    if (error) throw error;
+
+    let generated = 0;
+    for (const t of templates || []) {
+      const interval = String((t as any).recurrence_interval || '').toLowerCase();
+      if (interval !== 'weekly' && interval !== 'monthly') continue;
+
+      // Create an instance expense row (BDT equivalent is stored in `amount`).
+      const insertPayload: any = {
+        category: (t as any).category,
+        amount: (t as any).amount,
+        currency: (t as any).currency || 'BDT',
+        amount_original: (t as any).amount_original ?? (t as any).amount,
+        fx_rate_to_bdt: (t as any).fx_rate_to_bdt ?? 1,
+        fx_source: (t as any).fx_source ?? null,
+        vendor_name: (t as any).vendor_name ?? null,
+        payment_method: (t as any).payment_method ?? null,
+        tags: (t as any).tags ?? [],
+        attachment_urls: (t as any).attachment_urls ?? [],
+        expense_date: (t as any).next_due_date || todayStr,
+        note: (t as any).note ?? null,
+        template_id: (t as any).id,
+        is_recurring_template: false,
+      };
+
+      const { error: insErr } = await supabase.from('operational_expenses').insert(insertPayload);
+      if (!insErr) generated++;
+
+      const due = new Date(String((t as any).next_due_date || todayStr) + 'T12:00:00Z');
+      const next = new Date(due);
+      if (interval === 'weekly') next.setUTCDate(next.getUTCDate() + 7);
+      else next.setUTCMonth(next.getUTCMonth() + 1);
+      const nextStr = next.toISOString().slice(0, 10);
+
+      await supabase
+        .from('operational_expenses')
+        .update({ next_due_date: nextStr, last_generated_at: new Date().toISOString() })
+        .eq('id', (t as any).id);
+    }
+
+    return res.json({ success: true, generated });
+  } catch (e: any) {
+    console.error('finance recurring/run:', e);
+    return res.status(500).json({ error: e?.message || 'Failed to run recurring expenses' });
+  }
+});
+
 router.delete('/users/:id', verifyAdmin, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -525,7 +728,7 @@ router.get('/ops/catalog-products', verifyAdmin, async (_req, res) => {
   try {
     const { data, error } = await supabase
       .from('products')
-      .select('id, title, price, is_active')
+      .select('id, title, price, is_active, is_personal')
       .order('title', { ascending: true });
     if (error) throw error;
     return res.json({ success: true, products: data || [] });

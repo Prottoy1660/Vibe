@@ -312,13 +312,21 @@ export const Downloads = () => {
                   <ArrowRight className="h-4 w-4" />
                 </a>
               ) : (
-                <button
-                  type="button"
-                  disabled
-                  className="mt-5 inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-500 dark:border-[#343844] dark:bg-[#2a2d37] dark:text-gray-400"
-                >
-                  Coming soon
-                </button>
+                <div className="mt-5 grid gap-2">
+                  <a
+                    href="/support"
+                    className="inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition hover:bg-gray-50 dark:border-[#343844] dark:bg-[#1c1f29] dark:text-gray-100 dark:hover:bg-[#232635]"
+                  >
+                    Contact support
+                  </a>
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-xl border border-gray-200 bg-gray-100 px-4 py-3 text-sm font-semibold text-gray-500 dark:border-[#343844] dark:bg-[#2a2d37] dark:text-gray-400"
+                  >
+                    Coming soon
+                  </button>
+                </div>
               )}
             </section>
           );
