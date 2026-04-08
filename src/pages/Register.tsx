@@ -20,6 +20,7 @@ import { isAllowedSignupEmail, SIGNUP_EMAIL_DOMAIN_BLOCKED } from '../lib/allowe
 import { requestSignupIntent } from '../lib/signupIntent';
 import { postJsonWithFallback } from '../lib/apiClient';
 import { hasMinimumPhone } from '../lib/phoneRequired';
+import { toast } from '../lib/toast';
 
 export const Register = () => {
   const [searchParams] = useSearchParams();
@@ -33,6 +34,9 @@ export const Register = () => {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
+  const [googleLoginUnderMaintenance, setGoogleLoginUnderMaintenance] = useState(false);
+  const [facebookLoginUnderMaintenance, setFacebookLoginUnderMaintenance] = useState(false);
+  const [microsoftLoginUnderMaintenance, setMicrosoftLoginUnderMaintenance] = useState(false);
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
@@ -57,14 +61,23 @@ export const Register = () => {
           enable_google_login?: boolean;
           enable_facebook_login?: boolean;
           enable_microsoft_login?: boolean;
+          google_login_under_maintenance?: boolean;
+          facebook_login_under_maintenance?: boolean;
+          microsoft_login_under_maintenance?: boolean;
         };
         setGoogleLoginEnabled(v.enable_google_login !== false);
         setFacebookLoginEnabled(v.enable_facebook_login !== false);
         setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+        setGoogleLoginUnderMaintenance(v.google_login_under_maintenance === true);
+        setFacebookLoginUnderMaintenance(v.facebook_login_under_maintenance === true);
+        setMicrosoftLoginUnderMaintenance(v.microsoft_login_under_maintenance === true);
       } else {
         setGoogleLoginEnabled(true);
         setFacebookLoginEnabled(true);
         setMicrosoftLoginEnabled(true);
+        setGoogleLoginUnderMaintenance(false);
+        setFacebookLoginUnderMaintenance(false);
+        setMicrosoftLoginUnderMaintenance(false);
       }
     };
     void fetchSettings();
@@ -85,10 +98,16 @@ export const Register = () => {
             enable_google_login?: boolean;
             enable_facebook_login?: boolean;
             enable_microsoft_login?: boolean;
+            google_login_under_maintenance?: boolean;
+            facebook_login_under_maintenance?: boolean;
+            microsoft_login_under_maintenance?: boolean;
           };
           setGoogleLoginEnabled(v.enable_google_login !== false);
           setFacebookLoginEnabled(v.enable_facebook_login !== false);
           setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+          setGoogleLoginUnderMaintenance(v.google_login_under_maintenance === true);
+          setFacebookLoginUnderMaintenance(v.facebook_login_under_maintenance === true);
+          setMicrosoftLoginUnderMaintenance(v.microsoft_login_under_maintenance === true);
         }
       }, 500);
     };
@@ -172,6 +191,12 @@ export const Register = () => {
   const oauthRedirect = `${window.location.origin}/`;
 
   const handleGoogleLogin = async () => {
+    if (googleLoginUnderMaintenance) {
+      toast.warning('Google sign-up is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -184,6 +209,12 @@ export const Register = () => {
   };
 
   const handleFacebookLogin = async () => {
+    if (facebookLoginUnderMaintenance) {
+      toast.warning('Facebook sign-up is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
@@ -196,6 +227,12 @@ export const Register = () => {
   };
 
   const handleMicrosoftLogin = async () => {
+    if (microsoftLoginUnderMaintenance) {
+      toast.warning('Microsoft sign-up is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'azure',

@@ -53,6 +53,9 @@ export const Login = () => {
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(true);
   const [facebookLoginEnabled, setFacebookLoginEnabled] = useState(true);
   const [microsoftLoginEnabled, setMicrosoftLoginEnabled] = useState(true);
+  const [googleLoginUnderMaintenance, setGoogleLoginUnderMaintenance] = useState(false);
+  const [facebookLoginUnderMaintenance, setFacebookLoginUnderMaintenance] = useState(false);
+  const [microsoftLoginUnderMaintenance, setMicrosoftLoginUnderMaintenance] = useState(false);
   const oauthFallbackTimerRef = useRef<number | null>(null);
   const isDark = theme === 'dark';
 
@@ -74,14 +77,23 @@ export const Login = () => {
           enable_google_login?: boolean;
           enable_facebook_login?: boolean;
           enable_microsoft_login?: boolean;
+          google_login_under_maintenance?: boolean;
+          facebook_login_under_maintenance?: boolean;
+          microsoft_login_under_maintenance?: boolean;
         };
         setGoogleLoginEnabled(v.enable_google_login !== false);
         setFacebookLoginEnabled(v.enable_facebook_login !== false);
         setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+        setGoogleLoginUnderMaintenance(v.google_login_under_maintenance === true);
+        setFacebookLoginUnderMaintenance(v.facebook_login_under_maintenance === true);
+        setMicrosoftLoginUnderMaintenance(v.microsoft_login_under_maintenance === true);
       } else {
         setGoogleLoginEnabled(true);
         setFacebookLoginEnabled(true);
         setMicrosoftLoginEnabled(true);
+        setGoogleLoginUnderMaintenance(false);
+        setFacebookLoginUnderMaintenance(false);
+        setMicrosoftLoginUnderMaintenance(false);
       }
     };
     void fetchSettings();
@@ -102,10 +114,16 @@ export const Login = () => {
             enable_google_login?: boolean;
             enable_facebook_login?: boolean;
             enable_microsoft_login?: boolean;
+            google_login_under_maintenance?: boolean;
+            facebook_login_under_maintenance?: boolean;
+            microsoft_login_under_maintenance?: boolean;
           };
           setGoogleLoginEnabled(v.enable_google_login !== false);
           setFacebookLoginEnabled(v.enable_facebook_login !== false);
           setMicrosoftLoginEnabled(v.enable_microsoft_login !== false);
+          setGoogleLoginUnderMaintenance(v.google_login_under_maintenance === true);
+          setFacebookLoginUnderMaintenance(v.facebook_login_under_maintenance === true);
+          setMicrosoftLoginUnderMaintenance(v.microsoft_login_under_maintenance === true);
         }
       }, 500);
     };
@@ -256,6 +274,12 @@ export const Login = () => {
   }, []);
 
   const handleGoogleLogin = async () => {
+    if (googleLoginUnderMaintenance) {
+      toast.warning('Google sign-in is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       await startOAuth('google');
     } catch (error: any) {
@@ -264,6 +288,12 @@ export const Login = () => {
   };
 
   const handleFacebookLogin = async () => {
+    if (facebookLoginUnderMaintenance) {
+      toast.warning('Facebook sign-in is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       await startOAuth('facebook');
     } catch (error: any) {
@@ -272,6 +302,12 @@ export const Login = () => {
   };
 
   const handleMicrosoftLogin = async () => {
+    if (microsoftLoginUnderMaintenance) {
+      toast.warning('Microsoft sign-in is under maintenance', {
+        description: 'Please try again later.',
+      });
+      return;
+    }
     try {
       await startOAuth('azure', { scopes: 'email profile openid' });
     } catch (error: any) {

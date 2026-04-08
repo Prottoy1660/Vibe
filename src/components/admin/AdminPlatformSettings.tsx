@@ -17,6 +17,15 @@ function HelpDetails({ summary, children }: { summary: string; children: React.R
   );
 }
 
+type AuthSettingsValue = {
+  enable_google_login?: boolean;
+  enable_facebook_login?: boolean;
+  enable_microsoft_login?: boolean;
+  google_login_under_maintenance?: boolean;
+  facebook_login_under_maintenance?: boolean;
+  microsoft_login_under_maintenance?: boolean;
+};
+
 export const AdminPlatformSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,14 +37,25 @@ export const AdminPlatformSettings: React.FC = () => {
   const [personalSubsEnabled, setPersonalSubsEnabled] = useState(true);
   const [personalSaving, setPersonalSaving] = useState(false);
   const [personalMessage, setPersonalMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [authForm, setAuthForm] = useState<AuthSettingsValue>({
+    enable_google_login: true,
+    enable_facebook_login: true,
+    enable_microsoft_login: true,
+    google_login_under_maintenance: false,
+    facebook_login_under_maintenance: false,
+    microsoft_login_under_maintenance: false,
+  });
+  const [authSaving, setAuthSaving] = useState(false);
+  const [authMessage, setAuthMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [ps, adobe, personal] = await Promise.all([
+        const [ps, adobe, personal, auth] = await Promise.all([
           supabase.from('system_settings').select('value').eq('key', 'platform_status').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'adobe_email_slots').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
+          supabase.from('system_settings').select('value').eq('key', 'auth_settings').maybeSingle(),
         ]);
         if (ps.error) throw ps.error;
         setForm(parsePlatformStatus(ps.data?.value));
@@ -43,9 +63,20 @@ export const AdminPlatformSettings: React.FC = () => {
         setSlotEmergency(v.emergency_unlock === true);
         const pv = (personal.data?.value || {}) as { enabled?: boolean };
         setPersonalSubsEnabled(pv.enabled !== false);
+        const av = (auth.data?.value || {}) as AuthSettingsValue;
+        setAuthForm({
+          ...av,
+          enable_google_login: av.enable_google_login !== false,
+          enable_facebook_login: av.enable_facebook_login !== false,
+          enable_microsoft_login: av.enable_microsoft_login !== false,
+          google_login_under_maintenance: av.google_login_under_maintenance === true,
+          facebook_login_under_maintenance: av.facebook_login_under_maintenance === true,
+          microsoft_login_under_maintenance: av.microsoft_login_under_maintenance === true,
+        });
       } catch (e) {
         console.error(e);
         setMessage({ type: 'err', text: 'Could not load platform settings.' });
+        setAuthMessage({ type: 'err', text: 'Could not load login provider maintenance settings.' });
       } finally {
         setLoading(false);
       }
@@ -126,6 +157,36 @@ export const AdminPlatformSettings: React.FC = () => {
       setPersonalMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
     } finally {
       setPersonalSaving(false);
+    }
+  };
+
+  const saveAuthUnderMaintenance = async () => {
+    setAuthSaving(true);
+    setAuthMessage(null);
+    try {
+      const value: AuthSettingsValue = {
+        ...authForm,
+        google_login_under_maintenance: authForm.google_login_under_maintenance === true,
+        facebook_login_under_maintenance: authForm.facebook_login_under_maintenance === true,
+        microsoft_login_under_maintenance: authForm.microsoft_login_under_maintenance === true,
+      };
+      const { error } = await supabase.from('system_settings').upsert(
+        {
+          key: 'auth_settings',
+          value,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' },
+      );
+      if (error) throw error;
+      setAuthMessage({
+        type: 'ok',
+        text: 'Login provider maintenance saved. Clicks will show toast and block OAuth.',
+      });
+    } catch (e: unknown) {
+      setAuthMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
+    } finally {
+      setAuthSaving(false);
     }
   };
 
@@ -338,6 +399,72 @@ export const AdminPlatformSettings: React.FC = () => {
         >
           {personalSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save personal plans
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">
+        <div className="flex items-center gap-2 mb-3">
+          <Info className="w-5 h-5 text-indigo-500 shrink-0" />
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Login providers maintenance (toast)</h2>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0 mb-4">
+          When enabled, the Google/Facebook/Microsoft login buttons will still be shown (if enabled) but clicks will display an “Under maintenance” toast and block OAuth.
+        </p>
+
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={authForm.google_login_under_maintenance === true}
+              onChange={(e) => setAuthForm((f) => ({ ...f, google_login_under_maintenance: e.target.checked }))}
+              className="mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Google login under maintenance
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={authForm.facebook_login_under_maintenance === true}
+              onChange={(e) => setAuthForm((f) => ({ ...f, facebook_login_under_maintenance: e.target.checked }))}
+              className="mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Facebook login under maintenance
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={authForm.microsoft_login_under_maintenance === true}
+              onChange={(e) => setAuthForm((f) => ({ ...f, microsoft_login_under_maintenance: e.target.checked }))}
+              className="mt-0.5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Microsoft login under maintenance
+            </span>
+          </label>
+        </div>
+
+        {authMessage && (
+          <p
+            className={`text-sm mt-4 ${authMessage.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+          >
+            {authMessage.text}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={() => void saveAuthUnderMaintenance()}
+          disabled={authSaving}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
+        >
+          {authSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save login maintenance
         </button>
       </div>
       </div>
