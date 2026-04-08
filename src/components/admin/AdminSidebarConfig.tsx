@@ -15,6 +15,7 @@ const AVAILABLE_TABS = [
   { id: 'user_emails', label: 'User Subscriptions' },
   { id: 'notices', label: 'Important Notices' },
   { id: 'user_notifications', label: 'User notifications' },
+  { id: 'user_inbox_history', label: 'Notification history' },
   { id: 'push_notifications', label: 'Push notifications' },
   { id: 'emails', label: 'Email Inventory' },
   { id: 'intelligence', label: 'User Intelligence' },

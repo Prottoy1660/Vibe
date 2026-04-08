@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Loader2, Megaphone, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import React, { useState } from 'react';
+import { Loader2, Megaphone, Send, AlertCircle, CheckCircle2, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { getApiBaseUrl } from '../../lib/apiBase';
@@ -43,53 +43,6 @@ export const AdminUserNotifications: React.FC = () => {
   const [recipientsRaw, setRecipientsRaw] = useState('');
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const [recent, setRecent] = useState<InboxWithUser[]>([]);
-  const [recentLoading, setRecentLoading] = useState(true);
-
-  const loadRecent = useCallback(async () => {
-    setRecentLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('user_inbox')
-        .select('id, user_id, title, body, read_at, created_at, users ( email, name )')
-        .order('created_at', { ascending: false })
-        .limit(40);
-
-      if (error) throw error;
-      const rows = (data || []) as {
-        id: string;
-        user_id: string;
-        title: string;
-        body: string;
-        read_at: string | null;
-        created_at: string;
-        users: { email: string; name: string } | null | { email: string; name: string }[];
-      }[];
-      setRecent(
-        rows.map((r) => {
-          const u = r.users;
-          const recipient = Array.isArray(u) ? u[0] ?? null : u ?? null;
-          return {
-            id: r.id,
-            user_id: r.user_id,
-            title: r.title,
-            body: r.body,
-            read_at: r.read_at,
-            created_at: r.created_at,
-            recipient,
-          };
-        })
-      );
-    } catch {
-      setRecent([]);
-    } finally {
-      setRecentLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadRecent();
-  }, [loadRecent]);
 
   const parseEmails = (raw: string) => {
     const parts = raw
@@ -176,7 +129,6 @@ export const AdminUserNotifications: React.FC = () => {
       setTitle('');
       setBody('');
       setRecipientsRaw('');
-      void loadRecent();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to send notifications.';
       setFeedback({ type: 'err', text: msg });
@@ -197,6 +149,11 @@ export const AdminUserNotifications: React.FC = () => {
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
               Send a personal message to selected customers. It appears in the bell next to the theme toggle (not on admin
               pages). Use for billing, access, or urgent account updates.
+            </p>
+            <p className="mt-2 text-sm">
+              <Link to="/admin?tab=user_inbox_history" className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                Open delivery history →
+              </Link>
             </p>
           </div>
         </div>
@@ -268,46 +225,6 @@ export const AdminUserNotifications: React.FC = () => {
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           Send notifications
         </button>
-      </div>
-
-      <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-soft dark:border-[#26262d] dark:bg-[#151518] dark:shadow-none">
-        <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Recent deliveries</h3>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Latest messages across all users (newest first).</p>
-
-        {recentLoading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary/60" />
-          </div>
-        ) : recent.length === 0 ? (
-          <p className="mt-6 text-sm text-gray-500 dark:text-gray-400">No inbox messages yet.</p>
-        ) : (
-          <ul className="mt-4 divide-y divide-gray-100 dark:divide-[#26262d]">
-            {recent.map((row) => (
-              <li key={row.id} className="py-3 first:pt-0">
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{row.title}</span>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                    {formatDistanceToNow(new Date(row.created_at), { addSuffix: true })}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                  To:{' '}
-                  <span className="font-medium text-gray-700 dark:text-gray-300">
-                    {row.recipient?.email ?? row.user_id.slice(0, 8) + '…'}
-                  </span>
-                  {row.read_at ? (
-                    <span className="ml-2 rounded-md bg-gray-100 px-1.5 py-0.5 dark:bg-white/10">Read</span>
-                  ) : (
-                    <span className="ml-2 rounded-md bg-primary/10 px-1.5 py-0.5 text-primary dark:bg-violet-400/90">
-                      Unread
-                    </span>
-                  )}
-                </p>
-                <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-400">{row.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     </div>
   );

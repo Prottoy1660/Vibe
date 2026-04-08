@@ -45,6 +45,7 @@ const AdminSupport = React.lazy(() => import('../components/admin/AdminSupport')
 const AdminPlatformSettings = React.lazy(() => import('../components/admin/AdminPlatformSettings').then((m) => ({ default: m.AdminPlatformSettings })));
 const AdminWaitlist = React.lazy(() => import('../components/admin/AdminWaitlist').then((m) => ({ default: m.AdminWaitlist })));
 const AdminUserNotifications = React.lazy(() => import('../components/admin/AdminUserNotifications').then((m) => ({ default: m.AdminUserNotifications })));
+const AdminUserInboxHistory = React.lazy(() => import('../components/admin/AdminUserInboxHistory').then((m) => ({ default: m.AdminUserInboxHistory })));
 const AdminPushSubscriptions = React.lazy(() => import('../components/admin/AdminPushSubscriptions').then((m) => ({ default: m.AdminPushSubscriptions })));
 const AdminLobbyMusic = React.lazy(() => import('../components/admin/AdminLobbyMusic').then((m) => ({ default: m.AdminLobbyMusic })));
 const AdminSupportChatSettings = React.lazy(() =>
@@ -296,6 +297,12 @@ export const AdminDashboard = () => {
                 User notifications
               </span>
             )}
+            {activeTab === 'user_inbox_history' && (
+              <span className="flex items-center gap-2">
+                <Megaphone className="w-6 h-6" />
+                Delivery history
+              </span>
+            )}
             {activeTab === 'push_notifications' && (
               <span className="flex items-center gap-2">
                 <BellRing className="w-6 h-6" />
@@ -388,6 +395,7 @@ export const AdminDashboard = () => {
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}
+        {activeTab === 'user_inbox_history' && <AdminUserInboxHistory />}
         {activeTab === 'push_notifications' && <AdminPushSubscriptions />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
         {activeTab === 'app_downloads' && <AdminAppDownloads />}

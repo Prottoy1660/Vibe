@@ -190,6 +190,7 @@ export const Layout = () => {
         { name: 'User Subscriptions', href: '/admin?tab=user_emails', icon: ShieldAlert },
         { name: 'Important Notices', href: '/admin?tab=notices', icon: Info },
         { name: 'User notifications', href: '/admin?tab=user_notifications', icon: Megaphone },
+        { name: 'Notification history', href: '/admin?tab=user_inbox_history', icon: Megaphone },
         { name: 'Push notifications', href: '/admin?tab=push_notifications', icon: BellRing },
         { name: 'Email Inventory', href: '/admin?tab=emails', icon: Mail },
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
