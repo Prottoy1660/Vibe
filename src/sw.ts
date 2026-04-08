@@ -10,6 +10,14 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: any[];
 };
 
+// Activate new SW ASAP to reduce "old HTML + new chunks" mismatches.
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST || []);
 

@@ -6,6 +6,32 @@ import { RootErrorBoundary } from './components/RootErrorBoundary';
 import { toast } from './lib/toast';
 import './index.css';
 
+function isChunkLoadFailure(err: unknown): boolean {
+  const msg =
+    (err instanceof Error ? err.message : typeof err === 'string' ? err : '')?.toString?.() || '';
+  return (
+    /ChunkLoadError/i.test(msg) ||
+    /Loading chunk [\d]+ failed/i.test(msg) ||
+    /Failed to fetch dynamically imported module/i.test(msg) ||
+    /Importing a module script failed/i.test(msg)
+  );
+}
+
+function reloadOnceForChunkFailure() {
+  const key = 'reloaded_for_chunk_failure_v1';
+  if (typeof window === 'undefined') return;
+  try {
+    if (sessionStorage.getItem(key) === '1') return;
+    sessionStorage.setItem(key, '1');
+  } catch {
+    // ignore
+  }
+  // Hard reload: bypass SW/HTTP caches as much as possible.
+  const u = new URL(window.location.href);
+  u.searchParams.set('__r', Date.now().toString());
+  window.location.replace(u.toString());
+}
+
 if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID !== 'function') {
   const fallbackRandomUUID = () => {
     const bytes = new Uint8Array(16);
@@ -19,6 +45,19 @@ if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomU
     value: fallbackRandomUUID,
     configurable: true,
     writable: false,
+  });
+}
+
+// If a deploy happens while a user is browsing, old cached chunks can mismatch new HTML.
+// Catch the common "chunk failed to load" errors and force a one-time reload.
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => {
+    const anyE = e as any;
+    if (isChunkLoadFailure(anyE?.error || anyE?.message)) reloadOnceForChunkFailure();
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    const anyE = e as any;
+    if (isChunkLoadFailure(anyE?.reason)) reloadOnceForChunkFailure();
   });
 }
 
