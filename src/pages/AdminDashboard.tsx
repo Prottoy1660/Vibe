@@ -45,6 +45,7 @@ const AdminSupport = React.lazy(() => import('../components/admin/AdminSupport')
 const AdminPlatformSettings = React.lazy(() => import('../components/admin/AdminPlatformSettings').then((m) => ({ default: m.AdminPlatformSettings })));
 const AdminWaitlist = React.lazy(() => import('../components/admin/AdminWaitlist').then((m) => ({ default: m.AdminWaitlist })));
 const AdminUserNotifications = React.lazy(() => import('../components/admin/AdminUserNotifications').then((m) => ({ default: m.AdminUserNotifications })));
+const AdminPushSubscriptions = React.lazy(() => import('../components/admin/AdminPushSubscriptions').then((m) => ({ default: m.AdminPushSubscriptions })));
 const AdminLobbyMusic = React.lazy(() => import('../components/admin/AdminLobbyMusic').then((m) => ({ default: m.AdminLobbyMusic })));
 const AdminSupportChatSettings = React.lazy(() =>
   import('../components/admin/AdminSupportChatSettings').then((m) => ({ default: m.AdminSupportChatSettings })),
@@ -295,6 +296,12 @@ export const AdminDashboard = () => {
                 User notifications
               </span>
             )}
+            {activeTab === 'push_notifications' && (
+              <span className="flex items-center gap-2">
+                <BellRing className="w-6 h-6" />
+                Push notifications
+              </span>
+            )}
             {activeTab === 'emails' && 'Email Inventory'}
             {activeTab === 'user_emails' && 'User Subscriptions'}
             {activeTab === 'intelligence' && (
@@ -381,6 +388,7 @@ export const AdminDashboard = () => {
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}
+        {activeTab === 'push_notifications' && <AdminPushSubscriptions />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
         {activeTab === 'app_downloads' && <AdminAppDownloads />}
         {activeTab === 'sidebar_config' && isSuperAdmin && <AdminSidebarConfig />}

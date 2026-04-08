@@ -27,10 +27,14 @@ async function geoContextHandler(req: Request, res: Response) {
   try {
     const ip = clientIp(req)
 
-    // ipapi supports /json/<ip>
+    // Use ipwho.is (server-to-server) for geo + security flags (vpn/proxy/tor/hosting).
+    // Note: `security=1` may be plan-gated; if unavailable we still return geo.
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 4500)
-    const geoRes = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: controller.signal })
+    const geoRes = await fetch(
+      `https://ipwho.is/${encodeURIComponent(ip)}?security=1`,
+      { signal: controller.signal },
+    )
     clearTimeout(timeout)
     if (!geoRes.ok) throw new Error(`geo provider failed (status ${geoRes.status})`)
 
@@ -39,12 +43,13 @@ async function geoContextHandler(req: Request, res: Response) {
     return res.json({
       success: true,
       ip_address: geo?.ip || ip || '',
-      country: geo?.country_name || '',
+      country: geo?.country || '',
       city: geo?.city || '',
       region: geo?.region || '',
-      isp: geo?.org || '',
+      isp: geo?.connection?.isp || geo?.connection?.org || '',
       latitude: typeof geo?.latitude === 'number' ? geo.latitude : null,
       longitude: typeof geo?.longitude === 'number' ? geo.longitude : null,
+      is_vpn: typeof geo?.security?.vpn === 'boolean' ? geo.security.vpn : null,
     })
   } catch {
     // Return safe fallbacks; client can still persist telemetry without geo fields.
@@ -57,6 +62,7 @@ async function geoContextHandler(req: Request, res: Response) {
       isp: '',
       latitude: null,
       longitude: null,
+      is_vpn: null,
     })
   }
 }

@@ -15,15 +15,20 @@ import {
   Sparkles,
   CalendarDays,
   ShieldCheck,
+  BellRing,
 } from 'lucide-react';
 import { setStoredLanguage, type AppLanguage } from '../lib/language';
 import { hasMinimumPhone } from '../lib/phoneRequired';
+import { disableWebPush, enableWebPush, getPushPermission } from '../lib/webPushClient';
 
 export const Profile = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [message, setMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [pushPerm, setPushPerm] = useState<NotificationPermission>('default');
   
   const [formData, setFormData] = useState({
     name: '',
@@ -69,6 +74,13 @@ export const Profile = () => {
 
     fetchProfile();
   }, [user]);
+
+  useEffect(() => {
+    void (async () => {
+      const p = await getPushPermission();
+      setPushPerm(p);
+    })();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -351,6 +363,94 @@ export const Profile = () => {
               )}
 
               <form onSubmit={handleSubmit} className="space-y-6 sm:space-y-7">
+                {/* Browser notifications */}
+                <section className="space-y-3">
+                  <div className="border-b border-gray-100 pb-1.5 dark:border-white/5">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Browser notifications</h3>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      Get reminders on Windows even when this site is closed (like YouTube). Requires permission.
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-gray-50/60 dark:bg-white/[0.03] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <BellRing className="h-4 w-4 text-indigo-500 dark:text-indigo-400" />
+                        <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">Push notifications</span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full border ${
+                          pushPerm === 'granted'
+                            ? 'border-emerald-200/80 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-200'
+                            : pushPerm === 'denied'
+                              ? 'border-red-200/80 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-950/40 dark:text-red-200'
+                              : 'border-gray-200 bg-white text-gray-700 dark:border-[#2a2a32] dark:bg-white/[0.04] dark:text-gray-200'
+                        }`}>
+                          {pushPerm === 'granted' ? 'Enabled' : pushPerm === 'denied' ? 'Blocked' : 'Not enabled'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        If it says <strong>Blocked</strong>, enable notifications from your browser site settings.
+                      </p>
+                      {pushMsg ? (
+                        <p className={`mt-2 text-xs font-medium ${pushMsg.type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {pushMsg.text}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={pushBusy || pushPerm === 'denied'}
+                        onClick={() => {
+                          void (async () => {
+                            setPushBusy(true);
+                            setPushMsg(null);
+                            try {
+                              const out = await enableWebPush();
+                              const p = await getPushPermission();
+                              setPushPerm(p);
+                              if (!out.ok) throw new Error(out.reason || 'Enable failed');
+                              setPushMsg({ type: 'success', text: 'Notifications enabled on this device.' });
+                            } catch (e: any) {
+                              setPushMsg({ type: 'error', text: e?.message || 'Enable failed' });
+                            } finally {
+                              setPushBusy(false);
+                            }
+                          })();
+                        }}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-60"
+                      >
+                        {pushBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Enable
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pushBusy}
+                        onClick={() => {
+                          void (async () => {
+                            setPushBusy(true);
+                            setPushMsg(null);
+                            try {
+                              const out = await disableWebPush();
+                              const p = await getPushPermission();
+                              setPushPerm(p);
+                              if (!out.ok) throw new Error(out.reason || 'Disable failed');
+                              setPushMsg({ type: 'success', text: 'Notifications disabled on this device.' });
+                            } catch (e: any) {
+                              setPushMsg({ type: 'error', text: e?.message || 'Disable failed' });
+                            } finally {
+                              setPushBusy(false);
+                            }
+                          })();
+                        }}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100/60 dark:border-[#303038] dark:text-gray-200 dark:hover:bg-white/[0.06]"
+                      >
+                        Disable
+                      </button>
+                    </div>
+                  </div>
+                </section>
+
                 {/* Contact */}
                 <section className="space-y-3">
               <div className="border-b border-gray-100 pb-1.5 dark:border-white/5">

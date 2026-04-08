@@ -14,13 +14,16 @@ export default defineConfig({
     }),
     tsconfigPaths(),
     VitePWA({
+      // We need a custom service worker to handle Web Push events.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       // Avoid unexpected reloads while the user is filling forms / doing admin work.
       // We'll show an in-app prompt instead (see src/main.tsx).
       registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
-      workbox: {
-        // Default precache pulls every hashed chunk (~2MB) — slows first SW install/update.
-        // Skip the heaviest lazy chunks; they still load from network and populate runtime cache below.
+      injectManifest: {
+        // Keep install/update light like the previous Workbox config.
         globIgnores: [
           '**/charts-*.js',
           '**/AdminRedeemCodes-*.js',
@@ -28,22 +31,6 @@ export default defineConfig({
           '**/AdminUsers-*.js',
           '**/AdobeEmail-*.js',
           '**/AdminSubscriptionReminders-*.js',
-        ],
-        navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api/],
-        runtimeCaching: [
-          {
-            urlPattern: ({ request, url }) =>
-              request.destination === 'script' && url.pathname.includes('/assets/'),
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'vibe-js-chunks',
-              expiration: {
-                maxEntries: 72,
-                maxAgeSeconds: 14 * 24 * 60 * 60,
-              },
-            },
-          },
         ],
       },
       manifest: {

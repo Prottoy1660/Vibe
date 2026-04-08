@@ -50,6 +50,7 @@ interface Session {
   isp: string;
   latitude: number | null;
   longitude: number | null;
+  is_vpn?: boolean | null;
   browser_name: string;
   browser_version: string;
   user_agent: string;
@@ -110,6 +111,49 @@ const getOSIcon = (os: string, className = 'w-4 h-4') => {
   if (os?.includes('Linux')) return <Terminal className={className} />;
   return <Laptop className={className} />;
 };
+
+function formatConnectionLabel(raw: string | null | undefined): string {
+  if (!raw) return 'UNKNOWN';
+  const v = String(raw).toLowerCase();
+  if (v.startsWith('eff:')) return `EST ${v.slice(4).toUpperCase()}`; // estimated speed class, not transport
+  if (v === 'wifi') return 'WIFI';
+  if (v === 'cellular') return 'CELLULAR';
+  if (v === 'none') return 'NONE';
+  // legacy rows may be plain effectiveType ("4g") even on WiFi
+  if (v === '4g' || v === '3g' || v === '2g' || v === 'slow-2g') return `EST ${v.toUpperCase()}`;
+  return v.toUpperCase();
+}
+
+function connectionBadgeClass(raw: string | null | undefined): string {
+  const v = (raw || '').toLowerCase();
+  if (v === 'wifi') return 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300';
+  if (v.startsWith('eff:') || v === '4g') return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300';
+  if (v === '3g' || v === 'eff:3g') return 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300';
+  if (v === '2g' || v === 'slow-2g' || v === 'eff:2g' || v === 'eff:slow-2g') return 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300';
+  return 'bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300';
+}
+
+function vpnBadge(session: Session) {
+  if (session.is_vpn === true) {
+    return (
+      <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300 ml-2">
+        VPN
+      </span>
+    );
+  }
+  if (session.is_vpn === false) {
+    return (
+      <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300 ml-2">
+        No VPN
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-bold bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-gray-300 ml-2">
+      VPN?
+    </span>
+  );
+}
 
 function getClientAppLabel(session: Session): string {
   const p = (session.platform || '').toLowerCase();
@@ -697,17 +741,14 @@ export const AdminIntelligence = () => {
                             </td>
                             <td className="px-4 py-3 align-top">
                               <span
-                                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${
-                                  session.connection_type === '4g'
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300'
-                                    : session.connection_type === '3g'
-                                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
-                                      : 'bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300'
-                                }`}
+                                className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${connectionBadgeClass(
+                                  session.connection_type,
+                                )}`}
                               >
                                 <Wifi className="w-2.5 h-2.5" />
-                                {(session.connection_type || 'wifi').toUpperCase()}
+                                {formatConnectionLabel(session.connection_type)}
                               </span>
+                              {vpnBadge(session)}
                               {session.downlink ? (
                                 <p className="text-[10px] text-gray-500 mt-0.5">{session.downlink} Mbps</p>
                               ) : null}
@@ -743,6 +784,10 @@ export const AdminIntelligence = () => {
                                     </DetailBlock>
                                     <DetailBlock title="Network & location" icon={Globe}>
                                       <InfoRow label="IP" value={session.ip_address} mono />
+                                      <InfoRow
+                                        label="VPN"
+                                        value={session.is_vpn === null || session.is_vpn === undefined ? 'Unknown' : session.is_vpn}
+                                      />
                                       <InfoRow
                                         label="Country"
                                         value={
@@ -789,7 +834,7 @@ export const AdminIntelligence = () => {
                                       <InfoRow label="Screen" value={`${session.screen_width}×${session.screen_height}`} />
                                       <InfoRow label="Color depth" value={session.color_depth ? `${session.color_depth}-bit` : null} />
                                       <InfoRow label="Pixel ratio" value={session.pixel_ratio ? `${session.pixel_ratio}×` : null} />
-                                      <InfoRow label="Connection" value={session.connection_type?.toUpperCase()} />
+                                      <InfoRow label="Connection" value={formatConnectionLabel(session.connection_type)} />
                                       <InfoRow label="Downlink" value={session.downlink ? `${session.downlink} Mbps` : null} />
                                       <InfoRow label="RTT" value={session.rtt ? `${session.rtt} ms` : null} />
                                     </DetailBlock>

@@ -178,7 +178,8 @@ export function useFingerprint(user: User | null) {
         let connectionType: string | null = null;
         if (connectionKind === 'wifi') connectionType = 'wifi';
         else if (connectionKind === 'cellular') connectionType = effectiveConnectionType || 'cellular';
-        else connectionType = effectiveConnectionType || connectionKind || null;
+        else if (effectiveConnectionType) connectionType = `eff:${effectiveConnectionType}`; // "effective" speed class only
+        else connectionType = connectionKind || null;
         const downlink = conn?.downlink || null;
         const rtt = conn?.rtt || null;
 
@@ -208,6 +209,7 @@ export function useFingerprint(user: User | null) {
         let isp = '';
         let latitude: number | null = null;
         let longitude: number | null = null;
+        let isVpn: boolean | null = null;
         try {
           const serverGeo = await postJsonWithFallback('/api/telemetry/geo-context', {}, { skipErrorPageRedirect: true });
           ipAddress = serverGeo?.ip_address || '';
@@ -217,6 +219,7 @@ export function useFingerprint(user: User | null) {
           isp = serverGeo?.isp || '';
           latitude = typeof serverGeo?.latitude === 'number' ? serverGeo.latitude : null;
           longitude = typeof serverGeo?.longitude === 'number' ? serverGeo.longitude : null;
+          isVpn = typeof serverGeo?.is_vpn === 'boolean' ? serverGeo.is_vpn : null;
         } catch { /* geo api failed - proceed without geo data */ }
 
         const sessionData = {
@@ -228,6 +231,7 @@ export function useFingerprint(user: User | null) {
           isp,
           latitude,
           longitude,
+          is_vpn: isVpn,
           browser_name: browser.name,
           browser_version: browser.version,
           user_agent: ua,

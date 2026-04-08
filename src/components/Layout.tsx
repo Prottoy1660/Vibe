@@ -46,6 +46,7 @@ import { PlatformBanner } from './PlatformBanner';
 import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
+import { PushEnablePrompt } from './PushEnablePrompt';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -189,6 +190,7 @@ export const Layout = () => {
         { name: 'User Subscriptions', href: '/admin?tab=user_emails', icon: ShieldAlert },
         { name: 'Important Notices', href: '/admin?tab=notices', icon: Info },
         { name: 'User notifications', href: '/admin?tab=user_notifications', icon: Megaphone },
+        { name: 'Push notifications', href: '/admin?tab=push_notifications', icon: BellRing },
         { name: 'Email Inventory', href: '/admin?tab=emails', icon: Mail },
         { name: 'User Intelligence', href: '/admin?tab=intelligence', icon: Fingerprint },
         { name: 'Redeem Codes', href: '/admin?tab=redeem', icon: Gift },
@@ -435,6 +437,7 @@ export const Layout = () => {
                 : 'max-w-6xl',
             )}
           >
+            {showGlobalBanners && user?.id && !isAdmin ? <PushEnablePrompt userId={user.id} /> : null}
             <Outlet />
           </div>
         </main>

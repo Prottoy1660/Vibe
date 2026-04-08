@@ -3,6 +3,28 @@ import { Loader2, Megaphone, Send, AlertCircle, CheckCircle2 } from 'lucide-reac
 import { formatDistanceToNow } from 'date-fns';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { getApiBaseUrl } from '../../lib/apiBase';
+
+function apiUrl(path: string) {
+  const b = getApiBaseUrl().replace(/\/$/, '');
+  return b ? `${b}${path}` : path;
+}
+
+async function adminFetch(path: string, method: string = 'GET', body?: Record<string, unknown>) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  const res = await fetch(apiUrl(path), {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body && method !== 'GET' ? { body: JSON.stringify(body) } : {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error || json?.message || 'Request failed');
+  return json;
+}
 
 type InboxWithUser = {
   id: string;
@@ -129,9 +151,26 @@ export const AdminUserNotifications: React.FC = () => {
       const { error: insErr } = await supabase.from('user_inbox').insert(inserts);
       if (insErr) throw insErr;
 
+      // Best-effort: also push to browser notifications (only reaches devices that enabled it).
+      let pushSent = 0;
+      for (const r of list) {
+        try {
+          const out = await adminFetch('/api/push/admin/send', 'POST', {
+            user_id: r.id,
+            title: t,
+            body: b,
+            url: '/',
+          });
+          if (out?.sent) pushSent += Number(out.sent) || 0;
+        } catch {
+          // ignore push failures; inbox delivery already succeeded
+        }
+      }
+
       const missingUnique = [...new Set(missing)];
       const okMsg =
         `Delivered to ${list.length} account${list.length !== 1 ? 's' : ''}.` +
+        (pushSent ? ` Push sent: ${pushSent}.` : '') +
         (missingUnique.length ? ` Not found: ${missingUnique.join(', ')}` : '');
       setFeedback({ type: 'ok', text: okMsg });
       setTitle('');
