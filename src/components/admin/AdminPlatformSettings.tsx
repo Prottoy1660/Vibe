@@ -26,6 +26,15 @@ type AuthSettingsValue = {
   microsoft_login_under_maintenance?: boolean;
 };
 
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object' && 'message' in e) {
+    const msg = (e as { message?: unknown }).message;
+    if (typeof msg === 'string') return msg;
+  }
+  return 'Save failed';
+}
+
 export const AdminPlatformSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -170,21 +179,25 @@ export const AdminPlatformSettings: React.FC = () => {
         facebook_login_under_maintenance: authForm.facebook_login_under_maintenance === true,
         microsoft_login_under_maintenance: authForm.microsoft_login_under_maintenance === true,
       };
-      const { error } = await supabase.from('system_settings').upsert(
-        {
-          key: 'auth_settings',
-          value,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'key' },
-      );
+      // Prefer UPDATE so we don't require insert permissions (common with RLS).
+      // If the row is missing, give a clear actionable message.
+      const { data, error } = await supabase
+        .from('system_settings')
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq('key', 'auth_settings')
+        .select('key');
       if (error) throw error;
+      if (!data?.length) {
+        throw new Error(
+          'Setting row missing: system_settings.key = auth_settings. Create it (run your settings migration / seed) then try again.',
+        );
+      }
       setAuthMessage({
         type: 'ok',
         text: 'Login provider maintenance saved. Clicks will show toast and block OAuth.',
       });
     } catch (e: unknown) {
-      setAuthMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
+      setAuthMessage({ type: 'err', text: errorMessage(e) });
     } finally {
       setAuthSaving(false);
     }

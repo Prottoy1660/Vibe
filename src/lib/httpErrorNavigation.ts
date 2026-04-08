@@ -23,6 +23,15 @@ const REDIRECTABLE = new Set<number>(HTTP_ERROR_PAGE_CODES);
 export function shouldAutoRedirectToHttpErrorPage(status: number): boolean {
   if (!REDIRECTABLE.has(status)) return false;
   if (typeof window === 'undefined') return false;
+  // If the tab is in the background, avoid hijacking navigation.
+  // Some browsers resume background timers late and can trigger late API errors that feel like a "reload" on return.
+  try {
+    const hidden =
+      typeof document !== 'undefined' && (document.hidden === true || document.visibilityState === 'hidden');
+    if (hidden) return false;
+  } catch {
+    // ignore
+  }
   const p = window.location.pathname;
   if (p.startsWith('/error/')) return false;
   if (p === '/login' || p === '/register') return false;
