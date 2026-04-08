@@ -46,7 +46,6 @@ import { PlatformBanner } from './PlatformBanner';
 import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
-import { enableDraftPersistence } from '../lib/draftPersistence';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -66,12 +65,6 @@ export const Layout = () => {
   const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
-
-  // Global draft persistence: protects in-progress form inputs from tab discard / reload.
-  useEffect(() => {
-    const pageId = `${location.pathname}${location.search}`;
-    return enableDraftPersistence(pageId);
-  }, [location.pathname, location.search]);
 
   // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
