@@ -180,7 +180,7 @@ export const AdminPlatformSettings: React.FC = () => {
         microsoft_login_under_maintenance: authForm.microsoft_login_under_maintenance === true,
       };
       // Prefer UPDATE so we don't require insert permissions (common with RLS).
-      // If the row is missing, give a clear actionable message.
+      // If the row is missing, fall back to UPSERT (some projects allow insert but not update).
       const { data, error } = await supabase
         .from('system_settings')
         .update({ value, updated_at: new Date().toISOString() })
@@ -188,9 +188,19 @@ export const AdminPlatformSettings: React.FC = () => {
         .select('key');
       if (error) throw error;
       if (!data?.length) {
-        throw new Error(
-          'Setting row missing: system_settings.key = auth_settings. Create it (run your settings migration / seed) then try again.',
+        const up = await supabase.from('system_settings').upsert(
+          {
+            key: 'auth_settings',
+            value,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' },
         );
+        if (up.error) {
+          throw new Error(
+            `Could not save auth_settings. Row is missing and insert is blocked. Database error: ${up.error.message}`,
+          );
+        }
       }
       setAuthMessage({
         type: 'ok',
