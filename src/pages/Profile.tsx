@@ -368,7 +368,7 @@ export const Profile = () => {
                   <div className="border-b border-gray-100 pb-1.5 dark:border-white/5">
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Browser notifications</h3>
                     <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      Get reminders on Windows even when this site is closed (like YouTube). Requires permission.
+                      Get reminders on your device even when this tab is closed. Requires permission.
                     </p>
                   </div>
 
