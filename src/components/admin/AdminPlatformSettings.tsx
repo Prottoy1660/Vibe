@@ -26,15 +26,6 @@ type AuthSettingsValue = {
   microsoft_login_under_maintenance?: boolean;
 };
 
-function errorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (e && typeof e === 'object' && 'message' in e) {
-    const msg = (e as { message?: unknown }).message;
-    if (typeof msg === 'string') return msg;
-  }
-  return 'Save failed';
-}
-
 export const AdminPlatformSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -197,7 +188,13 @@ export const AdminPlatformSettings: React.FC = () => {
         text: 'Login provider maintenance saved. Clicks will show toast and block OAuth.',
       });
     } catch (e: unknown) {
-      setAuthMessage({ type: 'err', text: errorMessage(e) });
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof (e as any)?.message === 'string'
+            ? (e as any).message
+            : 'Save failed';
+      setAuthMessage({ type: 'err', text: msg });
     } finally {
       setAuthSaving(false);
     }
