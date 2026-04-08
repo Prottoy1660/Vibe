@@ -20,24 +20,6 @@ export const HTTP_ERROR_PAGE_CODES = [
 
 const REDIRECTABLE = new Set<number>(HTTP_ERROR_PAGE_CODES);
 
-// Avoid "surprise redirects" right when the user returns to the tab.
-// Browsers often resume timers/network late; the first request after focus may fail transiently.
-let lastFocusAtMs = 0;
-if (typeof window !== 'undefined') {
-  try {
-    lastFocusAtMs = Date.now();
-    window.addEventListener(
-      'focus',
-      () => {
-        lastFocusAtMs = Date.now();
-      },
-      { passive: true } as AddEventListenerOptions,
-    );
-  } catch {
-    // ignore
-  }
-}
-
 export function shouldAutoRedirectToHttpErrorPage(status: number): boolean {
   if (!REDIRECTABLE.has(status)) return false;
   if (typeof window === 'undefined') return false;
@@ -50,8 +32,6 @@ export function shouldAutoRedirectToHttpErrorPage(status: number): boolean {
   } catch {
     // ignore
   }
-  // If the user just came back to the tab, don't auto-redirect. Let the UI recover or show toasts instead.
-  if (lastFocusAtMs && Date.now() - lastFocusAtMs < 3500) return false;
   const p = window.location.pathname;
   if (p.startsWith('/error/')) return false;
   if (p === '/login' || p === '/register') return false;

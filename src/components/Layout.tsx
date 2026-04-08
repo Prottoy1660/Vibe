@@ -39,13 +39,19 @@ import { PublicMaintenancePage } from '../pages/PublicMaintenancePage';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { toast } from '../lib/toast';
-import { cn } from '../lib/cn';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 import { detectBrowserLanguage, setStoredLanguage } from '../lib/language';
 import { PlatformBanner } from './PlatformBanner';
 import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
-import { PageDraftBridge } from './PageDraftBridge';
+import { enableDraftPersistence } from '../lib/draftPersistence';
+
+// Utility for merging tailwind classes
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export const Layout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -60,6 +66,12 @@ export const Layout = () => {
   const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
+
+  // Global draft persistence: protects in-progress form inputs from tab discard / reload.
+  useEffect(() => {
+    const pageId = `${location.pathname}${location.search}`;
+    return enableDraftPersistence(pageId);
+  }, [location.pathname, location.search]);
 
   // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
@@ -267,7 +279,6 @@ export const Layout = () => {
 
   return (
       <div className="min-h-screen bg-background dark:bg-[#0a0a0b] flex flex-col md:flex-row transition-colors duration-300">
-      <PageDraftBridge />
       {/* Mobile Header */}
       <div
         className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300"

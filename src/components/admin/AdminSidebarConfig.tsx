@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { EyeOff, Eye, Loader2, Save, ShieldAlert } from 'lucide-react';
-import { cn } from '../../lib/cn';
+import { cn } from '../Layout';
 
 const AVAILABLE_TABS = [
   { id: 'overview', label: 'Admin Dashboard' },
