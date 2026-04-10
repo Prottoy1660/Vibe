@@ -1,14 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X,
-  Send,
-  Loader2,
-  Ticket,
-  ExternalLink,
-  BotMessageSquare,
-} from 'lucide-react';
+import { X, Send, Loader2, Ticket, ExternalLink } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { getJsonWithFallback, postJsonWithFallback } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
@@ -45,6 +38,10 @@ type ReplyPayload = {
   error?: string;
   whatsapp_e164?: string | null;
 };
+
+/** Apple-style memoji for help chat (transparent PNG). */
+const CHAT_MEMOJI_URL =
+  'https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/chat.png';
 
 const SUGGESTED_PROMPTS: { label: string; text: string }[] = [
   { label: 'Payment & Orders', text: 'I need help with a payment or an order.' },
@@ -262,51 +259,73 @@ export function SupportChatWidget() {
         type="button"
         layout
         onClick={() => setOpen((o) => !o)}
-        whileHover={{ scale: 1.06 }}
-        whileTap={{ scale: 0.94 }}
+        whileHover={{ scale: 1.05 }}
+        whileTap={{ scale: 0.95 }}
         className={cn(
-          'fixed z-[60] flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full text-white shadow-xl',
+          'fixed z-[60] flex h-16 w-16 items-center justify-center rounded-full text-white shadow-xl',
           'bottom-20 right-4 md:bottom-8 md:right-6',
-          'bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600',
-          'shadow-[0_12px_40px_-8px_rgba(99,102,241,0.55),0_4px_16px_-4px_rgba(168,85,247,0.35)]',
-          'dark:shadow-[0_16px_48px_-8px_rgba(79,70,229,0.45),0_0_0_1px_rgba(255,255,255,0.08)_inset]',
-          'ring-2 ring-white/25 dark:ring-white/12',
-          open && 'ring-white/45',
+          // Charcoal / warm metal frame — matches memoji hair & glasses, works in light & dark UIs
+          'bg-gradient-to-br from-zinc-500 via-zinc-800 to-neutral-950',
+          'p-[5px]',
+          'shadow-[0_14px_48px_-14px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset,0_4px_20px_-6px_rgba(251,191,36,0.12)]',
+          'dark:shadow-[0_18px_56px_-14px_rgba(0,0,0,0.65),0_0_0_1px_rgba(255,255,255,0.1)_inset,0_4px_24px_-8px_rgba(251,191,36,0.1)]',
+          'ring-1 ring-white/25 dark:ring-white/15',
+          open && 'ring-white/40',
         )}
         aria-label={open ? 'Close help chat' : 'Open help chat'}
       >
         {!open && (
           <>
             <motion.span
-              className="pointer-events-none absolute inset-0 rounded-full bg-violet-400/30"
-              animate={{ scale: [1, 1.45], opacity: [0.5, 0] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut' }}
+              className="pointer-events-none absolute inset-0 rounded-full bg-amber-400/20"
+              animate={{ scale: [1, 1.55], opacity: [0.45, 0] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeOut' }}
               aria-hidden
             />
             <motion.span
-              className="pointer-events-none absolute inset-0 rounded-full border border-white/20"
-              animate={{ scale: [1, 1.15], opacity: [0.6, 0] }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'easeOut', delay: 0.4 }}
+              className="pointer-events-none absolute inset-0 rounded-full border border-stone-200/35"
+              animate={{ scale: [1, 1.2], opacity: [0.5, 0] }}
+              transition={{ duration: 2.6, repeat: Infinity, ease: 'easeOut', delay: 0.45 }}
               aria-hidden
             />
           </>
         )}
-        <span className="relative flex items-center justify-center">
+        <span className="relative z-10 flex h-full w-full items-center justify-center">
           {open ? (
-            <X className="h-6 w-6 drop-shadow-sm" strokeWidth={2.25} />
+            <span className="flex h-full w-full items-center justify-center rounded-full bg-neutral-950/85 ring-1 ring-white/10">
+              <X className="h-6 w-6 text-white drop-shadow-sm" strokeWidth={2.25} />
+            </span>
           ) : (
             <motion.span
-              className="relative flex items-center justify-center"
-              animate={{ y: [0, -2, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+              className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-[#faf7f4] to-[#e5d9cf] shadow-[inset_0_2px_10px_rgba(0,0,0,0.07)] ring-1 ring-black/[0.06]"
+              animate={{
+                y: [0, -3, 0],
+                rotate: [0, -2.5, 2.5, 0],
+              }}
+              transition={{
+                duration: 3.2,
+                repeat: Infinity,
+                ease: 'easeInOut',
+              }}
               aria-hidden
             >
-              <BotMessageSquare className="h-[1.85rem] w-[1.85rem] drop-shadow-md" strokeWidth={2.2} />
+              <motion.img
+                src={CHAT_MEMOJI_URL}
+                alt=""
+                width={112}
+                height={112}
+                loading="eager"
+                decoding="async"
+                draggable={false}
+                className="h-[3.35rem] w-[3.35rem] select-none object-cover object-[50%_18%] scale-[1.08]"
+                animate={{ scale: [1.06, 1.1, 1.06] }}
+                transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+              />
               <motion.span
-                className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/40 bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]"
+                className="absolute bottom-1 right-1 h-2.5 w-2.5 rounded-full border-2 border-[#ebe3dc] bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.85)]"
                 aria-hidden
-                animate={{ scale: [1, 1.15, 1], opacity: [1, 0.85, 1] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                animate={{ scale: [1, 1.18, 1], opacity: [1, 0.88, 1] }}
+                transition={{ duration: 2.1, repeat: Infinity, ease: 'easeInOut' }}
               />
             </motion.span>
           )}
@@ -324,27 +343,28 @@ export function SupportChatWidget() {
             transition={{ type: 'spring', damping: 28, stiffness: 340 }}
             className={cn(
               'fixed z-[59] flex flex-col overflow-hidden rounded-[1.65rem]',
-              'border border-indigo-100/80 bg-white/98 shadow-2xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#0c0c0e]',
-              'shadow-[0_0_0_1px_rgba(139,92,246,0.12),0_28px_90px_-20px_rgba(79,70,229,0.45),0_12px_40px_-12px_rgba(0,0,0,0.5)]',
+              'border border-stone-200/90 bg-white/98 shadow-2xl backdrop-blur-2xl dark:border-white/10 dark:bg-[#0c0c0e]',
+              'shadow-[0_0_0_1px_rgba(120,113,108,0.08),0_28px_90px_-24px_rgba(0,0,0,0.38),0_8px_32px_-12px_rgba(251,191,36,0.06)]',
+              'dark:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_28px_90px_-20px_rgba(0,0,0,0.65),0_8px_28px_-10px_rgba(251,191,36,0.05)]',
               'bottom-36 right-4 h-[min(560px,calc(100vh-8rem))] w-[min(100vw-2rem,400px)] md:bottom-24 md:right-6 md:h-[520px] md:w-[400px]',
             )}
           >
             <div className="relative shrink-0 overflow-hidden border-b border-white/[0.08] px-4 py-4 text-white">
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-zinc-600 via-zinc-800 to-neutral-950" />
               <div
-                className="pointer-events-none absolute inset-0 opacity-[0.06]"
+                className="pointer-events-none absolute inset-0 opacity-[0.07]"
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4V2H2v4h2v4H2v2h4v-2h2zm16 0v-2h4v-4h2v4h-2v2h-4zM6 4V0H4v4H0v2h6V4z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
                 }}
               />
               <motion.div
-                className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-cyan-400/30 blur-3xl"
-                animate={{ x: [0, 12, 0], y: [0, 16, 0], opacity: [0.45, 0.65, 0.45] }}
+                className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-amber-400/18 blur-3xl"
+                animate={{ x: [0, 12, 0], y: [0, 16, 0], opacity: [0.4, 0.58, 0.4] }}
                 transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
               />
               <motion.div
-                className="pointer-events-none absolute -bottom-14 -left-6 h-40 w-40 rounded-full bg-fuchsia-500/35 blur-3xl"
-                animate={{ x: [0, -10, 0], y: [0, -8, 0], opacity: [0.4, 0.6, 0.4] }}
+                className="pointer-events-none absolute -bottom-14 -left-6 h-40 w-40 rounded-full bg-stone-400/20 blur-3xl"
+                animate={{ x: [0, -10, 0], y: [0, -8, 0], opacity: [0.35, 0.52, 0.35] }}
                 transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
               />
               <div className="relative flex items-start justify-between gap-2">
@@ -353,10 +373,19 @@ export function SupportChatWidget() {
                     initial={{ rotate: -6, scale: 0.92 }}
                     animate={{ rotate: 0, scale: 1 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 20 }}
-                    className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] ring-1 ring-white/25 backdrop-blur-md"
+                    className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-[#faf7f4] to-[#e8ded4] shadow-[inset_0_2px_8px_rgba(0,0,0,0.12)] ring-2 ring-white/30"
                   >
-                    <BotMessageSquare className="h-6 w-6 text-white" strokeWidth={2.2} />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/50 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
+                    <img
+                      src={CHAT_MEMOJI_URL}
+                      alt=""
+                      width={96}
+                      height={96}
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                      className="h-[3.25rem] w-[3.25rem] rounded-full object-cover object-[50%_15%] scale-110"
+                    />
+                    <span className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white/55 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
                   </motion.div>
                   <div className="min-w-0">
                     <p className="text-[15px] font-semibold leading-tight tracking-tight drop-shadow-sm">Vibe Access</p>
@@ -405,11 +434,11 @@ export function SupportChatWidget() {
 
             <div
               ref={listRef}
-              className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-indigo-50/20 via-white to-violet-50/20 px-3 py-3 dark:from-[#101012] dark:via-[#0e0e10] dark:to-[#0a0a0c]"
+              className="flex-1 space-y-3 overflow-y-auto bg-gradient-to-b from-stone-50/50 via-white to-[#faf6f3]/40 px-3 py-3 dark:from-[#111113] dark:via-[#0e0e10] dark:to-[#0a0a0c]"
             >
               {panelBusy && (
                 <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-500 dark:text-gray-400">
-                  <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                  <Loader2 className="h-4 w-4 animate-spin text-stone-500 dark:text-stone-400" />
                   Connecting…
                 </div>
               )}
@@ -419,9 +448,9 @@ export function SupportChatWidget() {
                   initial={{ opacity: 0, y: 8, filter: 'blur(4px)' }}
                   animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
                   transition={{ type: 'spring', damping: 22, stiffness: 300 }}
-                  className="relative overflow-hidden rounded-2xl border border-indigo-200/40 bg-gradient-to-br from-indigo-50/95 via-white to-violet-50/50 px-3.5 py-3.5 text-xs leading-relaxed text-gray-600 shadow-sm dark:border-indigo-500/20 dark:from-indigo-950/50 dark:via-[#16151c] dark:to-violet-950/30 dark:text-gray-300"
+                  className="relative overflow-hidden rounded-2xl border border-stone-200/90 bg-gradient-to-br from-[#faf8f6] via-white to-[#f3ebe3]/70 px-3.5 py-3.5 text-xs leading-relaxed text-gray-600 shadow-sm dark:border-[#2c2c32] dark:from-[#18181c] dark:via-[#141416] dark:to-[#121210] dark:text-gray-300"
                 >
-                  <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-indigo-400/15 blur-2xl dark:bg-indigo-500/10" />
+                  <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-amber-200/25 blur-2xl dark:bg-stone-600/15" />
                   <p className="relative">
                     Pick a topic below, or type in your own words. If you write in Bangla, we’ll try to reply in Bangla.
                   </p>
@@ -441,13 +470,13 @@ export function SupportChatWidget() {
                     whileHover={
                       loading || panelBusy
                         ? {}
-                        : { scale: 1.015, x: 2, boxShadow: '0 12px 28px -8px rgba(99,102,241,0.25)' }
+                        : { scale: 1.015, x: 2, boxShadow: '0 12px 28px -8px rgba(0,0,0,0.1)' }
                     }
                     whileTap={{ scale: loading || panelBusy ? 1 : 0.99 }}
                     onClick={() => void handleSend(c.text)}
-                    className="group relative block w-full overflow-hidden rounded-2xl border border-gray-200/80 bg-white/95 py-2.5 pl-4 pr-3 text-left text-xs text-gray-800 shadow-sm transition-colors before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:rounded-full before:bg-gradient-to-b before:from-indigo-500 before:to-violet-500 before:content-[''] hover:border-indigo-300/70 dark:border-[#2c2c34] dark:bg-[#18181d] dark:text-gray-200 dark:before:from-indigo-400 dark:before:to-fuchsia-500 dark:hover:border-indigo-500/40 disabled:opacity-50"
+                    className="group relative block w-full overflow-hidden rounded-2xl border border-gray-200/80 border-l-[3px] border-l-stone-400/80 bg-white/95 py-2.5 pl-4 pr-3 text-left text-xs text-gray-800 shadow-sm transition-colors hover:border-stone-300/90 hover:border-l-stone-500 dark:border-[#2c2c34] dark:border-l-zinc-600 dark:bg-[#18181d] dark:text-gray-200 dark:hover:border-zinc-500 dark:hover:border-l-zinc-500 disabled:opacity-50"
                   >
-                    <span className="font-semibold text-indigo-700 transition-colors group-hover:text-indigo-800 dark:text-indigo-300 dark:group-hover:text-indigo-200">
+                    <span className="font-semibold text-stone-800 transition-colors group-hover:text-stone-950 dark:text-stone-100 dark:group-hover:text-white">
                       {c.label}
                     </span>
                     <span className="mt-0.5 block line-clamp-2 text-[11px] text-gray-500 dark:text-gray-500">
@@ -469,7 +498,7 @@ export function SupportChatWidget() {
                     className={cn(
                       'max-w-[92%] whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed',
                       m.role === 'user'
-                        ? 'bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/25 [border-bottom-right-radius:6px]'
+                        ? 'bg-gradient-to-br from-zinc-600 via-zinc-800 to-neutral-950 text-white shadow-lg shadow-black/25 [border-bottom-right-radius:6px]'
                         : 'border border-gray-100/90 bg-white text-gray-800 shadow-md dark:border-[#2a2a32] dark:bg-[#1e1e24] dark:text-gray-100 [border-bottom-left-radius:6px]',
                     )}
                   >
@@ -484,12 +513,12 @@ export function SupportChatWidget() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="flex justify-start"
                 >
-                  <div className="flex items-center gap-2.5 rounded-2xl border border-indigo-100/80 bg-white px-4 py-3 shadow-md dark:border-[#2a2a32] dark:bg-[#1e1e24]">
+                  <div className="flex items-center gap-2.5 rounded-2xl border border-stone-200/80 bg-white px-4 py-3 shadow-md dark:border-[#2a2a32] dark:bg-[#1e1e24]">
                     <span className="flex gap-1">
                       {[0, 1, 2].map((d) => (
                         <motion.span
                           key={d}
-                          className="h-2 w-2 rounded-full bg-indigo-400"
+                          className="h-2 w-2 rounded-full bg-stone-400 dark:bg-stone-500"
                           animate={{ y: [0, -5, 0], opacity: [0.5, 1, 0.5] }}
                           transition={{
                             duration: 0.7,
@@ -533,7 +562,7 @@ export function SupportChatWidget() {
                   </button>
                   {!user && (
                     <p className="mt-2 text-center text-[11px] text-gray-600 dark:text-gray-400">
-                      <Link to="/login" className="font-medium text-indigo-600 underline dark:text-indigo-400">
+                      <Link to="/login" className="font-medium text-stone-700 underline decoration-stone-400/70 underline-offset-2 dark:text-stone-300 dark:decoration-stone-500/60">
                         Log in
                       </Link>{' '}
                       to continue.
@@ -557,7 +586,7 @@ export function SupportChatWidget() {
                   placeholder="Type your question…"
                   maxLength={2000}
                   disabled={loading || panelBusy}
-                  className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/95 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 transition-shadow focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-[#34343c] dark:bg-[#18181c] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-500/55 disabled:opacity-60"
+                  className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/95 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 transition-shadow focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/25 dark:border-[#34343c] dark:bg-[#18181c] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/20 disabled:opacity-60"
                 />
                 <motion.button
                   type="submit"
@@ -566,7 +595,7 @@ export function SupportChatWidget() {
                   whileTap={{ scale: loading || panelBusy || !input.trim() ? 1 : 0.94 }}
                   className={cn(
                     'inline-flex h-11 min-w-[2.75rem] shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-shadow',
-                    'bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 shadow-indigo-500/35',
+                    'bg-gradient-to-br from-zinc-600 via-zinc-800 to-neutral-950 shadow-[0_8px_28px_-8px_rgba(0,0,0,0.45),0_2px_12px_-4px_rgba(251,191,36,0.12)]',
                     'disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none',
                   )}
                   aria-label="Send message"
