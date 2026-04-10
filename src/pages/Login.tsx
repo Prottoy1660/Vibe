@@ -36,7 +36,7 @@ const getPublicSiteOrigin = (): string => {
   const env = (import.meta as any)?.env as Record<string, any> | undefined;
   const fromEnv = (env?.VITE_PUBLIC_SITE_URL || env?.VITE_FRONTEND_URL || '').toString().trim();
   if (fromEnv.startsWith('http://') || fromEnv.startsWith('https://')) return fromEnv.replace(/\/$/, '');
-  return 'https://vibeaccessbd.shop';
+  return 'https://vibeaccessbd.com';
 };
 
 export const Login = () => {

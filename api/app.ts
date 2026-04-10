@@ -65,8 +65,8 @@ function withWwwVariants(url?: string) {
 const allowedOrigins = new Set([
   ...withWwwVariants(process.env.FRONTEND_URL),
   ...(process.env.VERCEL_URL ? withWwwVariants(`https://${process.env.VERCEL_URL}`) : []),
-  'https://vibeaccessbd.shop',
-  'https://www.vibeaccessbd.shop',
+  'https://vibeaccessbd.com',
+  'https://www.vibeaccessbd.com',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:3001',

@@ -274,7 +274,7 @@ router.post('/create', requireUser, async (req, res) => {
     // 2. Vercel environment variable
     // 3. Header-based origin
     const origin = req.headers.origin;
-    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
+    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.com';
 
     if ((order as any).status === 'completed' && (order as any).payment_status === 'paid') {
       const payload = {
@@ -502,7 +502,7 @@ router.post('/recharge', requireUser, async (req, res) => {
     const user = (req as any).user;
 
     const origin = req.headers.origin;
-    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.shop';
+    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.com';
 
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Invalid recharge parameters' });

@@ -178,10 +178,10 @@ function buildCandidates() {
       // Legacy hardcoded fallbacks — do NOT probe www when the user is on apex only (common on Coolify:
       // no DNS for www → "Failed to fetch" for every /api call).
       const h = window.location.hostname;
-      if (h === 'vibeaccessbd.shop' || h === 'www.vibeaccessbd.shop') {
-        candidates.push('https://vibeaccessbd.shop');
+      if (h === 'vibeaccessbd.com' || h === 'www.vibeaccessbd.com') {
+        candidates.push('https://vibeaccessbd.com');
         if (h.startsWith('www.')) {
-          candidates.push('https://www.vibeaccessbd.shop');
+          candidates.push('https://www.vibeaccessbd.com');
         }
       }
     }
