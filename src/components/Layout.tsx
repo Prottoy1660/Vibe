@@ -47,6 +47,7 @@ import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
 import { PushEnablePrompt } from './PushEnablePrompt';
+import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -60,27 +61,34 @@ export const Layout = () => {
   const showGlobalBanners = !location.pathname.startsWith('/admin');
   const isProfilePage = location.pathname === '/profile';
   const { user, signOut, isAdmin, isSuperAdmin, loading: authLoading, role, needsMandatoryPhone } = useAuth();
-  /** Help chat on customer routes; hidden only under /admin so admins can still see it on Store, Profile, etc. */
-  const showSupportChat = showGlobalBanners;
+  /** Help chat: customers only — not on /admin and not for admin/super_admin accounts. */
+  const showSupportChat = showGlobalBanners && !isAdmin;
   const { platform: maintPlatform, ready: maintReady } = useMaintenanceMode();
   const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
+  /** `public.users.avatar_url` for topbar — matches Dashboard / Profile default image when empty */
+  const [headerAvatarUrl, setHeaderAvatarUrl] = useState<string | null>(null);
 
   // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setHeaderAvatarUrl(null);
+      return;
+    }
 
     let cancelled = false;
 
     const checkUserStatus = async () => {
       const { data } = await supabase
         .from('users')
-        .select('is_banned, preferred_language')
+        .select('is_banned, preferred_language, avatar_url')
         .eq('id', user.id)
         .single();
 
       if (cancelled) return;
+
+      setHeaderAvatarUrl(typeof data?.avatar_url === 'string' && data.avatar_url.trim() ? data.avatar_url.trim() : null);
 
       if (data?.is_banned) {
         toast.error('Your account has been suspended.');
@@ -160,6 +168,12 @@ export const Layout = () => {
     });
     return () => { cancelled = true; };
   }, [isAdmin]);
+
+  const topbarAvatarSrc = useMemo(() => {
+    if (!user) return null;
+    const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
+    return headerAvatarUrl || getDefaultAvatarUrl(user.email || user.id, name);
+  }, [user, headerAvatarUrl]);
 
   const navigation = useMemo(
     () =>
@@ -406,9 +420,21 @@ export const Layout = () => {
             </button>
             {user?.id ? <NotificationBell userId={user.id} enabled={showCustomerInboxBell} /> : null}
             <div className="flex items-center space-x-3 border-l border-gray-200 dark:border-[#26262d] pl-4">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary dark:bg-slate-700 dark:text-white flex items-center justify-center font-medium text-sm transition-colors duration-300">
-                {user?.user_metadata?.full_name?.substring(0, 2).toUpperCase() || user?.email?.substring(0, 2).toUpperCase() || 'U'}
-              </div>
+              {user && topbarAvatarSrc ? (
+                <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border border-gray-200 bg-gray-50 shadow-sm dark:border-[#2a2a32] dark:bg-[#1a1a1f] dark:ring-1 dark:ring-white/[0.06]">
+                  <img
+                    src={topbarAvatarSrc}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover object-center"
+                  />
+                </div>
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary dark:bg-slate-700 dark:text-white">
+                  U
+                </div>
+              )}
               <button 
                 onClick={signOut}
                 className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 flex items-center transition-colors"

@@ -56,6 +56,22 @@ function newId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const CHAT_STORAGE_PREFIX = 'vibe_support_chat_v1:';
+const CHAT_IDLE_MS = 10 * 60 * 1000;
+
+type PersistedChat = {
+  v: 1;
+  sessionId: string;
+  messages: ChatMsg[];
+  open: boolean;
+  pendingTicket: PendingTicket | null;
+  lastInteractionAt: number;
+};
+
+function storageKey(uid: string) {
+  return `${CHAT_STORAGE_PREFIX}${uid}`;
+}
+
 export function SupportChatWidget() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -72,6 +88,35 @@ export function SupportChatWidget() {
   const sessionIdRef = useRef<string>(
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : newId(),
   );
+  /** Last time the user or assistant actually sent a chat line (not typing / not just opening with history). */
+  const lastChatTurnAtRef = useRef<number>(Date.now());
+  const prevMessageCountRef = useRef(0);
+  const prevOpenForIdleRef = useRef(false);
+
+  const clearChatStorage = useCallback(() => {
+    const id = user?.id;
+    if (!id) return;
+    try {
+      localStorage.removeItem(storageKey(id));
+    } catch {
+      /* ignore */
+    }
+  }, [user?.id]);
+
+  const closeAndClearSession = useCallback(() => {
+    setOpen(false);
+    setMessages([]);
+    setPendingTicket(null);
+    setTicketFlash(null);
+    setInput('');
+    setLoading(false);
+    sessionIdRef.current =
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : newId();
+    lastChatTurnAtRef.current = Date.now();
+    prevMessageCountRef.current = 0;
+    prevOpenForIdleRef.current = false;
+    clearChatStorage();
+  }, [clearChatStorage]);
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
@@ -81,16 +126,6 @@ export function SupportChatWidget() {
 
   useEffect(() => {
     let cancelled = false;
-    const safetyMs = 8000;
-    const safety =
-      typeof window !== 'undefined'
-        ? window.setTimeout(() => {
-            if (cancelled) return;
-            setMeta((prev) => prev ?? { help_chat_enabled: true, whatsapp_e164: null, ai_enabled: false });
-            setMetaChecked(true);
-          }, safetyMs)
-        : 0;
-
     (async () => {
       try {
         const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta', { skipErrorPageRedirect: true });
@@ -98,17 +133,85 @@ export function SupportChatWidget() {
       } catch {
         if (!cancelled) setMeta({ help_chat_enabled: true, whatsapp_e164: null, ai_enabled: false });
       } finally {
-        if (!cancelled) {
-          if (safety) window.clearTimeout(safety);
-          setMetaChecked(true);
-        }
+        if (!cancelled) setMetaChecked(true);
       }
     })();
     return () => {
       cancelled = true;
-      if (safety) window.clearTimeout(safety);
     };
   }, []);
+
+  useEffect(() => {
+    const id = user?.id;
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem(storageKey(id));
+      if (!raw) return;
+      const p = JSON.parse(raw) as PersistedChat;
+      if (p.v !== 1 || !Array.isArray(p.messages)) return;
+      if (typeof p.lastInteractionAt !== 'number' || Date.now() - p.lastInteractionAt > CHAT_IDLE_MS) {
+        localStorage.removeItem(storageKey(id));
+        return;
+      }
+      sessionIdRef.current = typeof p.sessionId === 'string' && p.sessionId ? p.sessionId : sessionIdRef.current;
+      setMessages(p.messages);
+      setPendingTicket(p.pendingTicket ?? null);
+      setOpen(Boolean(p.open));
+      lastChatTurnAtRef.current = p.lastInteractionAt;
+      prevMessageCountRef.current = p.messages.length;
+      prevOpenForIdleRef.current = Boolean(p.open);
+    } catch {
+      /* ignore corrupt storage */
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const n = messages.length;
+    if (n > prevMessageCountRef.current) {
+      lastChatTurnAtRef.current = Date.now();
+    }
+    prevMessageCountRef.current = n;
+  }, [messages.length]);
+
+  useEffect(() => {
+    const wasOpen = prevOpenForIdleRef.current;
+    if (open && !wasOpen && messages.length === 0) {
+      lastChatTurnAtRef.current = Date.now();
+    }
+    prevOpenForIdleRef.current = open;
+  }, [open, messages.length]);
+
+  useEffect(() => {
+    const id = user?.id;
+    if (!id) return;
+    if (!open && messages.length === 0) return;
+    const t = window.setTimeout(() => {
+      try {
+        const payload: PersistedChat = {
+          v: 1,
+          sessionId: sessionIdRef.current,
+          messages,
+          open,
+          pendingTicket,
+          lastInteractionAt: lastChatTurnAtRef.current,
+        };
+        localStorage.setItem(storageKey(id), JSON.stringify(payload));
+      } catch {
+        /* quota / private mode */
+      }
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [user?.id, messages, open, pendingTicket]);
+
+  useEffect(() => {
+    if (!open) return;
+    const tick = window.setInterval(() => {
+      if (Date.now() - lastChatTurnAtRef.current >= CHAT_IDLE_MS) {
+        closeAndClearSession();
+      }
+    }, 30_000);
+    return () => window.clearInterval(tick);
+  }, [open, closeAndClearSession]);
 
   useEffect(() => {
     if (!open) return;
@@ -205,7 +308,20 @@ export function SupportChatWidget() {
     const next = [...messages, userMsg];
     setMessages(next);
 
-    if (!meta?.ai_enabled) {
+    if (metaChecked && meta?.help_chat_enabled === false) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: newId(),
+          role: 'assistant',
+          content:
+            'Help chat is paused right now. Please use WhatsApp or open a Support ticket from the buttons above — our team will help you soon.',
+        },
+      ]);
+      return;
+    }
+
+    if (metaChecked && !meta?.ai_enabled) {
       setMessages((prev) => [
         ...prev,
         {
@@ -221,11 +337,8 @@ export function SupportChatWidget() {
     await sendTurns(next);
   };
 
-  if (metaChecked && meta?.help_chat_enabled === false) {
-    return null;
-  }
-
   const panelBusy = open && panelRefreshing;
+  const helpChatPaused = metaChecked && meta?.help_chat_enabled === false;
 
   const openTicketFromAssistant = async () => {
     if (!pendingTicket || ticketSubmitting) return;
@@ -269,19 +382,26 @@ export function SupportChatWidget() {
       <motion.button
         type="button"
         layout
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (open) {
+            closeAndClearSession();
+          } else {
+            setOpen(true);
+          }
+        }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         className={cn(
           'fixed z-[60] flex h-16 w-16 items-center justify-center rounded-full text-white shadow-xl',
           'bottom-20 right-4 md:bottom-8 md:right-6',
-          // Charcoal / warm metal frame — matches memoji hair & glasses, works in light & dark UIs
-          'bg-gradient-to-br from-zinc-500 via-zinc-800 to-neutral-950',
+          // Light: airy off-white / soft gray ring — no black fill. Dark: charcoal metal frame.
+          'bg-gradient-to-br from-white via-stone-100 to-stone-300',
+          'dark:from-zinc-500 dark:via-zinc-800 dark:to-neutral-950',
           'p-[5px]',
-          'shadow-[0_14px_48px_-14px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.14)_inset,0_4px_20px_-6px_rgba(251,191,36,0.12)]',
+          'shadow-[0_10px_32px_-12px_rgba(28,25,23,0.1),0_0_0_1px_rgba(255,255,255,0.95)_inset,0_2px_12px_-4px_rgba(120,113,108,0.12)]',
           'dark:shadow-[0_18px_56px_-14px_rgba(0,0,0,0.65),0_0_0_1px_rgba(255,255,255,0.1)_inset,0_4px_24px_-8px_rgba(251,191,36,0.1)]',
-          'ring-1 ring-white/25 dark:ring-white/15',
-          open && 'ring-white/40',
+          'ring-1 ring-stone-200/90 dark:ring-white/15',
+          open && 'ring-stone-300 dark:ring-white/40',
         )}
         aria-label={open ? 'Close help chat' : 'Open help chat'}
       >
@@ -303,12 +423,15 @@ export function SupportChatWidget() {
         )}
         <span className="relative z-10 flex h-full w-full items-center justify-center">
           {open ? (
-            <span className="flex h-full w-full items-center justify-center rounded-full bg-neutral-950/85 ring-1 ring-white/10">
-              <X className="h-6 w-6 text-white drop-shadow-sm" strokeWidth={2.25} />
+            <span className="flex h-full w-full items-center justify-center rounded-full bg-gradient-to-b from-[#faf7f4] to-[#e5d9cf] shadow-[inset_0_2px_8px_rgba(120,113,108,0.08)] ring-1 ring-stone-200/85 dark:from-neutral-950 dark:to-neutral-900 dark:shadow-[inset_0_2px_12px_rgba(0,0,0,0.55)] dark:ring-white/15">
+              <X
+                className="h-6 w-6 text-stone-600 dark:text-white"
+                strokeWidth={2.25}
+              />
             </span>
           ) : (
             <motion.span
-              className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-[#faf7f4] to-[#e5d9cf] shadow-[inset_0_2px_10px_rgba(0,0,0,0.07)] ring-1 ring-black/[0.06]"
+              className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-[#faf7f4] to-[#e5d9cf] shadow-[inset_0_2px_10px_rgba(120,113,108,0.06)] ring-1 ring-stone-200/80 dark:shadow-[inset_0_2px_10px_rgba(0,0,0,0.07)] dark:ring-white/10"
               animate={{
                 y: [0, -3, 0],
                 rotate: [0, -2.5, 2.5, 0],
@@ -407,13 +530,13 @@ export function SupportChatWidget() {
                 </div>
                 <motion.button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={() => closeAndClearSession()}
                   whileHover={{ scale: 1.06, backgroundColor: 'rgba(255,255,255,0.18)' }}
                   whileTap={{ scale: 0.94 }}
-                  className="shrink-0 rounded-xl p-2 text-white/95 transition-colors hover:bg-white/12"
-                  aria-label="Close"
+                  className="shrink-0 rounded-xl p-2 text-white transition-colors hover:bg-white/12"
+                  aria-label="Close chat"
                 >
-                  <X className="h-5 w-5" />
+                  <X className="h-5 w-5 text-white" strokeWidth={2.25} />
                 </motion.button>
               </div>
               <div className="relative mt-3.5 flex flex-wrap gap-2">
@@ -454,7 +577,18 @@ export function SupportChatWidget() {
                 </div>
               )}
 
-              {messages.length === 0 && !loading && !panelBusy && (
+              {messages.length === 0 && !loading && !panelBusy && helpChatPaused && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', damping: 22, stiffness: 300 }}
+                  className="rounded-2xl border border-amber-200/90 bg-amber-50/90 px-3.5 py-3 text-xs leading-relaxed text-amber-950 dark:border-amber-500/30 dark:bg-amber-950/25 dark:text-amber-100"
+                >
+                  Help chat is paused. Use WhatsApp or Support above — the button stays here so you can always reach us.
+                </motion.div>
+              )}
+
+              {messages.length === 0 && !loading && !panelBusy && !helpChatPaused && (
                 <motion.div
                   initial={{ opacity: 0, y: 8, filter: 'blur(4px)' }}
                   animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
@@ -470,6 +604,7 @@ export function SupportChatWidget() {
 
               {messages.length === 0 &&
                 !panelBusy &&
+                !helpChatPaused &&
                 SUGGESTED_PROMPTS.map((c, i) => (
                   <motion.button
                     key={c.label}
@@ -594,16 +729,16 @@ export function SupportChatWidget() {
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type your question…"
+                  placeholder={helpChatPaused ? 'Chat paused — use WhatsApp or Support' : 'Type your question…'}
                   maxLength={2000}
-                  disabled={loading || panelBusy}
+                  disabled={loading || panelBusy || helpChatPaused}
                   className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/95 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 transition-shadow focus:border-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-400/25 dark:border-[#34343c] dark:bg-[#18181c] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-zinc-500 dark:focus:ring-zinc-500/20 disabled:opacity-60"
                 />
                 <motion.button
                   type="submit"
-                  disabled={loading || panelBusy || !input.trim()}
-                  whileHover={{ scale: loading || panelBusy || !input.trim() ? 1 : 1.06 }}
-                  whileTap={{ scale: loading || panelBusy || !input.trim() ? 1 : 0.94 }}
+                  disabled={loading || panelBusy || helpChatPaused || !input.trim()}
+                  whileHover={{ scale: loading || panelBusy || helpChatPaused || !input.trim() ? 1 : 1.06 }}
+                  whileTap={{ scale: loading || panelBusy || helpChatPaused || !input.trim() ? 1 : 0.94 }}
                   className={cn(
                     'inline-flex h-11 min-w-[2.75rem] shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition-shadow',
                     'bg-gradient-to-br from-zinc-600 via-zinc-800 to-neutral-950 shadow-[0_8px_28px_-8px_rgba(0,0,0,0.45),0_2px_12px_-4px_rgba(251,191,36,0.12)]',

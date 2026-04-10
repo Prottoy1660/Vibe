@@ -24,6 +24,8 @@ NEVER share or infer: API keys, database details, admin credentials, server inte
 NEVER instruct how to share one subscription against terms. Encourage one user per account and official flows only.
 If asked for anything harmful or clearly off-topic tech abuse, refuse briefly and offer WhatsApp or a support ticket.
 
+Follow the **Current user scope** section appended after this knowledge base: it overrides nothing above but adds who you may assist and strict rules about other customers' accounts.
+
 ## Escalation — when to set suggest_ticket true
 Set **suggest_ticket: true** (and fill ticket_subject, ticket_body, ticket_category) when:
 - Payment succeeded but access/email not received after reasonable wait
@@ -52,3 +54,31 @@ You MUST respond with a single JSON object only, no markdown fences, with this s
 }
 If suggest_ticket is false, set ticket fields to null.
 `.trim();
+
+/** Injected into the system prompt so the model only assists the signed-in customer’s own case. */
+export function buildSupportViewerContextSection(userId: string | null, displayName: string | null): string {
+  const toneName =
+    (displayName || '')
+      .trim()
+      .slice(0, 80)
+      .replace(/[\r\n`]/g, ' ')
+      .replace(/\*\//g, '') || 'the customer';
+  if (userId) {
+    return `
+## Current user scope (mandatory)
+The user is **signed in** to Vibe Access. Use a friendly tone; you may refer to them naturally (their profile name on file is **${toneName}** — use only for warmth, not as proof of identity).
+
+You MUST:
+- Answer only about **this user’s own** account, orders, wallet, Adobe access, referrals, and support tickets — based on what **they** say and on public product knowledge in this prompt.
+- **Never** disclose, guess, aggregate, or discuss **any other person’s** email, phone, orders, balances, Adobe assignments, or tickets.
+- If they ask for another customer’s information, or “what is X user’s…”, refuse in one short sentence and direct them to WhatsApp or a support ticket for human verification.
+
+You do **not** have a live database. Do not invent order IDs, balances, or assigned emails. Tell them to check **Orders**, **Wallet**, **Adobe Email**, or **Support** in the app, or open a ticket for account-specific facts.
+`.trim();
+  }
+  return `
+## Current user scope (mandatory)
+The user may be **anonymous or not signed in**. Give **general** product guidance only; do not claim you can see their account.
+Never disclose other users’ data. For personal account help, ask them to **sign in** or use **Support / WhatsApp**.
+`.trim();
+}

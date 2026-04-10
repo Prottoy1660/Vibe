@@ -1,4 +1,7 @@
-import { SUPPORT_KNOWLEDGE_BASE, SUPPORT_JSON_INSTRUCTION } from './supportKnowledgeBase.js';
+import {
+  SUPPORT_KNOWLEDGE_BASE,
+  SUPPORT_JSON_INSTRUCTION,
+} from './supportKnowledgeBase.js';
 import type { SupportChatRuntime } from './supportChatSettings.js';
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string };
@@ -38,29 +41,33 @@ function parseSupportJson(raw: string): SupportAiResult {
   }
 }
 
-function buildSystemPrompt(runtime: SupportChatRuntime) {
+function buildSystemPrompt(runtime: SupportChatRuntime, viewerSection: string) {
   const extra = runtime.custom_prompt_append
     ? `\n\n## Extra context from your team (admin)\n${runtime.custom_prompt_append}`
     : '';
-  return `${SUPPORT_KNOWLEDGE_BASE}${extra}\n\n${SUPPORT_JSON_INSTRUCTION}`;
+  return `${SUPPORT_KNOWLEDGE_BASE}\n\n${viewerSection}${extra}\n\n${SUPPORT_JSON_INSTRUCTION}`;
 }
 
-function buildOpenAiMessages(turns: ChatTurn[], runtime: SupportChatRuntime) {
-  const system = buildSystemPrompt(runtime);
+function buildOpenAiMessages(turns: ChatTurn[], runtime: SupportChatRuntime, viewerSection: string) {
+  const system = buildSystemPrompt(runtime, viewerSection);
   return [
     { role: 'system' as const, content: system },
     ...turns.map((t) => ({ role: t.role, content: t.content.slice(0, 4000) })),
   ];
 }
 
-export async function completeSupportChatOpenAI(turns: ChatTurn[], runtime: SupportChatRuntime): Promise<SupportAiResult> {
+export async function completeSupportChatOpenAI(
+  turns: ChatTurn[],
+  runtime: SupportChatRuntime,
+  viewerSection: string,
+): Promise<SupportAiResult> {
   const key = runtime.openaiKey;
   if (!key) throw new Error('OpenAI API key not configured');
 
   const model = runtime.openaiModel;
   const body = {
     model,
-    messages: buildOpenAiMessages(turns, runtime),
+    messages: buildOpenAiMessages(turns, runtime, viewerSection),
     temperature: 0.5,
     max_tokens: 1200,
     response_format: { type: 'json_object' as const },
@@ -87,12 +94,16 @@ export async function completeSupportChatOpenAI(turns: ChatTurn[], runtime: Supp
   return parseSupportJson(text);
 }
 
-export async function completeSupportChatGemini(turns: ChatTurn[], runtime: SupportChatRuntime): Promise<SupportAiResult> {
+export async function completeSupportChatGemini(
+  turns: ChatTurn[],
+  runtime: SupportChatRuntime,
+  viewerSection: string,
+): Promise<SupportAiResult> {
   const key = runtime.geminiKey;
   if (!key) throw new Error('Gemini API key not configured');
 
   const model = runtime.geminiModel;
-  const systemText = buildSystemPrompt(runtime);
+  const systemText = buildSystemPrompt(runtime, viewerSection);
 
   const contents = turns.map((t) => ({
     role: t.role === 'user' ? ('user' as const) : ('model' as const),
@@ -127,21 +138,25 @@ export async function completeSupportChatGemini(turns: ChatTurn[], runtime: Supp
   return parseSupportJson(text);
 }
 
-export async function completeSupportChat(turns: ChatTurn[], runtime: SupportChatRuntime): Promise<SupportAiResult> {
+export async function completeSupportChat(
+  turns: ChatTurn[],
+  runtime: SupportChatRuntime,
+  viewerSection: string,
+): Promise<SupportAiResult> {
   const { provider, openaiKey, geminiKey } = runtime;
 
   if (provider === 'openai') {
-    return completeSupportChatOpenAI(turns, runtime);
+    return completeSupportChatOpenAI(turns, runtime, viewerSection);
   }
   if (provider === 'gemini') {
-    return completeSupportChatGemini(turns, runtime);
+    return completeSupportChatGemini(turns, runtime, viewerSection);
   }
 
   if (openaiKey) {
-    return completeSupportChatOpenAI(turns, runtime);
+    return completeSupportChatOpenAI(turns, runtime, viewerSection);
   }
   if (geminiKey) {
-    return completeSupportChatGemini(turns, runtime);
+    return completeSupportChatGemini(turns, runtime, viewerSection);
   }
   throw new Error('No AI provider configured');
 }

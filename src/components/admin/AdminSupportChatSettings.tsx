@@ -109,6 +109,18 @@ type TrainingRow = {
   meta: Record<string, unknown>;
 };
 
+function trainingWhoLine(meta: Record<string, unknown>, userId: string | null): string {
+  const name = typeof meta.user_display_name === 'string' ? meta.user_display_name.trim() : '';
+  const email = typeof meta.user_email === 'string' ? meta.user_email.trim() : '';
+  const phone = typeof meta.user_phone === 'string' ? meta.user_phone.trim() : '';
+  const parts: string[] = [];
+  if (name) parts.push(name);
+  if (email) parts.push(email);
+  if (phone) parts.push(phone);
+  if (parts.length) return parts.join(' · ');
+  return userId ? `id ${userId.slice(0, 8)}…` : '—';
+}
+
 export const AdminSupportChatSettings: React.FC = () => {
   const { confirm } = useConfirmDialog();
   const [loading, setLoading] = useState(true);
@@ -531,9 +543,9 @@ export const AdminSupportChatSettings: React.FC = () => {
             <div className="mt-2 flex gap-2 items-start">
               <Info className="w-3.5 h-3.5 shrink-0 text-gray-400 mt-0.5" aria-hidden />
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed min-w-0">
-                Rows appear when capture is on and the AI replies. Logged-in chats may include{' '}
-                <code className="rounded bg-gray-100 dark:bg-white/10 px-1 text-[11px]">user_id</code> for support — follow your
-                privacy policy.
+                Rows include <strong className="font-medium text-gray-700 dark:text-gray-200">name, email, phone</strong> on
+                file (when the user is logged in) so you can see who wrote each line. Follow your privacy policy for storage
+                and export.
               </p>
             </div>
           </div>
@@ -573,6 +585,7 @@ export const AdminSupportChatSettings: React.FC = () => {
             <thead className="sticky top-0 bg-gray-50 dark:bg-[#1a1a1f]">
               <tr>
                 <th className="p-2 font-semibold text-gray-600 dark:text-gray-300">Time</th>
+                <th className="p-2 font-semibold text-gray-600 dark:text-gray-300">Who</th>
                 <th className="p-2 font-semibold text-gray-600 dark:text-gray-300">Role</th>
                 <th className="p-2 font-semibold text-gray-600 dark:text-gray-300">Session</th>
                 <th className="p-2 font-semibold text-gray-600 dark:text-gray-300">Preview</th>
@@ -582,6 +595,12 @@ export const AdminSupportChatSettings: React.FC = () => {
               {trainingRows.map((r) => (
                 <tr key={r.id} className="border-t border-gray-100 dark:border-[#26262d]">
                   <td className="p-2 text-gray-500 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                  <td
+                    className="p-2 text-gray-700 dark:text-gray-200 min-w-[140px] max-w-[220px] align-top text-[11px] leading-snug break-words"
+                    title={trainingWhoLine(r.meta, r.user_id)}
+                  >
+                    {trainingWhoLine(r.meta, r.user_id)}
+                  </td>
                   <td className="p-2 font-medium">{r.role}</td>
                   <td className="p-2 font-mono text-[10px] text-gray-500 max-w-[100px] truncate">{r.session_id}</td>
                   <td className="p-2 text-gray-700 dark:text-gray-300 min-w-0 truncate" title={r.content}>
@@ -591,7 +610,7 @@ export const AdminSupportChatSettings: React.FC = () => {
               ))}
               {!trainingRows.length && (
                 <tr>
-                  <td colSpan={4} className="p-8 text-center text-gray-500">
+                  <td colSpan={5} className="p-8 text-center text-gray-500">
                     No rows yet.
                   </td>
                 </tr>

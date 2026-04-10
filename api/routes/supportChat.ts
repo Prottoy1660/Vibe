@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import type { ChatTurn } from '../lib/supportChatAi.js';
 import { completeSupportChat } from '../lib/supportChatAi.js';
+import { buildSupportViewerContextSection } from '../lib/supportKnowledgeBase.js';
 import { getSupportChatRuntimeCached } from '../lib/supportChatSettings.js';
 import {
   isAiQuotaOrBillingErrorMessage,
@@ -72,21 +73,46 @@ async function optionalUserId(req: express.Request): Promise<string | null> {
   }
 }
 
+type UserTrainingFields = {
+  user_display_name: string | null;
+  user_email: string | null;
+  user_phone: string | null;
+};
+
+async function loadUserTrainingFields(userId: string | null): Promise<UserTrainingFields> {
+  if (!userId) {
+    return { user_display_name: null, user_email: null, user_phone: null };
+  }
+  const { data } = await supabase.from('users').select('name, email, phone').eq('id', userId).maybeSingle();
+  return {
+    user_display_name: typeof data?.name === 'string' && data.name.trim() ? data.name.trim() : null,
+    user_email: typeof data?.email === 'string' && data.email.trim() ? data.email.trim() : null,
+    user_phone: typeof data?.phone === 'string' && data.phone.trim() ? data.phone.trim() : null,
+  };
+}
+
 async function appendTrainingLogs(opts: {
   runtime: Awaited<ReturnType<typeof getSupportChatRuntimeCached>>;
   req: express.Request;
   turns: ChatTurn[];
   result: Awaited<ReturnType<typeof completeSupportChat>>;
+  who: UserTrainingFields;
+  userId: string | null;
 }) {
-  const { runtime, req, turns, result } = opts;
+  const { runtime, req, turns, result, who, userId } = opts;
   if (!runtime.training_capture_enabled) return;
 
   const sessionId = sanitizeSessionId(req.body) || 'no_session';
-  const userId = await optionalUserId(req);
   const lastUser = turns.length && turns[turns.length - 1]?.role === 'user' ? turns[turns.length - 1] : null;
-  const meta = {
+  const identityMeta = {
+    user_display_name: who.user_display_name,
+    user_email: who.user_email,
+    user_phone: who.user_phone,
+  };
+  const assistantMeta = {
     suggest_ticket: result.suggest_ticket,
     ticket_category: result.ticket_category,
+    ...identityMeta,
   };
 
   try {
@@ -97,7 +123,7 @@ async function appendTrainingLogs(opts: {
         session_id: sessionId,
         role: 'user',
         content: lastUser.content.slice(0, 8000),
-        meta: {},
+        meta: identityMeta,
       });
     }
     rows.push({
@@ -105,7 +131,7 @@ async function appendTrainingLogs(opts: {
       session_id: sessionId,
       role: 'assistant',
       content: result.message.slice(0, 8000),
-      meta,
+      meta: assistantMeta,
     });
     const { error } = await supabase.from('support_chat_training_logs').insert(rows);
     if (error) console.error('support_chat_training_logs:', error);
@@ -146,8 +172,12 @@ router.post('/reply', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Last message must be from user' });
     }
 
-    const result = await completeSupportChat(turns, runtime);
-    await appendTrainingLogs({ runtime, req, turns, result });
+    const userId = await optionalUserId(req);
+    const who = await loadUserTrainingFields(userId);
+    const viewerSection = buildSupportViewerContextSection(userId, who.user_display_name);
+
+    const result = await completeSupportChat(turns, runtime, viewerSection);
+    await appendTrainingLogs({ runtime, req, turns, result, who, userId });
     return res.json({ success: true, ...result });
   } catch (e: any) {
     console.error('support-chat/reply:', e);
