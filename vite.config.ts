@@ -21,7 +21,13 @@ export default defineConfig({
       // Avoid unexpected reloads while the user is filling forms / doing admin work.
       // We'll show an in-app prompt instead (see src/main.tsx).
       registerType: 'prompt',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      includeAssets: [
+        'favicon.png',
+        'favicon-32.png',
+        'favicon-16.png',
+        'apple-touch-icon.png',
+        'masked-icon.svg',
+      ],
       injectManifest: {
         // Keep install/update light like the previous Workbox config.
         globIgnores: [
@@ -42,12 +48,12 @@ export default defineConfig({
         display: 'standalone',
         icons: [
           {
-            src: 'https://cdn.discordapp.com/attachments/1315891782298701915/1339893994305814528/vibe_access_logo-removebg-preview.png',
+            src: 'favicon.png',
             sizes: '192x192',
             type: 'image/png'
           },
           {
-            src: 'https://cdn.discordapp.com/attachments/1315891782298701915/1339893994305814528/vibe_access_logo-removebg-preview.png',
+            src: 'favicon.png',
             sizes: '512x512',
             type: 'image/png'
           }

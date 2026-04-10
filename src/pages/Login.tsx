@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Lock, AlertCircle, Loader2, User, ArrowRight, Sparkles, Sun, Moon, Eye, EyeOff } from 'lucide-react';
+import { Lock, AlertCircle, Loader2, User, ArrowRight, Sun, Moon, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../contexts/ThemeContext';
 import { AuthCalmSidePanel } from '../components/auth/AuthCalmSidePanel';
@@ -343,8 +343,25 @@ export const Login = () => {
           </div>
           <div className="mb-12">
             <Link to="/" className="inline-flex items-center gap-2 group mb-12">
-              <div className="w-10 h-10 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 transform group-hover:scale-105 transition-transform">
-                <Sparkles className="w-5 h-5 text-white" />
+              <div className="relative w-10 h-10 transform transition-transform group-hover:scale-105">
+                <div
+                  className={`absolute -inset-2 rounded-full blur-xl opacity-70 transition-opacity group-hover:opacity-95 ${
+                    isDark ? 'bg-white/6 mix-blend-overlay' : 'bg-black/5'
+                  }`}
+                />
+                <div
+                  className={`relative w-10 h-10 rounded-full shadow-lg transition-colors ${
+                    isDark ? 'bg-transparent ring-0 shadow-black/50' : 'bg-black ring-1 ring-black/10 shadow-black/20 p-[1px]'
+                  }`}
+                >
+                  <div className="w-full h-full rounded-full overflow-hidden bg-black">
+                    <img
+                      src="https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png"
+                      alt="Vibe Access logo"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
               </div>
               <span className={`text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r ${isDark ? 'from-white to-white/60' : 'from-slate-900 to-slate-500'}`}>
                 Vibe<span className="font-light">Access</span>

@@ -9,7 +9,6 @@ import {
   Loader2,
   Phone,
   ArrowRight,
-  Sparkles,
   Sun,
   Moon,
 } from 'lucide-react';
@@ -40,6 +39,8 @@ export const Register = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === 'dark';
+  const normalizedEmail = email.trim().toLowerCase();
+  const showEmailDomainHint = normalizedEmail.length > 0 && normalizedEmail.includes('@') && !isAllowedSignupEmail(normalizedEmail);
 
   useEffect(() => {
     const r = searchParams.get('ref') || searchParams.get('referral');
@@ -250,16 +251,16 @@ export const Register = () => {
   return (
     <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-indigo-500/30 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className={`absolute top-0 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-purple-600/20 mix-blend-screen' : 'bg-purple-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute bottom-1/4 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-indigo-600/20 mix-blend-screen' : 'bg-indigo-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute top-1/2 right-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-fuchsia-600/20 mix-blend-screen' : 'bg-fuchsia-500/15 mix-blend-multiply'}`} />
+        <div className={`absolute top-0 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-purple-600/20 mix-blend-screen' : 'bg-purple-500/15 mix-blend-multiply'}`} />
+        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-indigo-600/20 mix-blend-screen' : 'bg-indigo-500/15 mix-blend-multiply'}`} />
+        <div className={`absolute top-1/2 left-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-fuchsia-600/20 mix-blend-screen' : 'bg-fuchsia-500/15 mix-blend-multiply'}`} />
         <div className={`absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] ${isDark ? 'opacity-20 mix-blend-overlay' : 'opacity-10 mix-blend-multiply'}`}></div>
       </div>
 
       <div className={`hidden lg:flex lg:w-1/2 h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden relative items-center justify-center transition-colors duration-300 ${isDark ? 'border-r border-white/5 bg-[#050505]' : 'border-r border-slate-200 bg-white/70'}`}>
-        <div className={`absolute inset-0 bg-[url('https://images.unsplash.com/photo-1550745165-9bc0b252726f?q=80&w=2000&auto=format&fit=crop')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
+        <div className={`absolute inset-0 bg-[url('https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/bg.webp')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-b from-[#050505] via-transparent to-[#050505]' : 'bg-gradient-to-b from-white via-white/60 to-slate-100'}`}></div>
-        <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-l from-[#0A0A0A] to-transparent' : 'bg-gradient-to-l from-slate-50 via-slate-50/85 to-transparent'}`}></div>
+        <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-r from-[#0A0A0A] to-transparent' : 'bg-gradient-to-r from-slate-50 via-slate-50/85 to-transparent'}`}></div>
         
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -290,8 +291,25 @@ export const Register = () => {
           </div>
           <div className="mb-10">
             <Link to="/" className="inline-flex items-center gap-2 group mb-10">
-              <div className="w-10 h-10 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 transform group-hover:scale-105 transition-transform">
-                <Sparkles className="w-5 h-5 text-white" />
+              <div className="relative w-10 h-10 transform transition-transform group-hover:scale-105">
+                <div
+                  className={`absolute -inset-2 rounded-full blur-xl opacity-70 transition-opacity group-hover:opacity-95 ${
+                    isDark ? 'bg-white/6 mix-blend-overlay' : 'bg-black/5'
+                  }`}
+                />
+                <div
+                  className={`relative w-10 h-10 rounded-full shadow-lg transition-colors ${
+                    isDark ? 'bg-transparent ring-0 shadow-black/50' : 'bg-black ring-1 ring-black/10 shadow-black/20 p-[1px]'
+                  }`}
+                >
+                  <div className="w-full h-full rounded-full overflow-hidden bg-black">
+                    <img
+                      src="https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png"
+                      alt="Vibe Access logo"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
               </div>
               <span className={`text-2xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r ${isDark ? 'from-white to-white/60' : 'from-slate-900 to-slate-500'}`}>
                 Vibe<span className="font-light">Access</span>
@@ -373,9 +391,11 @@ export const Register = () => {
                   placeholder="Email Address"
                 />
               </motion.div>
-              <p className={`text-xs leading-relaxed -mt-2 mb-1 px-1 ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>
-                Use a well-known email (Gmail, Outlook, Yahoo, Hotmail, iCloud, etc.). Custom or company domains are not accepted.
-              </p>
+              {showEmailDomainHint && (
+                <p className={`text-xs leading-relaxed -mt-2 mb-1 px-1 ${isDark ? 'text-amber-300/80' : 'text-amber-700'}`}>
+                  Use a well-known email (Gmail, Outlook, Yahoo, Hotmail, iCloud, etc.). Custom or company domains are not accepted.
+                </p>
+              )}
 
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
@@ -458,7 +478,13 @@ export const Register = () => {
                   <div className={`w-full border-t ${isDark ? 'border-white/10' : 'border-slate-200'}`} />
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className={`px-4 ${isDark ? 'bg-[#0A0A0A] text-gray-500' : 'bg-slate-50 text-slate-500'}`}>Or continue with</span>
+                  <span
+                    className={`px-4 py-1 rounded-full backdrop-blur-md ${
+                      isDark ? 'bg-[#0A0A0A]/60 text-gray-400 ring-1 ring-white/10' : 'bg-slate-50/80 text-slate-500 ring-1 ring-slate-200'
+                    }`}
+                  >
+                    Or continue with
+                  </span>
                 </div>
               </div>
               <div className="space-y-3">
