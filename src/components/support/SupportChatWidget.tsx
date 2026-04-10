@@ -47,12 +47,12 @@ type ReplyPayload = {
 };
 
 const SUGGESTED_PROMPTS: { label: string; text: string }[] = [
-  { label: 'পেমেন্ট ও অর্ডার · Payment', text: 'আমার পেমেন্ট বা অর্ডার নিয়ে সাহায্য চাই।' },
-  { label: 'Adobe ইমেইল / অ্যাক্সেস', text: 'Adobe ইমেইল বা লগইনে সমস্যা হচ্ছে, কী করব?' },
-  { label: 'Wallet ও রিচার্জ', text: 'ওয়ালেট বা রিচার্জ সম্পর্কে জানতে চাই।' },
-  { label: 'রেফারেল প্রোগ্রাম', text: 'রেফারেল বোনাস কীভাবে কাজ করে?' },
-  { label: 'অ্যাকাউন্ট / লগইন', text: 'অ্যাকাউন্ট বা লগইনে সমস্যা।' },
-  { label: 'মানুষের সাথে কথা · Human', text: 'আমি একজন মানুষের সাথে কথা বলতে চাই বা টিকিট খুলতে চাই।' },
+  { label: 'Payment & Orders', text: 'I need help with a payment or an order.' },
+  { label: 'Adobe Email / Access', text: 'I have an issue with Adobe email, access, or login. What should I do?' },
+  { label: 'Wallet & Recharge', text: 'I want to know about wallet balance or recharging my wallet.' },
+  { label: 'Referral Program', text: 'How does the referral bonus work?' },
+  { label: 'Account / Login', text: 'I am having trouble with my account or logging in.' },
+  { label: 'Talk to a human', text: 'I want to talk to a support agent or open a ticket.' },
 ];
 
 function newId() {
@@ -145,7 +145,7 @@ export function SupportChatWidget() {
         const fallback =
           typeof data.message === 'string'
             ? data.message
-            : 'এই মুহূর্তে চ্যাট অ্যাসিস্ট্যান্ট চালু নেই। সাপোর্ট পেজ থেকে টিকিট খুলুন বা WhatsApp ব্যবহার করুন।';
+            : 'The chat assistant is currently unavailable. Please open a ticket from the Support page or use WhatsApp.';
         setMessages((prev) => [
           ...prev,
           { id: newId(), role: 'assistant', content: fallback },
@@ -177,7 +177,7 @@ export function SupportChatWidget() {
         {
           id: newId(),
           role: 'assistant',
-          content: `দুঃখিত, এখন উত্তর দিতে পারছি না। আবার চেষ্টা করুন, অথবা Support পেজে টিকিট খুলুন।\n\n(${msg})`,
+          content: `Sorry — I can’t reply right now. Please try again, or open a ticket from the Support page.\n\n(${msg})`,
         },
       ]);
       setPendingTicket(null);
@@ -201,7 +201,7 @@ export function SupportChatWidget() {
           id: newId(),
           role: 'assistant',
           content:
-            'এই মুহূর্তে AI সহায়ক চালু নেই। দয়া করে নিচের বাটন থেকে WhatsApp বা Support টিকিট ব্যবহার করুন — আমরা খুব শীঘ্রই সাহায্য করব।',
+            'The AI assistant is currently disabled. Please use WhatsApp or open a Support ticket from the buttons below — we will help you soon.',
         },
       ]);
       return;
@@ -222,7 +222,7 @@ export function SupportChatWidget() {
   const openTicketFromAssistant = async () => {
     if (!pendingTicket || ticketSubmitting) return;
     if (!user) {
-      setTicketFlash('টিকিট খুলতে লগ ইন করুন — তারপর আবার চেষ্টা করুন।');
+      setTicketFlash('Please log in to open a ticket, then try again.');
       return;
     }
     setTicketSubmitting(true);
@@ -238,20 +238,23 @@ export function SupportChatWidget() {
         { skipErrorPageRedirect: true },
       );
       if (res.success) {
-        setTicketFlash('টিকিট সফলভাবে খোলা হয়েছে। Support পেজ থেকে স্ট্যাটাস দেখুন।');
+        setTicketFlash('Ticket created successfully. You can check its status on the Support page.');
         setPendingTicket(null);
       } else {
-        setTicketFlash(res.message || 'টিকিট খুলতে ব্যর্থ।');
+        setTicketFlash(res.message || 'Failed to create ticket.');
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'টিকিট খুলতে ব্যর্থ।';
+      const msg = e instanceof Error ? e.message : 'Failed to create ticket.';
       setTicketFlash(msg);
     } finally {
       setTicketSubmitting(false);
     }
   };
 
-  const waLink = meta?.whatsapp_e164 ? `https://wa.me/${meta.whatsapp_e164}` : null;
+  // `wa.me` requires digits only (no +, spaces). Backend *should* already normalize,
+  // but we defensively normalize here so the WhatsApp button never disappears due to formatting.
+  const waDigits = typeof meta?.whatsapp_e164 === 'string' ? meta.whatsapp_e164.replace(/\D/g, '') : '';
+  const waLink = waDigits ? `https://wa.me/${waDigits}` : null;
 
   return (
     <>
@@ -358,7 +361,7 @@ export function SupportChatWidget() {
                   <div className="min-w-0">
                     <p className="text-[15px] font-semibold leading-tight tracking-tight drop-shadow-sm">Vibe Access</p>
                     <p className="mt-1 line-clamp-2 text-xs leading-snug text-white/88">
-                      সাধারণ প্রশ্নের দ্রুত উত্তর — প্রয়োজনে টিকিট বা WhatsApp
+                      Quick answers to common questions — with tickets or WhatsApp if needed
                     </p>
                   </div>
                 </div>
@@ -407,7 +410,7 @@ export function SupportChatWidget() {
               {panelBusy && (
                 <div className="flex items-center justify-center gap-2 py-6 text-xs text-gray-500 dark:text-gray-400">
                   <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
-                  সংযোগ হচ্ছে…
+                  Connecting…
                 </div>
               )}
 
@@ -420,7 +423,7 @@ export function SupportChatWidget() {
                 >
                   <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-indigo-400/15 blur-2xl dark:bg-indigo-500/10" />
                   <p className="relative">
-                    নিচের একটি টপিক বেছে নিন, অথবা নিজের ভাষায় লিখুন। আমরা আপনার ভাষায় উত্তর দেওয়ার চেষ্টা করব।
+                    Pick a topic below, or type in your own words. If you write in Bangla, we’ll try to reply in Bangla.
                   </p>
                 </motion.div>
               )}
@@ -497,7 +500,7 @@ export function SupportChatWidget() {
                         />
                       ))}
                     </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">লিখছি…</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">Typing…</span>
                   </div>
                 </motion.div>
               )}
@@ -513,7 +516,7 @@ export function SupportChatWidget() {
                   className="rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-teal-50/50 p-3.5 dark:border-emerald-500/35 dark:from-emerald-950/40 dark:to-teal-950/20"
                 >
                   <p className="mb-2 text-xs font-medium text-emerald-900 dark:text-emerald-200">
-                    এই বিষয়ে টিমের কাছে টিকিট পাঠাবেন?
+                    Want to send this to our team as a support ticket?
                   </p>
                   <button
                     type="button"
@@ -526,14 +529,14 @@ export function SupportChatWidget() {
                     ) : (
                       <Ticket className="h-4 w-4" />
                     )}
-                    টিকিট খুলুন
+                    Open ticket
                   </button>
                   {!user && (
                     <p className="mt-2 text-center text-[11px] text-gray-600 dark:text-gray-400">
                       <Link to="/login" className="font-medium text-indigo-600 underline dark:text-indigo-400">
-                        লগ ইন
+                        Log in
                       </Link>{' '}
-                      করতে হবে।
+                      to continue.
                     </p>
                   )}
                 </motion.div>
@@ -551,7 +554,7 @@ export function SupportChatWidget() {
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="আপনার প্রশ্ন লিখুন…"
+                  placeholder="Type your question…"
                   maxLength={2000}
                   disabled={loading || panelBusy}
                   className="min-h-[2.75rem] flex-1 rounded-2xl border border-gray-200/90 bg-gray-50/95 px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 transition-shadow focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 dark:border-[#34343c] dark:bg-[#18181c] dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-indigo-500/55 disabled:opacity-60"

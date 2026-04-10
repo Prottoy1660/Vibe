@@ -8,6 +8,7 @@ import {
 import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { getDefaultAvatarUrl } from '../../lib/defaultAvatar';
 
 interface AdminUserDetailsProps {
   userId: string;
@@ -310,6 +311,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
     { id: 'emails' as const, label: 'Adobe accounts', short: 'Accounts', icon: Mail, count: emails.length },
     { id: 'activity' as const, label: 'Activity', short: 'Log', icon: History, count: activityLogs.length },
   ];
+  const avatarFallbackUrl = getDefaultAvatarUrl(userProfile.email || userProfile.id, userProfile.name);
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 max-w-6xl mx-auto">
@@ -337,11 +339,17 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
             </button>
 
             <div className="relative group shrink-0">
-              <div className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-primary text-white rounded-2xl flex items-center justify-center font-bold text-xl sm:text-2xl shadow-md overflow-hidden ring-2 ring-white dark:ring-[#1a1a1d]">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center shadow-md overflow-hidden ring-2 ring-white dark:ring-[#1a1a1d] bg-gray-100 dark:bg-[#1a1a1f]">
                 {userProfile.avatar_url ? (
                   <img src={userProfile.avatar_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 ) : (
-                  userProfile.name?.charAt(0).toUpperCase() || 'U'
+                  <img
+                    src={avatarFallbackUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover"
+                  />
                 )}
               </div>
               <button

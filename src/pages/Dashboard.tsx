@@ -12,7 +12,7 @@ import {
   Sparkles,
   Infinity as InfinityIcon
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, animate, motion, useReducedMotion } from 'framer-motion';
 import { formatDistanceToNow } from 'date-fns';
 
 import { useNavigate } from 'react-router-dom';
@@ -26,6 +26,7 @@ import {
 import { postJsonWithFallback } from '../lib/apiClient';
 import { toast } from '../lib/toast';
 import { isStalePendingOrder } from '../lib/orderHistoryVisibility';
+import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
 
 interface Stats {
   totalOrders: number;
@@ -49,9 +50,80 @@ const TakaIcon = ({ className }: { className?: string }) => (
   </span>
 );
 
+type StatKind = 'count' | 'currency';
+
+type StatCardDef = {
+  title: string;
+  kind: StatKind;
+  value: number;
+  caption: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: string;
+  bgColor: string;
+  waveColor: string; // hex
+  onClick?: () => void;
+};
+
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+function hexToRgba(hex: string, alpha: number) {
+  const a = clamp01(alpha);
+  const h = hex.replace('#', '').trim();
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const int = Number.parseInt(full, 16);
+  // Fallback to subtle white if invalid hex
+  if (!Number.isFinite(int) || full.length !== 6) return `rgba(255,255,255,${a})`;
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function formatStat(kind: StatKind, value: number) {
+  if (kind === 'currency') return `৳${value.toFixed(2)}`;
+  return Math.round(value).toString();
+}
+
+const CountUpText = ({
+  to,
+  kind,
+  reduced,
+  durationMs = 750,
+}: {
+  to: number;
+  kind: StatKind;
+  reduced: boolean;
+  durationMs?: number;
+}) => {
+  const [display, setDisplay] = useState(() => formatStat(kind, reduced ? to : 0));
+
+  useEffect(() => {
+    if (reduced) {
+      setDisplay(formatStat(kind, to));
+      return;
+    }
+
+    const from = 0;
+    const controls = animate(from, to, {
+      duration: durationMs / 1000,
+      ease: [0.16, 1, 0.3, 1],
+      onUpdate: (latest) => {
+        setDisplay(formatStat(kind, latest));
+      },
+    });
+
+    return () => {
+      controls.stop();
+    };
+  }, [durationMs, kind, reduced, to]);
+
+  return <span>{display}</span>;
+};
+
 export const Dashboard = () => {
   const { user, signOut, isAdmin, role } = useAuth();
   const navigate = useNavigate();
+  const reducedMotion = useReducedMotion();
   const [stats, setStats] = useState<Stats>({
     totalOrders: 0,
     totalSpent: 0,
@@ -185,7 +257,7 @@ export const Dashboard = () => {
   }, [user, isAdmin, fetchDashboardData]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
-  const userInitials = userName.substring(0, 2).toUpperCase();
+  const avatarFallbackUrl = getDefaultAvatarUrl(user?.email || user?.id, userName);
 
   const handleRecharge = async () => {
     const amount = Number(rechargeAmount);
@@ -218,10 +290,11 @@ export const Dashboard = () => {
     }
   };
 
-  const statCards = [
+  const statCards: StatCardDef[] = [
     {
       title: 'Total Orders',
-      value: stats.totalOrders.toString(),
+      kind: 'count',
+      value: stats.totalOrders,
       caption: 'Matches Orders page (old unpaid checkouts hidden after 30 min)',
       icon: ShoppingBag,
       color: 'text-primary',
@@ -230,7 +303,8 @@ export const Dashboard = () => {
     },
     {
       title: 'Total Spent',
-      value: `৳${stats.totalSpent.toFixed(2)}`,
+      kind: 'currency',
+      value: stats.totalSpent,
       caption: 'Total amount spent',
       icon: TakaIcon,
       color: 'text-green-500',
@@ -239,7 +313,8 @@ export const Dashboard = () => {
     },
     {
       title: 'Active Subscriptions',
-      value: stats.activeSubscriptions.toString(),
+      kind: 'count',
+      value: stats.activeSubscriptions,
       caption: 'Currently active plans',
       icon: CreditCard,
       color: 'text-orange-500',
@@ -248,15 +323,17 @@ export const Dashboard = () => {
     },
     {
       title: 'Wallet Balance',
-      value: `৳${stats.walletBalance.toFixed(2)}`,
+      kind: 'currency',
+      value: stats.walletBalance,
       caption:
         stats.walletPromotional > 0
-          ? `Withdrawable · +৳${stats.walletPromotional.toFixed(2)} subscription credits`
-          : 'Withdrawable balance',
+          ? `Available · +৳${stats.walletPromotional.toFixed(2)} subscription credits`
+          : 'Available balance',
       icon: Wallet,
       color: 'text-blue-500',
       bgColor: 'bg-blue-100',
       waveColor: '#3B82F6',
+      onClick: () => setShowRechargeModal(true),
     },
   ];
 
@@ -277,9 +354,15 @@ export const Dashboard = () => {
 
       {/* Welcome Card */}
       <div className="bg-white dark:bg-[#151518] rounded-2xl p-4 sm:p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-colors duration-300">
-        <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 rounded-full bg-primary/10 text-primary dark:bg-slate-800 dark:text-white flex items-center justify-center font-bold text-lg transition-colors duration-300">
-            {userInitials}
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="relative h-12 w-12 sm:h-[3.25rem] sm:w-[3.25rem] shrink-0 overflow-hidden rounded-full border border-gray-100 bg-gray-50 shadow-sm dark:border-2 dark:border-[#2a2a32] dark:bg-[#1a1a1f] dark:shadow-none dark:ring-1 dark:ring-white/[0.06]">
+            <img
+              src={avatarFallbackUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover object-center"
+            />
           </div>
           <div>
             <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Welcome</p>
@@ -296,46 +379,170 @@ export const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat, idx) => (
-          <motion.div
-            key={idx}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-            className={`bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300 relative overflow-hidden group ${stat.title === 'Wallet Balance' ? 'ring-1 ring-primary/20 cursor-pointer hover:shadow-md' : ''}`}
-            onClick={() => stat.title === 'Wallet Balance' && setShowRechargeModal(true)}
-          >
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-xl ${stat.bgColor.split(' ')[0]} dark:${stat.bgColor.split(' ')[0].replace('100', '500/10').replace('10', '500/10')}`}>
-                  <stat.icon className={`w-6 h-6 ${stat.color} dark:${stat.color.replace('500', '400')}`} />
+      <motion.div
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: {
+            transition: reducedMotion
+              ? { staggerChildren: 0.03, delayChildren: 0.02 }
+              : { staggerChildren: 0.07, delayChildren: 0.06 },
+          },
+        }}
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+      >
+        {statCards.map((stat) => {
+          const accent = stat.waveColor;
+          const accentGlow = hexToRgba(accent, reducedMotion ? 0.12 : 0.18);
+          const accentRing = hexToRgba(accent, 0.22);
+          const accentSheen = hexToRgba('#ffffff', 0.14);
+
+          return (
+            <motion.div
+              key={stat.title}
+              variants={{
+                hidden: { opacity: 0, y: 12, scale: reducedMotion ? 1 : 0.992 },
+                show: {
+                  opacity: 1,
+                  y: 0,
+                  scale: 1,
+                  transition: reducedMotion
+                    ? { duration: 0.25, ease: 'easeOut' }
+                    : { type: 'spring', stiffness: 320, damping: 26, mass: 0.65 },
+                },
+              }}
+              whileHover={
+                reducedMotion
+                  ? undefined
+                  : {
+                      y: -4,
+                      scale: 1.01,
+                      transition: { type: 'spring', stiffness: 420, damping: 28, mass: 0.5 },
+                    }
+              }
+              whileTap={stat.onClick && !reducedMotion ? { scale: 0.995, y: -2 } : undefined}
+              className={`bg-white dark:bg-[#151518] rounded-2xl p-6 shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] transition-colors duration-300 relative overflow-hidden group ${
+                stat.onClick
+                  ? 'cursor-pointer hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400/40 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-gray-500/35 dark:focus-visible:ring-offset-[#151518]'
+                  : ''
+              }`}
+              role={stat.onClick ? 'button' : undefined}
+              tabIndex={stat.onClick ? 0 : undefined}
+              onKeyDown={
+                stat.onClick
+                  ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        stat.onClick?.();
+                      }
+                    }
+                  : undefined
+              }
+              onClick={stat.onClick}
+              onPointerMove={
+                reducedMotion
+                  ? undefined
+                  : (e) => {
+                      if (e.pointerType === 'touch') return;
+                      const el = e.currentTarget;
+                      const rect = el.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const y = e.clientY - rect.top;
+                      el.style.setProperty('--mx', `${x}px`);
+                      el.style.setProperty('--my', `${y}px`);
+                    }
+              }
+              onPointerLeave={
+                reducedMotion
+                  ? undefined
+                  : (e) => {
+                      const el = e.currentTarget;
+                      el.style.setProperty('--mx', `50%`);
+                      el.style.setProperty('--my', `50%`);
+                    }
+              }
+              style={
+                {
+                  // default highlight position (center)
+                  ['--mx' as any]: '50%',
+                  ['--my' as any]: '50%',
+                } as React.CSSProperties
+              }
+            >
+              {/* Premium border/glow (theme-safe) */}
+              <div
+                aria-hidden
+                className="absolute inset-0 rounded-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                style={{
+                  boxShadow: `0 0 0 1px ${accentRing}, 0 18px 60px -42px ${accentGlow}`,
+                }}
+              />
+
+              {/* Cursor-follow soft highlight */}
+              <div
+                aria-hidden
+                className="absolute inset-0 rounded-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                style={{
+                  background: `radial-gradient(140px circle at var(--mx) var(--my), ${accentGlow} 0%, transparent 62%)`,
+                }}
+              />
+
+              {/* Sheen sweep (one-time + hover) */}
+              {!reducedMotion ? (
+                <motion.div
+                  aria-hidden
+                  className="absolute inset-0 pointer-events-none opacity-0"
+                  initial={{ opacity: 0, x: '-40%' }}
+                  animate={{ opacity: 0.5, x: '140%' }}
+                  transition={{ duration: 1.05, ease: [0.16, 1, 0.3, 1], delay: 0.08 }}
+                  whileHover={{ opacity: 0.7, x: '160%' }}
+                  style={{
+                    background: `linear-gradient(120deg, transparent 35%, ${accentSheen} 50%, transparent 65%)`,
+                  }}
+                />
+              ) : null}
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4">
+                  <div
+                    className={`p-3 rounded-xl ${stat.bgColor.split(' ')[0]} dark:${stat.bgColor
+                      .split(' ')[0]
+                      .replace('100', '500/10')
+                      .replace('10', '500/10')}`}
+                  >
+                    <stat.icon className={`w-6 h-6 ${stat.color} dark:${stat.color.replace('500', '400')}`} />
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{stat.title}</span>
+                    {stat.title === 'Wallet Balance' && (
+                      <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full mt-1 flex items-center">
+                        <Plus className="w-3 h-3 mr-0.5" /> ADD FUNDS
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{stat.title}</span>
-                  {stat.title === 'Wallet Balance' && (
-                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full mt-1 flex items-center">
-                      <Plus className="w-3 h-3 mr-0.5" /> ADD FUNDS
-                    </span>
-                  )}
-                </div>
+
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                  <CountUpText to={stat.value} kind={stat.kind} reduced={Boolean(reducedMotion)} />
+                </h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{stat.caption}</p>
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</h3>
-            </div>
-            
-            {/* Decorative subtle wave animation */}
-            <div className="absolute bottom-0 left-0 right-0 h-12 opacity-10 transform translate-y-4 group-hover:translate-y-2 transition-transform duration-500">
-              <svg viewBox="0 0 1440 320" className="w-full h-full" preserveAspectRatio="none">
-                <path 
-                  fill={stat.waveColor} 
-                  fillOpacity="1" 
-                  d="M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,149,864,154.7C960,160,1056,139,1152,122.7C1248,107,1344,96,1392,90.7L1440,85.3L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
-                ></path>
-              </svg>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+
+              {/* Decorative wave (kept subtle) */}
+              <div className="absolute bottom-0 left-0 right-0 h-12 opacity-10 transform translate-y-4 group-hover:translate-y-2 transition-transform duration-500">
+                <svg viewBox="0 0 1440 320" className="w-full h-full" preserveAspectRatio="none">
+                  <path
+                    fill={stat.waveColor}
+                    fillOpacity="1"
+                    d="M0,96L48,112C96,128,192,160,288,160C384,160,480,128,576,122.7C672,117,768,149,864,154.7C960,160,1056,139,1152,122.7C1248,107,1344,96,1392,90.7L1440,85.3L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z"
+                  ></path>
+                </svg>
+              </div>
+            </motion.div>
+          );
+        })}
+      </motion.div>
 
       {/* Promo Banners */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

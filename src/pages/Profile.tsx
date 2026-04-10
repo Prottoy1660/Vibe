@@ -20,6 +20,7 @@ import {
 import { setStoredLanguage, type AppLanguage } from '../lib/language';
 import { hasMinimumPhone } from '../lib/phoneRequired';
 import { disableWebPush, enableWebPush, getPushPermission } from '../lib/webPushClient';
+import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
 
 export const Profile = () => {
   const { user } = useAuth();
@@ -213,6 +214,7 @@ export const Profile = () => {
   const emailVerified = Boolean(user?.email_confirmed_at);
   const phoneOk = hasMinimumPhone(formData.phone);
   const languageLabel = preferredLanguage === 'bn' ? 'Bangla (বাংলা)' : 'English';
+  const avatarFallbackUrl = getDefaultAvatarUrl(formData.email || user?.id, formData.name);
 
   const inputClass =
     'pl-10 w-full rounded-lg border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 dark:focus:border-indigo-400 outline-none transition-shadow';
@@ -230,9 +232,13 @@ export const Profile = () => {
                     {formData.avatar_url ? (
                       <img src={formData.avatar_url} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="h-full w-full bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-indigo-900/45 dark:to-violet-900/45 flex items-center justify-center text-indigo-600 dark:text-indigo-300 text-2xl font-semibold">
-                        {formData.name?.charAt(0).toUpperCase() || 'U'}
-                      </div>
+                      <img
+                        src={avatarFallbackUrl}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full object-cover"
+                      />
                     )}
                   </div>
                   <button
