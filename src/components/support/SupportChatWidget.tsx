@@ -81,6 +81,16 @@ export function SupportChatWidget() {
 
   useEffect(() => {
     let cancelled = false;
+    const safetyMs = 8000;
+    const safety =
+      typeof window !== 'undefined'
+        ? window.setTimeout(() => {
+            if (cancelled) return;
+            setMeta((prev) => prev ?? { help_chat_enabled: true, whatsapp_e164: null, ai_enabled: false });
+            setMetaChecked(true);
+          }, safetyMs)
+        : 0;
+
     (async () => {
       try {
         const m = await getJsonWithFallback<SupportMeta>('/api/support-chat/meta', { skipErrorPageRedirect: true });
@@ -88,11 +98,15 @@ export function SupportChatWidget() {
       } catch {
         if (!cancelled) setMeta({ help_chat_enabled: true, whatsapp_e164: null, ai_enabled: false });
       } finally {
-        if (!cancelled) setMetaChecked(true);
+        if (!cancelled) {
+          if (safety) window.clearTimeout(safety);
+          setMetaChecked(true);
+        }
       }
     })();
     return () => {
       cancelled = true;
+      if (safety) window.clearTimeout(safety);
     };
   }, []);
 
@@ -207,10 +221,7 @@ export function SupportChatWidget() {
     await sendTurns(next);
   };
 
-  if (!metaChecked) {
-    return null;
-  }
-  if (meta?.help_chat_enabled === false) {
+  if (metaChecked && meta?.help_chat_enabled === false) {
     return null;
   }
 

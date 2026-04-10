@@ -60,8 +60,8 @@ export const Layout = () => {
   const showGlobalBanners = !location.pathname.startsWith('/admin');
   const isProfilePage = location.pathname === '/profile';
   const { user, signOut, isAdmin, isSuperAdmin, loading: authLoading, role, needsMandatoryPhone } = useAuth();
-  /** Help chat is for customers — hide for admins everywhere (including /profile) */
-  const showSupportChat = showGlobalBanners && !isAdmin;
+  /** Help chat on customer routes; hidden only under /admin so admins can still see it on Store, Profile, etc. */
+  const showSupportChat = showGlobalBanners;
   const { platform: maintPlatform, ready: maintReady } = useMaintenanceMode();
   const roleResolved = !user || role !== null;
   const { theme, toggleTheme } = useTheme();
