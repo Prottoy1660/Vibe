@@ -488,7 +488,13 @@ export const Login = () => {
                   <div className={`w-full border-t ${isDark ? 'border-white/10' : 'border-slate-200'}`} />
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className={`px-4 ${isDark ? 'bg-[#0A0A0A] text-gray-500' : 'bg-slate-50 text-slate-500'}`}>Or continue with</span>
+                  <span
+                    className={`px-4 py-1 rounded-full backdrop-blur-md ${
+                      isDark ? 'bg-[#0A0A0A]/60 text-gray-400 ring-1 ring-white/10' : 'bg-slate-50/80 text-slate-500 ring-1 ring-slate-200'
+                    }`}
+                  >
+                    Or continue with
+                  </span>
                 </div>
               </div>
               <div className="space-y-3">
