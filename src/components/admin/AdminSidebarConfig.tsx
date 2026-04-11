@@ -14,6 +14,7 @@ const AVAILABLE_TABS = [
   { id: 'coupons', label: 'Coupon Management' },
   { id: 'user_emails', label: 'User Subscriptions' },
   { id: 'notices', label: 'Important Notices' },
+  { id: 'welcome_popup', label: 'Welcome popup' },
   { id: 'user_notifications', label: 'User notifications' },
   { id: 'user_inbox_history', label: 'Notification history' },
   { id: 'push_notifications', label: 'Push notifications' },

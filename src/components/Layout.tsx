@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -32,6 +32,7 @@ import {
   MessageCircle,
   Download,
   Loader2,
+  PanelTop,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
@@ -47,6 +48,8 @@ import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
 import { PushEnablePrompt } from './PushEnablePrompt';
+import { CustomerNoticeModal, type WelcomePopupContent } from './CustomerNoticeModal';
+import { getNoticeModalDismissUntil } from '../lib/noticeModalStorage';
 import { getDefaultAvatarUrl, parseAvatarDefaultGender, type AvatarDefaultGender } from '../lib/defaultAvatar';
 
 // Utility for merging tailwind classes
@@ -166,6 +169,56 @@ export const Layout = () => {
   }, [isAdmin]);
 
   const [hiddenAdminTabs, setHiddenAdminTabs] = useState<string[]>([]);
+
+  /** Latest active “popup” notice for customers (not admins). */
+  const [customerModalNotice, setCustomerModalNotice] = useState<WelcomePopupContent | null>(null);
+
+  const refreshCustomerModalNotice = useCallback(async () => {
+    if (!user?.id || isAdmin) {
+      setCustomerModalNotice(null);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('welcome_popups')
+      .select('id, title, content, type, created_at, hero_image_url, cta_label, cta_url, snooze_hours')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(12);
+
+    if (error) {
+      console.warn('[Layout] welcome_popups fetch', error);
+      setCustomerModalNotice(null);
+      return;
+    }
+
+    const rows = (data || []) as WelcomePopupContent[];
+    for (const row of rows) {
+      const until = getNoticeModalDismissUntil(row.id);
+      if (!until || Date.now() >= until) {
+        setCustomerModalNotice(row);
+        return;
+      }
+    }
+    setCustomerModalNotice(null);
+  }, [user?.id, isAdmin]);
+
+  useEffect(() => {
+    void refreshCustomerModalNotice();
+  }, [refreshCustomerModalNotice]);
+
+  useEffect(() => {
+    if (!user?.id || isAdmin) return;
+    const channel = supabase
+      .channel(`customer_welcome_popup_rt:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'welcome_popups' }, () => {
+        void refreshCustomerModalNotice();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, isAdmin, refreshCustomerModalNotice]);
+
   useEffect(() => {
     if (!isAdmin) return;
     let cancelled = false;
@@ -176,6 +229,42 @@ export const Layout = () => {
     });
     return () => { cancelled = true; };
   }, [isAdmin]);
+
+  /** Open + in-progress support tickets (shown next to admin nav link). */
+  const [openSupportTicketCount, setOpenSupportTicketCount] = useState(0);
+
+  const refreshOpenSupportTicketCount = useCallback(async () => {
+    if (!isAdmin) {
+      setOpenSupportTicketCount(0);
+      return;
+    }
+    const { count, error } = await supabase
+      .from('support_tickets')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['open', 'in_progress']);
+    if (error) {
+      console.warn('[Layout] support ticket count', error);
+      return;
+    }
+    setOpenSupportTicketCount(count ?? 0);
+  }, [isAdmin]);
+
+  useEffect(() => {
+    void refreshOpenSupportTicketCount();
+  }, [refreshOpenSupportTicketCount]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    const channel = supabase
+      .channel(`admin_support_ticket_count:${crypto.randomUUID()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
+        void refreshOpenSupportTicketCount();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, refreshOpenSupportTicketCount]);
 
   const topbarAvatarSrc = useMemo(() => {
     if (!user) return null;
@@ -211,6 +300,7 @@ export const Layout = () => {
       items: [
         { name: 'User Subscriptions', href: '/admin?tab=user_emails', icon: ShieldAlert },
         { name: 'Important Notices', href: '/admin?tab=notices', icon: Info },
+        { name: 'Welcome popup', href: '/admin?tab=welcome_popup', icon: PanelTop },
         { name: 'User notifications', href: '/admin?tab=user_notifications', icon: Megaphone },
         { name: 'Notification history', href: '/admin?tab=user_inbox_history', icon: Megaphone },
         { name: 'Push notifications', href: '/admin?tab=push_notifications', icon: BellRing },
@@ -354,24 +444,41 @@ export const Layout = () => {
                           ? (location.pathname + location.search) === item.href || (location.pathname === '/admin' && !location.search && item.href === '/admin?tab=overview')
                           : location.pathname === item.href;
                           
+                        const supportBadge =
+                          item.href === '/admin?tab=support' && openSupportTicketCount > 0
+                            ? openSupportTicketCount > 99
+                              ? '99+'
+                              : String(openSupportTicketCount)
+                            : null;
+
                         return (
                           <Link
                             key={item.name}
                             to={item.href}
                             onClick={() => setSidebarOpen(false)}
                             className={cn(
-                              "flex items-center px-3 py-2 text-sm font-medium rounded-xl transition-colors",
-                              isActive 
-                                ? "bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400" 
-                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white"
+                              'flex min-w-0 items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl transition-colors',
+                              isActive
+                                ? 'bg-primary/10 dark:bg-primary/20 text-primary dark:text-indigo-400'
+                                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 hover:text-gray-900 dark:hover:text-white',
                             )}
                           >
-                            <item.icon className={cn(
-                              "mr-3 h-5 w-5",
-                              isActive ? "text-primary dark:text-indigo-400" : "text-gray-400 dark:text-gray-500",
-                              item.highlight && !isActive && "text-red-500 dark:text-red-400"
-                            )} />
-                            {item.name}
+                            <item.icon
+                              className={cn(
+                                'mr-1 h-5 w-5 shrink-0',
+                                isActive ? 'text-primary dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500',
+                                item.highlight && !isActive && 'text-red-500 dark:text-red-400',
+                              )}
+                            />
+                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            {supportBadge ? (
+                              <span
+                                className="shrink-0 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold leading-none text-zinc-900 shadow-sm tabular-nums"
+                                title={`${openSupportTicketCount} ticket(s) need attention`}
+                              >
+                                {supportBadge}
+                              </span>
+                            ) : null}
                           </Link>
                         );
                       })}
@@ -500,6 +607,13 @@ export const Layout = () => {
       <LobbyMusicPlayer userId={user?.id ?? null} adminRoute={location.pathname.startsWith('/admin')} />
 
       {showSupportChat ? <SupportChatWidget /> : null}
+
+      {showGlobalBanners && user?.id && !isAdmin && customerModalNotice ? (
+        <CustomerNoticeModal
+          notice={customerModalNotice}
+          onClose={() => setCustomerModalNotice(null)}
+        />
+      ) : null}
     </div>
   );
 };

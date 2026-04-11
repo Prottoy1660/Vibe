@@ -31,6 +31,9 @@ const AdminOrders = React.lazy(() => import('../components/admin/AdminOrders').t
 const AdminUsers = React.lazy(() => import('../components/admin/AdminUsers').then((m) => ({ default: m.AdminUsers })));
 const AdminCoupons = React.lazy(() => import('../components/admin/AdminCoupons').then((m) => ({ default: m.AdminCoupons })));
 const AdminNotices = React.lazy(() => import('../components/admin/AdminNotices').then((m) => ({ default: m.AdminNotices })));
+const AdminWelcomePopup = React.lazy(() =>
+  import('../components/admin/AdminWelcomePopup').then((m) => ({ default: m.AdminWelcomePopup })),
+);
 const AdminEmails = React.lazy(() => import('../components/admin/AdminEmails').then((m) => ({ default: m.AdminEmails })));
 const AdminUserEmails = React.lazy(() => import('../components/admin/AdminUserEmails').then((m) => ({ default: m.AdminUserEmails })));
 const AdminAnalytics = React.lazy(() => import('../components/admin/AdminAnalytics').then((m) => ({ default: m.AdminAnalytics })));
@@ -291,6 +294,7 @@ export const AdminDashboard = () => {
             {activeTab === 'users' && 'User Management'}
             {activeTab === 'coupons' && 'Coupon Management'}
             {activeTab === 'notices' && 'Notice Management'}
+            {activeTab === 'welcome_popup' && 'Welcome popup'}
             {activeTab === 'user_notifications' && (
               <span className="flex items-center gap-2">
                 <Megaphone className="w-6 h-6" />
@@ -378,6 +382,7 @@ export const AdminDashboard = () => {
         {activeTab === 'users' && <AdminUsers />}
         {activeTab === 'coupons' && <AdminCoupons />}
         {activeTab === 'notices' && <AdminNotices />}
+        {activeTab === 'welcome_popup' && <AdminWelcomePopup />}
         {activeTab === 'emails' && <AdminEmails />}
         {activeTab === 'analytics' && <AdminAnalytics />}
         {activeTab === 'finance' && <AdminFinance />}

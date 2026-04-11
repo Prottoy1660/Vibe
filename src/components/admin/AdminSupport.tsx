@@ -12,9 +12,12 @@ import {
   Phone,
   ChevronRight,
   Trash2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { cn } from '../Layout';
 
 type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 type TicketCategory = 'general' | 'billing' | 'adobe_access' | 'account' | 'other';
@@ -40,6 +43,14 @@ interface UserRow {
   phone: string | null;
 }
 
+interface TicketReplyRow {
+  id: string;
+  ticket_id: string;
+  body: string;
+  created_at: string;
+  created_by: string | null;
+}
+
 const CATEGORY_LABEL: Record<TicketCategory, string> = {
   general: 'General',
   billing: 'Billing',
@@ -54,6 +65,13 @@ const STATUS_OPTIONS: { value: TicketStatus; label: string }[] = [
   { value: 'resolved', label: 'Resolved' },
   { value: 'closed', label: 'Closed' },
 ];
+
+const STATUS_BADGE: Record<TicketStatus, string> = {
+  open: 'bg-amber-100 dark:bg-amber-500/15 text-amber-900 dark:text-amber-300',
+  in_progress: 'bg-sky-100 dark:bg-sky-500/15 text-sky-900 dark:text-sky-300',
+  resolved: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-300',
+  closed: 'bg-zinc-200 dark:bg-white/10 text-zinc-800 dark:text-zinc-300',
+};
 
 export const AdminSupport = () => {
   const { confirm } = useConfirmDialog();
@@ -70,6 +88,7 @@ export const AdminSupport = () => {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [repliesByTicket, setRepliesByTicket] = useState<Record<string, TicketReplyRow[]>>({});
 
   const fetchTickets = useCallback(async () => {
     setLoading(true);
@@ -83,6 +102,24 @@ export const AdminSupport = () => {
       if (error) throw error;
       const rows = (data as TicketRow[]) || [];
       setTickets(rows);
+
+      const ticketIds = rows.map((r) => r.id);
+      if (ticketIds.length > 0) {
+        const { data: repData, error: repErr } = await supabase
+          .from('support_ticket_replies')
+          .select('id, ticket_id, body, created_at, created_by')
+          .in('ticket_id', ticketIds)
+          .order('created_at', { ascending: true });
+        if (repErr) throw repErr;
+        const by: Record<string, TicketReplyRow[]> = {};
+        for (const r of (repData as TicketReplyRow[]) || []) {
+          if (!by[r.ticket_id]) by[r.ticket_id] = [];
+          by[r.ticket_id].push(r);
+        }
+        setRepliesByTicket(by);
+      } else {
+        setRepliesByTicket({});
+      }
 
       const ids = [...new Set(rows.map((r) => r.user_id))];
       if (ids.length > 0) {
@@ -114,13 +151,13 @@ export const AdminSupport = () => {
 
   useEffect(() => {
     if (selected) {
-      setAdminReply(selected.admin_reply || '');
+      setAdminReply('');
       setStatusEdit(selected.status);
     } else {
       setAdminReply('');
       setStatusEdit('open');
     }
-  }, [selectedId, selected]);
+  }, [selectedId, selected?.id, selected?.status]);
 
   const handleSaveReply = async () => {
     if (!selected || !user) return;
@@ -130,17 +167,24 @@ export const AdminSupport = () => {
       const reply = adminReply.trim();
       const payload: Record<string, unknown> = {
         status: statusEdit,
-        admin_reply: reply || null,
         updated_at: new Date().toISOString(),
       };
       if (reply) {
+        const { error: insErr } = await supabase.from('support_ticket_replies').insert({
+          ticket_id: selected.id,
+          body: reply.slice(0, 8000),
+          created_by: user.id,
+        });
+        if (insErr) throw insErr;
+        payload.admin_reply = reply;
         payload.replied_at = new Date().toISOString();
         payload.replied_by = user.id;
       }
 
       const { error } = await supabase.from('support_tickets').update(payload).eq('id', selected.id);
       if (error) throw error;
-      setSaveMsg({ type: 'ok', text: 'Saved.' });
+      setSaveMsg({ type: 'ok', text: reply ? 'Reply added.' : 'Status updated.' });
+      setAdminReply('');
       await fetchTickets();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to save';
@@ -186,10 +230,16 @@ export const AdminSupport = () => {
   const filtered = tickets.filter((t) => {
     const q = searchQuery.trim().toLowerCase();
     const u = userMap[t.user_id];
+    const replyHaystack = (repliesByTicket[t.id] || [])
+      .map((r) => r.body)
+      .join('\n')
+      .toLowerCase();
     const matchesSearch =
       !q ||
       t.subject.toLowerCase().includes(q) ||
       t.body.toLowerCase().includes(q) ||
+      (t.admin_reply || '').toLowerCase().includes(q) ||
+      replyHaystack.includes(q) ||
       (u?.email || '').toLowerCase().includes(q) ||
       (u?.name || '').toLowerCase().includes(q);
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter;
@@ -220,8 +270,9 @@ export const AdminSupport = () => {
             </div>
             <div>
               <h2 className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Support tickets</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
-                Review user requests, set status, and post a reply — users see your message on their Support page.
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-2 max-w-2xl leading-relaxed">
+                Review requests, update status, and reply — users read your message on their Support page. The sidebar
+                shows a badge when tickets are open or in progress.
               </p>
             </div>
           </div>
@@ -243,73 +294,112 @@ export const AdminSupport = () => {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d] p-4 sm:p-6">
-        <div className="flex flex-col lg:flex-row lg:items-center gap-4 mb-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="rounded-2xl border border-gray-200/90 dark:border-[#2e2e36] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-5">
+          <div className="relative w-full max-w-md">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search subject, message, user…"
-              className="w-full pl-9 pr-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              className="w-full rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] py-3 pl-10 pr-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             />
           </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
-          >
-            <option value="all">All statuses</option>
-            {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              setSearchQuery('');
-              setStatusFilter('all');
-            }}
-            className="inline-flex items-center gap-2 px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
-          >
-            <RotateCcw className="w-4 h-4" />
-            Reset
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-3.5 py-3 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            >
+              <option value="all">All statuses</option>
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('all');
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-3.5 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5"
+            >
+              <RotateCcw className="h-4 w-4" aria-hidden />
+              Reset
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="overflow-x-auto rounded-xl border border-gray-100 dark:border-[#26262d] max-h-[560px] overflow-y-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="sticky top-0 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-[#26262d] z-10">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-stretch xl:gap-8">
+          <div className="max-h-[min(78vh,820px)] overflow-auto rounded-xl border border-gray-200 dark:border-[#303038] bg-gray-50/30 dark:bg-black/20 xl:max-h-[min(90vh,940px)] xl:min-h-[min(52vh,480px)]">
+            <table className="w-full min-w-[320px] text-left text-sm">
+              <thead className="sticky top-0 z-10 border-b border-gray-200 bg-gray-100/95 dark:border-white/10 dark:bg-[#1c1c22]/95 backdrop-blur-sm">
                 <tr>
-                  <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">User</th>
-                  <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Subject</th>
-                  <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
-                  <th className="py-2.5 px-3 text-xs font-semibold text-gray-500 uppercase w-10" />
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    User
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Subject
+                  </th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Status
+                  </th>
+                  <th className="w-10 px-2 py-3" aria-hidden />
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-white/5">
+              <tbody className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                 {filtered.map((t) => {
                   const u = userMap[t.user_id];
                   const active = selectedId === t.id;
+                  const attention = t.status === 'open' || t.status === 'in_progress';
                   return (
                     <tr
                       key={t.id}
-                      className={`cursor-pointer transition-colors ${active ? 'bg-indigo-50/80 dark:bg-indigo-950/30' : 'hover:bg-gray-50/50 dark:hover:bg-white/[0.03]'}`}
+                      className={cn(
+                        'cursor-pointer transition-colors',
+                        active
+                          ? 'bg-indigo-50 dark:bg-indigo-950/35'
+                          : 'hover:bg-white/80 dark:hover:bg-white/[0.04]',
+                        attention && !active && 'border-l-2 border-l-amber-400 dark:border-l-amber-500',
+                      )}
                       onClick={() => setSelectedId(t.id)}
                     >
-                      <td className="py-2.5 px-3">
-                        <div className="font-medium text-gray-900 dark:text-gray-100 truncate max-w-[140px]">{u?.name || '—'}</div>
-                        <div className="text-xs text-gray-500 truncate max-w-[160px]">{u?.email || t.user_id}</div>
+                      <td className="px-4 py-3.5 align-top">
+                        <div className="flex items-start gap-2">
+                          {attention ? (
+                            <span
+                              className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-400 dark:bg-amber-400"
+                              title="Needs attention"
+                              aria-hidden
+                            />
+                          ) : (
+                            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-transparent" aria-hidden />
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 dark:text-gray-100">{u?.name || '—'}</div>
+                            <div className="mt-0.5 max-w-[200px] truncate text-xs text-gray-500 dark:text-gray-400">
+                              {u?.email || t.user_id}
+                            </div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-2.5 px-3 text-gray-700 dark:text-gray-300 max-w-[200px] truncate">{t.subject}</td>
-                      <td className="py-2.5 px-3">
-                        <span className="text-xs font-medium capitalize text-gray-600 dark:text-gray-400">{t.status.replace('_', ' ')}</span>
+                      <td className="max-w-[220px] px-4 py-3.5 align-top text-gray-800 dark:text-gray-200">
+                        <span className="line-clamp-2">{t.subject}</span>
                       </td>
-                      <td className="py-2.5 px-3 text-indigo-500">
-                        <ChevronRight className="w-4 h-4" />
+                      <td className="px-4 py-3.5 align-top">
+                        <span
+                          className={cn(
+                            'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize',
+                            STATUS_BADGE[t.status],
+                          )}
+                        >
+                          {t.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-2 py-3.5 align-middle text-indigo-500 dark:text-indigo-400">
+                        <ChevronRight className="h-4 w-4" aria-hidden />
                       </td>
                     </tr>
                   );
@@ -317,95 +407,174 @@ export const AdminSupport = () => {
               </tbody>
             </table>
             {filtered.length === 0 && (
-              <p className="py-10 text-center text-gray-500 dark:text-gray-400 text-sm">No tickets match.</p>
+              <p className="px-4 py-12 text-center text-sm text-gray-500 dark:text-gray-400">No tickets match.</p>
             )}
           </div>
 
-          <div className="rounded-xl border border-gray-100 dark:border-[#26262d] bg-gray-50/50 dark:bg-[#111113]/50 p-4 sm:p-5 min-h-[320px]">
+          <div className="flex min-h-[min(48vh,420px)] max-h-[min(78vh,820px)] flex-col overflow-hidden rounded-2xl border border-gray-200 dark:border-[#303038] bg-gray-50/40 dark:bg-[#111113]/60 shadow-inner dark:shadow-none xl:min-h-[min(52vh,480px)] xl:max-h-[min(90vh,940px)]">
             {!selected ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-16">Select a ticket to view and reply.</p>
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+                <LifeBuoy className="h-10 w-10 text-gray-300 dark:text-gray-600" aria-hidden />
+                <p className="max-w-xs text-sm leading-relaxed text-gray-500 dark:text-gray-400">
+                  Select a ticket from the list to read the customer message and send a reply.
+                </p>
+              </div>
             ) : (
-              <div className="space-y-4">
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Customer</p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-800 dark:text-gray-200">
-                    <span className="inline-flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-gray-400" />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="shrink-0 border-b border-gray-200 dark:border-white/10 bg-white/80 px-4 py-3 dark:bg-[#16161c]/90 sm:px-5 sm:py-3.5">
+                  <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">Customer</p>
+                  <div className="flex flex-col gap-2 text-sm text-gray-900 dark:text-gray-100 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-1.5">
+                    <span className="inline-flex items-center gap-2">
+                      <User className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                       {userMap[selected.user_id]?.name || '—'}
                     </span>
-                    <span className="inline-flex items-center gap-1 min-w-0">
-                      <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      <Mail className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                       <span className="truncate">{userMap[selected.user_id]?.email}</span>
                     </span>
-                    {userMap[selected.user_id]?.phone && (
-                      <span className="inline-flex items-center gap-1">
-                        <Phone className="w-3.5 h-3.5 text-gray-400" />
+                    {userMap[selected.user_id]?.phone ? (
+                      <span className="inline-flex items-center gap-2">
+                        <Phone className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                         {userMap[selected.user_id]?.phone}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                    {CATEGORY_LABEL[selected.category]} · {format(new Date(selected.created_at), 'MMM d, yyyy HH:mm')}
-                  </p>
-                  <p className="font-semibold text-gray-900 dark:text-gray-100">{selected.subject}</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-2 whitespace-pre-wrap">{selected.body}</p>
-                </div>
+                {/* Conversation scrolls; reply form stays pinned below (page stays short). */}
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 dark:bg-gradient-to-b dark:from-black/15 dark:via-[#12121a]/70 dark:to-black/20"
+                  role="region"
+                  aria-label="Ticket messages — scroll if long"
+                >
+                  <div className="space-y-4 sm:space-y-5">
+                    <div>
+                      <p className="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {CATEGORY_LABEL[selected.category]} · {format(new Date(selected.created_at), 'MMM d, yyyy · h:mm a')}
+                      </p>
+                      <h3 className="text-lg font-semibold leading-snug text-gray-900 dark:text-gray-100">
+                        {selected.subject}
+                      </h3>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">Status</label>
-                  <select
-                    value={statusEdit}
-                    onChange={(e) => setStatusEdit(e.target.value as TicketStatus)}
-                    className="w-full rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] px-3 py-2 text-sm"
-                  >
-                    {STATUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
+                    <div>
+                      <p className="mb-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">Customer message</p>
+                      <div className="rounded-2xl border border-gray-200/90 bg-white px-4 py-4 shadow-sm dark:border-white/10 dark:bg-[#1a1a20] sm:px-5 sm:py-4">
+                        <p className="text-sm leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">
+                          {selected.body}
+                        </p>
+                      </div>
+                    </div>
+
+                    {(repliesByTicket[selected.id] || []).map((r) => (
+                      <div key={r.id}>
+                        <p className="mb-2.5 flex flex-wrap items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                            Reply sent to user
+                          </span>
+                          <span className="font-normal text-gray-500 dark:text-gray-400">
+                            {format(new Date(r.created_at), 'MMM d, yyyy · h:mm a')}
+                          </span>
+                        </p>
+                        <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/90 px-4 py-4 dark:border-indigo-500/30 dark:bg-indigo-950/40 sm:px-5 sm:py-4">
+                          <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">
+                            {r.body}
+                          </p>
+                        </div>
+                      </div>
                     ))}
-                  </select>
+                    {(repliesByTicket[selected.id] || []).length === 0 && selected.admin_reply?.trim() ? (
+                      <div>
+                        <p className="mb-2.5 flex flex-wrap items-center gap-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                          <span className="inline-flex items-center gap-1.5">
+                            <CheckCircle2 className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
+                            Reply sent to user
+                          </span>
+                          {selected.replied_at ? (
+                            <span className="font-normal text-gray-500 dark:text-gray-400">
+                              {format(new Date(selected.replied_at), 'MMM d, yyyy · h:mm a')}
+                            </span>
+                          ) : null}
+                        </p>
+                        <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/90 px-4 py-4 dark:border-indigo-500/30 dark:bg-indigo-950/40 sm:px-5 sm:py-4">
+                          <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words">
+                            {selected.admin_reply}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1.5">Reply to user</label>
-                  <textarea
-                    value={adminReply}
-                    onChange={(e) => setAdminReply(e.target.value)}
-                    rows={6}
-                    className="w-full rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100 resize-y min-h-[120px]"
-                    placeholder="Your response will appear on the user's Support page."
-                  />
-                </div>
+                <div className="shrink-0 border-t border-gray-200 dark:border-white/10 bg-white/95 px-4 py-3 backdrop-blur-sm dark:bg-[#141418]/95 sm:px-5 sm:py-4">
+                  <p className="mb-2.5 text-xs font-medium text-gray-500 dark:text-gray-400">Reply & status</p>
+                  <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,11rem)_1fr] lg:items-end lg:gap-x-4 lg:gap-y-0">
+                    <div className="min-w-0">
+                      <label className="mb-1.5 block text-sm font-medium text-gray-800 dark:text-gray-200">Status</label>
+                      <select
+                        value={statusEdit}
+                        onChange={(e) => setStatusEdit(e.target.value as TicketStatus)}
+                        className="w-full rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-3 py-2.5 text-sm text-gray-900 dark:text-gray-100"
+                      >
+                        {STATUS_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="min-w-0 lg:min-h-0">
+                      <label className="mb-1.5 block text-sm font-medium text-gray-800 dark:text-gray-200">Reply to user</label>
+                      <textarea
+                        value={adminReply}
+                        onChange={(e) => setAdminReply(e.target.value)}
+                        rows={4}
+                        className="w-full resize-y rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-3 py-3 text-sm leading-relaxed text-gray-900 dark:text-gray-100 min-h-[92px] max-h-[min(26vh,200px)]"
+                        placeholder="Adds a new message for the customer (previous replies stay in the thread). Leave blank to update status only."
+                      />
+                    </div>
+                  </div>
 
-                {saveMsg && (
-                  <p className={`text-sm ${saveMsg.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {saveMsg.text}
-                  </p>
-                )}
+                  {saveMsg ? (
+                    <div
+                      className={cn(
+                        'mt-3 flex items-start gap-2 rounded-xl border px-3.5 py-3 text-sm',
+                        saveMsg.type === 'ok'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200'
+                          : 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-200',
+                      )}
+                    >
+                      {saveMsg.type === 'ok' ? (
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                      ) : (
+                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                      )}
+                      <span className="leading-relaxed">{saveMsg.text}</span>
+                    </div>
+                  ) : null}
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleSaveReply}
-                    disabled={saving || deleting}
-                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-4 py-2.5 text-sm disabled:opacity-60"
-                  >
-                    {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                    Save reply & status
-                  </button>
+                  <div className="mt-3 flex flex-wrap items-center gap-2.5 sm:gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSaveReply}
+                      disabled={saving || deleting}
+                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-500/20 transition hover:bg-indigo-500 disabled:opacity-60 sm:px-5"
+                    >
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Save className="h-4 w-4" aria-hidden />}
+                      Save reply & status
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    disabled={saving || deleting}
-                    className="inline-flex items-center gap-2 rounded-xl bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40 font-semibold px-4 py-2.5 text-sm disabled:opacity-60 transition-colors"
-                  >
-                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    Delete Ticket
-                  </button>
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      disabled={saving || deleting}
+                      className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-60 dark:border-red-900/50 dark:bg-red-950/35 dark:text-red-300 dark:hover:bg-red-950/50 sm:px-5"
+                    >
+                      {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4" aria-hidden />}
+                      Delete ticket
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

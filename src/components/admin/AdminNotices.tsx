@@ -26,16 +26,15 @@ export const AdminNotices = () => {
   const pendingDeleteRef = useRef<Notice | null>(null);
   const pendingDeleteTimerRef = useRef<number | null>(null);
 
-  // Form state
   const [formData, setFormData] = useState<Partial<Notice>>({
     title: '',
     content: '',
     type: 'info',
-    is_active: true
+    is_active: true,
   });
 
   useEffect(() => {
-    fetchNotices();
+    void fetchNotices();
   }, []);
 
   useEffect(() => {
@@ -46,7 +45,6 @@ export const AdminNotices = () => {
     };
   }, []);
 
-  // Realtime: keep notices list updated without manual refresh.
   const noticesRtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
@@ -91,20 +89,18 @@ export const AdminNotices = () => {
         return;
       }
 
-      if (editingId) {
-        // Update
-        const { error } = await supabase
-          .from('notices')
-          .update(formData)
-          .eq('id', editingId);
+      const payload = {
+        title: formData.title?.trim() || '',
+        content: formData.content || '',
+        type: formData.type || 'info',
+        is_active: formData.is_active ?? true,
+      };
 
+      if (editingId) {
+        const { error } = await supabase.from('notices').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        // Insert
-        const { error } = await supabase
-          .from('notices')
-          .insert(formData);
-
+        const { error } = await supabase.from('notices').insert(payload);
         if (error) throw error;
       }
 
@@ -114,24 +110,23 @@ export const AdminNotices = () => {
         title: '',
         content: '',
         type: 'info',
-        is_active: true
+        is_active: true,
       });
-      fetchNotices();
-    } catch (error: any) {
+      void fetchNotices();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Error saving notice';
       console.error('Error saving notice:', error);
-      toast.error(error.message || 'Error saving notice');
+      toast.error(msg);
     }
   };
 
-  const toggleStatus = async (id: string, currentStatus: boolean) => {
+  const toggleStatus = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from('notices')
-        .update({ is_active: !currentStatus })
-        .eq('id', id);
-
+      const row = notices.find((n) => n.id === id);
+      if (!row) return;
+      const { error } = await supabase.from('notices').update({ is_active: !row.is_active }).eq('id', id);
       if (error) throw error;
-      fetchNotices();
+      void fetchNotices();
     } catch (error) {
       console.error('Error updating notice:', error);
     }
@@ -142,7 +137,7 @@ export const AdminNotices = () => {
       title: notice.title,
       content: notice.content,
       type: notice.type,
-      is_active: notice.is_active
+      is_active: notice.is_active,
     });
     setEditingId(notice.id);
     setIsAdding(false);
@@ -153,7 +148,7 @@ export const AdminNotices = () => {
       title: '',
       content: '',
       type: 'info',
-      is_active: true
+      is_active: true,
     });
     setIsAdding(true);
     setEditingId(null);
@@ -171,7 +166,6 @@ export const AdminNotices = () => {
     const target = notices.find((n) => n.id === id) || null;
     if (!target) return;
 
-    // Optimistic remove with Undo grace period.
     pendingDeleteRef.current = target;
     setNotices((prev) => prev.filter((n) => n.id !== id));
 
@@ -250,23 +244,29 @@ export const AdminNotices = () => {
   };
 
   if (loading) {
-    return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="animate-spin w-8 h-8 text-primary" />
+      </div>
+    );
   }
 
   return (
     <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] overflow-hidden transition-colors duration-300">
       <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-start gap-4">
-        <div>
-          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <Info className="w-5 h-5 mr-2 text-yellow-500" />
+        <div className="min-w-0 flex-1 pr-2">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+            <Info className="h-5 w-5 shrink-0 text-yellow-500" aria-hidden />
             Important Notices
           </h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-2xl">
-            <span className="inline-flex items-center gap-1">
-              <AlertCircle className="w-4 h-4 text-yellow-500" />
-              Only <span className="font-semibold text-gray-700 dark:text-gray-200">Active</span> notices are visible to users.
-            </span>
-          </p>
+          <div className="mt-2 flex max-w-2xl items-start gap-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" aria-hidden />
+            <p className="min-w-0">
+              Only <strong className="font-semibold text-gray-700 dark:text-gray-200">Active</strong> notices appear on
+              the customer dashboard. The welcome modal is a separate screen:{' '}
+              <strong className="font-semibold text-gray-700 dark:text-gray-200">Welcome popup</strong>.
+            </p>
+          </div>
         </div>
         <button
           onClick={startAdd}
@@ -279,12 +279,11 @@ export const AdminNotices = () => {
       </div>
 
       <div className="p-6">
-        {/* Filters */}
         <div className="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="text-sm text-gray-600 dark:text-gray-300">
             Showing{' '}
-            <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{filteredNotices.length}</span> of{' '}
-            <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{notices.length}</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{filteredNotices.length}</span>{' '}
+            of <span className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">{notices.length}</span>
           </div>
 
           <div className="flex flex-col md:flex-row md:items-center gap-3 w-full lg:w-auto">
@@ -303,7 +302,7 @@ export const AdminNotices = () => {
 
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as any)}
+              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'info' | 'warning' | 'error')}
               className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="all">All types</option>
@@ -314,7 +313,7 @@ export const AdminNotices = () => {
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
               className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="all">All statuses</option>
@@ -324,9 +323,7 @@ export const AdminNotices = () => {
 
             <button
               type="button"
-              onClick={() => {
-                resetFilters();
-              }}
+              onClick={resetFilters}
               className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-[#1c1c21] transition-colors inline-flex items-center gap-2 whitespace-nowrap"
             >
               <RefreshCw className="w-4 h-4" />
@@ -354,19 +351,19 @@ export const AdminNotices = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Title</label>
-                  <input 
-                    type="text" 
-                    value={formData.title} 
-                    onChange={e => setFormData({...formData, title: e.target.value})}
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
                     placeholder="e.g. System Maintenance"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Type</label>
-                  <select 
-                    value={formData.type} 
-                    onChange={e => setFormData({...formData, type: e.target.value})}
+                  <select
+                    value={formData.type}
+                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                     className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
                   >
                     <option value="info">Info</option>
@@ -375,12 +372,12 @@ export const AdminNotices = () => {
                   </select>
                 </div>
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Content</label>
-                <textarea 
-                  value={formData.content} 
-                  onChange={e => setFormData({...formData, content: e.target.value})}
+                <textarea
+                  value={formData.content}
+                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                   className="w-full p-3 border border-gray-300 dark:border-[#303038] rounded-lg min-h-[120px] bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
                   placeholder="Type the notice message here. Newlines will be preserved."
                 />
@@ -388,10 +385,10 @@ export const AdminNotices = () => {
 
               <div>
                 <label className="flex items-center space-x-2">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={formData.is_active}
-                    onChange={e => setFormData({...formData, is_active: e.target.checked})}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
                     className="rounded border-gray-300 dark:border-[#303038] text-primary focus:ring-primary"
                   />
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Active (Visible to users)</span>
@@ -399,14 +396,19 @@ export const AdminNotices = () => {
               </div>
 
               <div className="flex items-end justify-end space-x-2 pt-2 border-t border-gray-200 dark:border-[#26262d]">
-                <button 
-                  onClick={() => { setIsAdding(false); setEditingId(null); }}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAdding(false);
+                    setEditingId(null);
+                  }}
                   className="px-4 py-2 border border-gray-300 dark:border-[#303038] text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-[#1c1c21] dark:bg-white/5 transition-colors duration-300"
                 >
                   Cancel
                 </button>
-                <button 
-                  onClick={handleSave}
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
                   disabled={!formData.title || !formData.content}
                   className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 flex items-center justify-center disabled:opacity-50"
                 >
@@ -430,14 +432,19 @@ export const AdminNotices = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredNotices.map(notice => (
-                <tr key={notice.id} className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300">
+              {filteredNotices.map((notice) => (
+                <tr
+                  key={notice.id}
+                  className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300"
+                >
                   <td className="py-3 px-4">
                     <div className="font-bold text-gray-900 dark:text-gray-100">{notice.title}</div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-md">{notice.content}</div>
                   </td>
                   <td className="py-3 px-4">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getTypePill(notice.type)}`}>
+                    <span
+                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getTypePill(notice.type)}`}
+                    >
                       {notice.type}
                     </span>
                   </td>
@@ -446,10 +453,11 @@ export const AdminNotices = () => {
                   </td>
                   <td className="py-3 px-4">
                     <button
-                      onClick={() => toggleStatus(notice.id, notice.is_active)}
+                      type="button"
+                      onClick={() => void toggleStatus(notice.id)}
                       className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium transition-colors ${
-                        notice.is_active 
-                          ? 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300 hover:bg-green-200 dark:hover:bg-emerald-500/20' 
+                        notice.is_active
+                          ? 'bg-green-100 dark:bg-emerald-500/10 text-green-700 dark:text-emerald-300 hover:bg-green-200 dark:hover:bg-emerald-500/20'
                           : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-white/20'
                       }`}
                     >
@@ -458,15 +466,17 @@ export const AdminNotices = () => {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end space-x-2">
-                      <button 
+                      <button
+                        type="button"
                         onClick={() => startEdit(notice)}
                         className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded transition-colors duration-300"
                         title="Edit Notice"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleDelete(notice.id)}
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete(notice.id)}
                         className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors duration-300"
                         title="Delete Notice"
                       >
