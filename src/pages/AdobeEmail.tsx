@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -33,10 +32,6 @@ import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
 import { toast } from '../lib/toast';
 import { buildInboxSnippetFromBody } from '../lib/inboxSnippet';
-
-/** Full-viewport overlay above app chrome; portaled to document.body so stacking is not clipped by main/sidebar. */
-const ADOBE_PAGE_MODAL_OVERLAY =
-  'fixed inset-0 z-[200] flex min-h-[100dvh] w-screen items-center justify-center bg-black/60 backdrop-blur-sm p-4';
 
 function getNextAdobeSlotUnlockAt(
   orderCreatedAt: string | undefined,
@@ -166,8 +161,6 @@ export const AdobeEmail = () => {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<{id: number, subject: string, snippet: string, date: string, code: string | null}[]>([]);
   const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
-  /** Last inbox fetch failure — modal stays open so user can Refresh (do not auto-close on transient errors). */
-  const [inboxError, setInboxError] = useState<string | null>(null);
 
   // Personal Subscriptions state
   const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
@@ -623,9 +616,13 @@ export const AdobeEmail = () => {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const loadInboxMessages = async (emailAddress: string, password?: string): Promise<boolean> => {
+  const loadInboxMessages = async (
+    emailAddress: string,
+    password?: string,
+    options?: { closeOnError?: boolean }
+  ): Promise<boolean> => {
+    const closeOnError = options?.closeOnError ?? false;
     setInboxLoading(true);
-    setInboxError(null);
     try {
       const API_URL = getApiBaseUrl();
       const token = await getAccessTokenForApi();
@@ -642,29 +639,20 @@ export const AdobeEmail = () => {
         body: JSON.stringify({ email: emailAddress, password }),
       });
 
-      let data: {
-        messages?: { id: number; subject: string; snippet: string; date: string; code: string | null }[];
-        error?: string;
-      } = {};
-      try {
-        data = await response.json();
-      } catch {
-        throw new Error('Could not read server response. Try again.');
-      }
+      const data = await response.json();
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to connect to email server');
       }
 
       setInboxMessages(data.messages || []);
-      setInboxError(null);
       return true;
     } catch (error: unknown) {
       console.error('Error fetching inbox:', error);
       const message = error instanceof Error ? error.message : 'Failed to connect to email server';
       toast.error(message);
       setInboxMessages([]);
-      setInboxError(message);
+      if (closeOnError) setIsInboxOpen(false);
       return false;
     } finally {
       setInboxLoading(false);
@@ -672,15 +660,14 @@ export const AdobeEmail = () => {
   };
 
   const handleOpenInbox = async (emailAddress: string, password?: string) => {
-    setInboxError(null);
     setInboxCredentials({ email: emailAddress, password });
     setIsInboxOpen(true);
-    await loadInboxMessages(emailAddress, password);
+    await loadInboxMessages(emailAddress, password, { closeOnError: true });
   };
 
   const refreshInbox = async () => {
     if (!inboxCredentials?.email) return;
-    await loadInboxMessages(inboxCredentials.email, inboxCredentials.password);
+    await loadInboxMessages(inboxCredentials.email, inboxCredentials.password, { closeOnError: false });
   };
 
   const filteredEmails = emails.filter(email => 
@@ -1389,11 +1376,9 @@ export const AdobeEmail = () => {
         </div>
       )}
 
-      {/* Personal Subscription Request Modal — portaled so dim/blur covers the whole screen including the top bar */}
-      {personalSubscriptionsEnabled &&
-        isRequestModalOpen &&
-        createPortal(
-          <div className={ADOBE_PAGE_MODAL_OVERLAY}>
+      {/* Personal Subscription Request Modal */}
+      {personalSubscriptionsEnabled && isRequestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
             role="dialog"
             aria-modal="true"
@@ -1570,14 +1555,12 @@ export const AdobeEmail = () => {
               </div>
             </form>
           </div>
-        </div>,
-        document.body,
-        )}
+        </div>
+      )}
 
-      {/* Inbox Modal — portaled for full-screen backdrop */}
-      {isInboxOpen &&
-        createPortal(
-          <div className={ADOBE_PAGE_MODAL_OVERLAY}>
+      {/* Inbox Modal */}
+      {isInboxOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
             className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             role="dialog"
@@ -1615,7 +1598,6 @@ export const AdobeEmail = () => {
                     onClick={() => {
                       setIsInboxOpen(false);
                       setInboxCredentials(null);
-                      setInboxError(null);
                     }}
                     className="p-2 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
                     aria-label="Close inbox"
@@ -1633,21 +1615,6 @@ export const AdobeEmail = () => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50/50 dark:bg-[#12121a]/50">
-              {inboxError && !inboxLoading ? (
-                <div className="mb-4 rounded-xl border border-red-200/90 dark:border-red-900/45 bg-red-50/95 dark:bg-red-950/35 px-3 py-3 text-sm text-red-900 dark:text-red-100">
-                  <p className="font-semibold">Could not load inbox</p>
-                  <p className="text-xs mt-1 leading-relaxed opacity-95">{inboxError}</p>
-                  <button
-                    type="button"
-                    onClick={() => refreshInbox()}
-                    disabled={!inboxCredentials?.email}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white text-xs font-semibold px-3 py-2 disabled:opacity-50 transition-colors"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    Try again
-                  </button>
-                </div>
-              ) : null}
               {inboxLoading && inboxMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-14 px-4">
                   <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
@@ -1754,9 +1721,8 @@ export const AdobeEmail = () => {
               ) : null}
             </div>
           </div>
-        </div>,
-        document.body,
-        )}
+        </div>
+      )}
     </div>
   );
 };
