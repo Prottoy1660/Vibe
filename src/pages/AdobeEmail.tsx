@@ -9,6 +9,7 @@ import {
   BookOpen, 
   Mail, 
   RefreshCw,
+  Plus,
   Search,
   XCircle,
   Copy,
@@ -722,12 +723,10 @@ export const AdobeEmail = () => {
   }, {} as Record<string, typeof filteredEmails>);
 
   const btnOutline =
-    'inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-zinc-600 bg-white dark:bg-zinc-900/50 px-3 py-2 text-sm font-medium text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors';
+    'inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200/90 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50/90 dark:border-zinc-700/80 dark:bg-zinc-900/40 dark:text-zinc-200 dark:hover:bg-zinc-800/80 dark:hover:border-zinc-600';
+  /** Primary: clean fill + soft depth — no outer ring (avoids “double border” look) */
   const btnPrimary =
-    'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors disabled:opacity-50';
-  /** Matches Store / checkout primary CTAs (gradient + shadow) so personal-plan actions feel part of the same system */
-  const btnPersonalPlanCta =
-    'inline-flex items-center justify-center gap-2.5 rounded-xl bg-gradient-primary px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary/25 ring-1 ring-white/15 dark:ring-white/10 transition-all hover:opacity-[0.97] hover:shadow-lg hover:shadow-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50';
+    'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.06),0_4px_12px_-2px_rgba(79,70,229,0.35)] transition-[background-color,box-shadow,transform] hover:bg-indigo-700 hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_6px_16px_-2px_rgba(79,70,229,0.42)] active:scale-[0.99] dark:bg-indigo-600 dark:hover:bg-indigo-500 dark:shadow-[0_1px_2px_rgba(0,0,0,0.2),0_4px_14px_-2px_rgba(99,102,241,0.45)] dark:hover:shadow-[0_1px_2px_rgba(0,0,0,0.25),0_6px_18px_-2px_rgba(99,102,241,0.5)] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/90 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214]';
 
   return (
     <div className="space-y-6 pb-16 max-w-5xl mx-auto">
@@ -787,7 +786,7 @@ export const AdobeEmail = () => {
             onClick={() => setActiveTab('emails')}
             className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
               activeTab === 'emails'
-                ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                ? 'bg-white text-indigo-600 shadow-sm shadow-indigo-500/10 dark:bg-zinc-800 dark:text-indigo-400 dark:shadow-[inset_0_0_0_1px_rgba(129,140,248,0.2)]'
                 : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
             }`}
           >
@@ -800,7 +799,7 @@ export const AdobeEmail = () => {
               onClick={() => setActiveTab('personal')}
               className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 activeTab === 'personal'
-                  ? 'bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                  ? 'bg-white text-indigo-600 shadow-sm shadow-indigo-500/10 dark:bg-zinc-800 dark:text-indigo-400 dark:shadow-[inset_0_0_0_1px_rgba(129,140,248,0.2)]'
                   : 'text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200'
               }`}
             >
@@ -853,7 +852,7 @@ export const AdobeEmail = () => {
               key={orderId}
               className="rounded-2xl border border-gray-200/90 dark:border-zinc-800 bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden"
             >
-              <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div className="p-5 sm:p-6 border-b border-gray-100 dark:border-white/5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0 space-y-2.5">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-zinc-100">
@@ -881,8 +880,8 @@ export const AdobeEmail = () => {
                           disabled={togglingAutoRenewOrderId === orderId}
                           onClick={() => handleToggleAutoRenew(orderId, orderAutoRenew)}
                           className={`relative inline-flex h-[24px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50 disabled:cursor-not-allowed border ${
-                            orderAutoRenew 
-                              ? 'bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_8px_rgba(99,102,241,0.4)] border-indigo-400/50 dark:border-indigo-500/30' 
+                            orderAutoRenew
+                              ? 'border-indigo-400/50 bg-indigo-600 shadow-sm shadow-indigo-900/30 dark:border-indigo-500/40'
                               : 'bg-zinc-200 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-700/80 shadow-inner'
                           }`}
                           title={orderAutoRenew ? "Auto-renew is ON: Uses wallet when term ends" : "Auto-renew is OFF"}
@@ -932,7 +931,7 @@ export const AdobeEmail = () => {
                   )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 pt-1 lg:pt-0 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0 lg:justify-end">
                   <button type="button" onClick={() => navigate('/tutorial-help')} className={btnOutline}>
                     <BookOpen className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                     How to sign in
@@ -951,15 +950,25 @@ export const AdobeEmail = () => {
                       type="button"
                       onClick={() => handleGenerateEmail(orderId)}
                       disabled={emailsGenerated >= slotLimit || generating || !slotTimingOk}
-                      className={`${btnPrimary} py-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                      className={`${btnPrimary} gap-2 px-3.5`}
                       title={
                         !slotTimingOk && nextSlotAt
                           ? `Available from ${format(nextSlotAt, 'PPP')}`
                           : undefined
                       }
                     >
-                      {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      Add email ({slotLimit - emailsGenerated} left)
+                      {generating ? (
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                      ) : (
+                        <Plus className="h-4 w-4 shrink-0" strokeWidth={2.25} aria-hidden />
+                      )}
+                      <span className="whitespace-nowrap">Add email</span>
+                      <span
+                        className="inline-flex min-w-[2.5rem] items-center justify-center rounded-md bg-black/15 px-1.5 py-0.5 text-[11px] font-bold tabular-nums"
+                        aria-label={`${slotLimit - emailsGenerated} slots remaining`}
+                      >
+                        {slotLimit - emailsGenerated} left
+                      </span>
                     </button>
                   )}
                 </div>
@@ -992,9 +1001,9 @@ export const AdobeEmail = () => {
                           : 'border-gray-200 dark:border-zinc-700 bg-gray-50/50 dark:bg-zinc-900/30'
                       }`}
                     >
-                      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 flex-1 space-y-4">
-                          <div className="flex gap-3">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0 flex-1 space-y-3">
+                          <div className="flex gap-3 sm:items-start">
                             <div
                               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold ${
                                 isReplaced ? 'bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' : 'bg-red-500/15 text-red-600 dark:text-red-400'
@@ -1002,52 +1011,56 @@ export const AdobeEmail = () => {
                             >
                               A
                             </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
-                                Email address
-                              </p>
-                              <p
-                                className={`mt-0.5 break-all font-mono text-sm sm:text-base ${
-                                  isReplaced
-                                    ? 'text-zinc-500 line-through dark:text-zinc-500'
-                                    : 'text-gray-900 dark:text-zinc-100'
-                                }`}
-                              >
-                                {email.email_details.email}
-                              </p>
+                            <div className="min-w-0 flex-1 grid gap-4 sm:grid-cols-2 sm:gap-x-6">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
+                                  Email address
+                                </p>
+                                <p
+                                  className={`mt-0.5 break-all font-mono text-sm sm:text-base ${
+                                    isReplaced
+                                      ? 'text-zinc-500 line-through dark:text-zinc-500'
+                                      : 'text-gray-900 dark:text-zinc-100'
+                                  }`}
+                                >
+                                  {email.email_details.email}
+                                </p>
+                              </div>
+                              <div className="min-w-0 sm:pt-0">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
+                                  Password
+                                </p>
+                                <div className="mt-0.5">
+                                  <PasswordDisplay password={email.email_details.password} />
+                                </div>
+                              </div>
                             </div>
                           </div>
 
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-zinc-500">
-                              Password
-                            </p>
-                            <PasswordDisplay password={email.email_details.password} />
-                          </div>
-
-                          <div className="flex flex-wrap gap-6 text-sm">
-                            <div>
+                          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-gray-200/90 pt-3 text-sm dark:border-zinc-800/90">
+                            <div className="shrink-0">
                               <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Assigned</p>
-                              <p className="mt-0.5 text-gray-800 dark:text-zinc-200">
+                              <p className="mt-0.5 whitespace-nowrap text-gray-800 dark:text-zinc-200">
                                 {format(new Date(email.assigned_at), 'MMM d, yyyy')}
                               </p>
                             </div>
                             {sub ? (
-                              <div>
+                              <div className="min-w-0 flex-1 sm:max-w-[min(100%,280px)]">
                                 <p className="text-xs font-medium text-gray-500 dark:text-zinc-500">Subscription ends</p>
                                 <p
-                                  className={`mt-0.5 font-medium ${
+                                  className={`mt-0.5 truncate font-medium ${
                                     isReplaced
                                       ? 'text-zinc-500'
                                       : sub.is_expired
                                         ? 'text-red-600 dark:text-red-400'
                                         : 'text-emerald-700 dark:text-emerald-400'
                                   }`}
+                                  title={`${sub.days_left} days left · ${format(sub.expires_at, 'MMM d, yyyy')}`}
                                 >
                                   {sub.days_left} days left · {format(sub.expires_at, 'MMM d, yyyy')}
                                 </p>
                                 {!isReplaced && (
-                                  <div className="mt-2 h-1.5 max-w-[200px] overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                                  <div className="mt-1.5 h-1.5 max-w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 sm:max-w-[220px]">
                                     <div
                                       className={`h-full rounded-full ${sub.is_expired ? 'bg-red-500' : 'bg-emerald-500'}`}
                                       style={{
@@ -1058,9 +1071,9 @@ export const AdobeEmail = () => {
                                 )}
                               </div>
                             ) : (
-                              <p className="text-zinc-500 text-sm italic">End date unavailable</p>
+                              <p className="text-sm italic text-zinc-500">End date unavailable</p>
                             )}
-                            <div className="flex items-end">
+                            <div className="flex shrink-0 items-center">
                               {isReplaced ? (
                                 <span className="rounded-full border border-zinc-300 dark:border-zinc-600 bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
                                   Replaced
@@ -1135,13 +1148,14 @@ export const AdobeEmail = () => {
                 <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500 text-sm max-w-md mb-6">
                   You haven't generated any Adobe emails yet. Click the "Generate Email" button above to get your first account.
                 </p>
-                <button 
+                    <button
+                  type="button"
                   onClick={() => handleGenerateEmail()}
                   disabled={generating}
-                  className="px-6 py-2.5 bg-gradient-primary text-white rounded-xl font-medium shadow-sm hover:opacity-90 transition-opacity flex items-center"
+                  className={`${btnPrimary} px-6 py-2.5`}
                 >
-                  {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
-                  Generate Email
+                  {generating ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <Plus className="w-4 h-4 shrink-0" strokeWidth={2.25} />}
+                  Generate email
                 </button>
               </>
             ) : (
@@ -1170,11 +1184,9 @@ export const AdobeEmail = () => {
                 <button
                   type="button"
                   onClick={() => setIsRequestModalOpen(true)}
-                  className={`${btnPersonalPlanCta} w-full sm:w-auto shrink-0`}
+                  className={`${btnPrimary} w-full sm:w-auto shrink-0 px-4 py-2.5`}
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 shadow-inner">
-                    <CreditCard className="w-4 h-4" aria-hidden />
-                  </span>
+                  <CreditCard className="w-4 h-4 shrink-0" aria-hidden />
                   New personal plan
                 </button>
               )}
@@ -1220,8 +1232,8 @@ export const AdobeEmail = () => {
                                     disabled={togglingAutoRenewOrderId === order.id}
                                     onClick={() => handleToggleAutoRenew(order.id, !!order.auto_renew)}
                                     className={`relative inline-flex h-[24px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-full transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#121214] disabled:opacity-50 disabled:cursor-not-allowed border ${
-                                      order.auto_renew 
-                                        ? 'bg-gradient-to-r from-indigo-500 to-violet-500 shadow-[0_0_8px_rgba(99,102,241,0.4)] border-indigo-400/50 dark:border-indigo-500/30' 
+                                      order.auto_renew
+                                        ? 'border-indigo-400/50 bg-indigo-600 shadow-sm shadow-indigo-900/30 dark:border-indigo-500/40'
                                         : 'bg-zinc-200 dark:bg-zinc-800/80 border-zinc-300 dark:border-zinc-700/80 shadow-inner'
                                     }`}
                                     title={order.auto_renew ? "Auto-renew is ON (Uses wallet)" : "Auto-renew is OFF"}
@@ -1339,11 +1351,9 @@ export const AdobeEmail = () => {
                     <button
                       type="button"
                       onClick={() => setIsRequestModalOpen(true)}
-                      className={`${btnPersonalPlanCta} mt-6 px-6 py-3 text-[15px]`}
+                      className={`${btnPrimary} mt-6 px-6 py-3 text-[15px]`}
                     >
-                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15 shadow-inner">
-                        <Sparkles className="w-4 h-4" aria-hidden />
-                      </span>
+                      <Sparkles className="w-4 h-4 shrink-0" aria-hidden />
                       Start a personal plan
                     </button>
                   )}
@@ -1364,10 +1374,10 @@ export const AdobeEmail = () => {
             aria-describedby="personal-sub-modal-desc"
             className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
           >
-            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gradient-to-r from-violet-50/90 to-white dark:from-violet-950/40 dark:to-[#151518]">
+            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-[#1a1a1f]">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30">
                     <Sparkles className="w-5 h-5" aria-hidden />
                   </div>
                   <div className="min-w-0">
@@ -1545,10 +1555,10 @@ export const AdobeEmail = () => {
             aria-labelledby="inbox-modal-title"
             aria-describedby="inbox-modal-desc"
           >
-            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gradient-to-r from-indigo-50/80 to-white dark:from-indigo-950/40 dark:to-[#151518]">
+            <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-[#1a1a1f]">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/25">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-600/30">
                     <Inbox className="w-5 h-5" aria-hidden />
                   </div>
                   <div className="min-w-0">
@@ -1641,8 +1651,8 @@ export const AdobeEmail = () => {
                       ))}
                     </div>
                   ) : !inboxLoading ? (
-                    <div className="rounded-2xl border border-dashed border-indigo-200/70 dark:border-indigo-500/25 bg-gradient-to-b from-indigo-50/60 to-transparent dark:from-indigo-950/25 dark:to-transparent px-5 py-10 text-center">
-                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                    <div className="rounded-2xl border border-dashed border-gray-200 dark:border-zinc-700 bg-gray-50/80 dark:bg-zinc-900/40 px-5 py-10 text-center">
+                      <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white dark:border-zinc-700 dark:bg-zinc-800/80 text-indigo-600 dark:text-indigo-400">
                         <Mail className="w-8 h-8 opacity-90" />
                       </div>
                       <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No messages yet</p>
@@ -1653,7 +1663,7 @@ export const AdobeEmail = () => {
                         type="button"
                         onClick={() => refreshInbox()}
                         disabled={!inboxCredentials?.email}
-                        className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/25 hover:bg-indigo-500 transition-colors disabled:opacity-50"
+                        className={`${btnPrimary} mt-6 px-5 py-2.5`}
                       >
                         <RefreshCw className="w-4 h-4" />
                         Check again
