@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -26,6 +27,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
@@ -65,6 +67,22 @@ function verificationCodeDisplay(code: string): string {
   const plain = verificationCodePlain(code);
   if (plain.length === 6) return plain.split('').join(' ');
   return code.trim();
+}
+
+const BANGLADESH_TZ = 'Asia/Dhaka';
+
+function formatInboxTimeBangladesh(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return formatInTimeZone(d, BANGLADESH_TZ, 'MMM d, HH:mm');
+}
+
+/** Client-side guard (API may be older); server also filters to Adobe verification-only. */
+function isVerificationInboxRow(m: { subject: string; code: string | null }): boolean {
+  if (!m.code) return false;
+  const s = (m.subject || '').toLowerCase();
+  if (/get started|welcome to/i.test(s)) return false;
+  return true;
 }
 
 interface UserEmail {
@@ -160,6 +178,11 @@ export const AdobeEmail = () => {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<{id: number, subject: string, snippet: string, date: string, code: string | null}[]>([]);
   const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
+
+  const verificationInboxMessages = useMemo(
+    () => inboxMessages.filter(isVerificationInboxRow),
+    [inboxMessages],
+  );
 
   // Personal Subscriptions state
   const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
@@ -1375,9 +1398,12 @@ export const AdobeEmail = () => {
         </div>
       )}
 
-      {/* Personal Subscription Request Modal */}
-      {personalSubscriptionsEnabled && isRequestModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {/* Personal Subscription Request Modal — portal avoids `main` overflow clipping so blur covers the full viewport */}
+      {personalSubscriptionsEnabled &&
+        isRequestModalOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+        <div className="fixed inset-0 z-[110] flex min-h-[100dvh] w-full items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
             role="dialog"
             aria-modal="true"
@@ -1554,12 +1580,15 @@ export const AdobeEmail = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Inbox Modal */}
-      {isInboxOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {isInboxOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+        <div className="fixed inset-0 z-[110] flex min-h-[100dvh] w-full items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
             className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             role="dialog"
@@ -1608,13 +1637,13 @@ export const AdobeEmail = () => {
               <div className="mt-4 flex gap-2 rounded-xl border border-indigo-100/80 dark:border-indigo-500/20 bg-white/70 dark:bg-[#1a1a22]/80 px-3 py-2.5 text-left">
                 <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" aria-hidden />
                 <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                  This inbox only receives mail from <span className="font-medium text-gray-800 dark:text-gray-200">Adobe</span> (Creative Cloud sign-in and verification). New messages can take a minute — tap <span className="font-medium">Refresh</span> if nothing appears yet.
+                  This list shows <span className="font-medium text-gray-800 dark:text-gray-200">Adobe verification codes</span> only (sign-in / security codes from Adobe). Times are <span className="font-medium">Bangladesh (GMT+6)</span>. New mail can take a minute — tap <span className="font-medium">Refresh</span> if nothing appears yet.
                 </p>
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50/50 dark:bg-[#12121a]/50">
-              {inboxLoading && inboxMessages.length === 0 ? (
+              {inboxLoading && verificationInboxMessages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-14 px-4">
                   <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
                   <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Connecting to your mail…</p>
@@ -1622,21 +1651,21 @@ export const AdobeEmail = () => {
                     Fetching the latest messages for this address.
                   </p>
                 </div>
-              ) : inboxLoading && inboxMessages.length > 0 ? (
+              ) : inboxLoading && verificationInboxMessages.length > 0 ? (
                 <div className="flex items-center justify-center gap-2 py-3 text-sm text-indigo-600 dark:text-indigo-400">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Updating…
                 </div>
               ) : null}
 
-              {!inboxLoading || inboxMessages.length > 0 ? (
+              {!inboxLoading || verificationInboxMessages.length > 0 ? (
                 <>
-                  {inboxMessages.length > 0 ? (
+                  {verificationInboxMessages.length > 0 ? (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-0.5">
-                        Recent messages ({inboxMessages.length})
+                        Verification codes ({verificationInboxMessages.length})
                       </p>
-                      {inboxMessages.map((msg) => {
+                      {verificationInboxMessages.map((msg) => {
                         const snippetPreview = buildInboxSnippetFromBody(msg.snippet || '', 280) || null;
                         const codePlain = msg.code ? verificationCodePlain(msg.code) : '';
                         return (
@@ -1646,8 +1675,11 @@ export const AdobeEmail = () => {
                         >
                           <div className="flex justify-between items-start gap-2 mb-2">
                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-snug pr-2">{msg.subject}</h4>
-                            <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0">
-                              {format(new Date(msg.date), 'MMM d, HH:mm')}
+                            <span
+                              className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0"
+                              title="Bangladesh time (Asia/Dhaka)"
+                            >
+                              {formatInboxTimeBangladesh(msg.date)}
                             </span>
                           </div>
                           {snippetPreview ? (
@@ -1698,9 +1730,9 @@ export const AdobeEmail = () => {
                       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white dark:border-zinc-700 dark:bg-zinc-800/80 text-indigo-600 dark:text-indigo-400">
                         <Mail className="w-8 h-8 opacity-90" />
                       </div>
-                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No messages yet</p>
+                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No verification codes yet</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-sm mx-auto leading-relaxed">
-                        Your inbox is empty right now. After you request a code from Adobe, it should show up here — wait a moment, then use <span className="font-medium text-gray-700 dark:text-gray-300">Refresh</span>.
+                        When Adobe sends a sign-in or verification code to this address, it will appear here (Bangladesh time). Wait a moment, then tap <span className="font-medium text-gray-700 dark:text-gray-300">Refresh</span>.
                       </p>
                       <button
                         type="button"
@@ -1717,7 +1749,8 @@ export const AdobeEmail = () => {
               ) : null}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

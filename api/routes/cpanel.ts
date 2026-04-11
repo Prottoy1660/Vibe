@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import imaps from 'imap-simple';
-import { simpleParser } from 'mailparser';
+import { simpleParser, type ParsedMail } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
 import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
@@ -10,6 +10,33 @@ import { buildInboxSnippetFromBody, extractAdobeVerificationCode } from '../../s
 dotenv.config();
 
 const router = express.Router();
+
+/** Adobe-owned From addresses only (IMAP listing for verification inbox). */
+function isAdobeSenderAddress(addr: string): boolean {
+  const a = addr.toLowerCase().trim();
+  if (!a.includes('@')) return false;
+  return /@(?:[\w-]+\.)*adobe\.com$/i.test(a);
+}
+
+const MARKETING_OR_ONBOARDING_SUBJECT =
+  /get started|welcome to|your\s+creative\s+cloud|creative\s+cloud\s+pro|newsletter|special offer|your\s+trial|trial\s+ends|receipt|invoice\b|payment\s+received|upgrade\s+your|^introducing\b|\bmeet\s+your\b/i;
+
+const VERIFICATION_INTENT_SUBJECT =
+  /verification|sign[\s-]*in\s*code|security\s*code|one[\s-]*time|authentication\s*code|two[\s-]*step|2[\s-]*step|\botp\b|confirm\s+your\s+email|verify\s+your\s+email/i;
+
+/**
+ * Inbox modal should list only Adobe sign-in / OTP style mail, not onboarding or promos.
+ */
+function isAdobeVerificationCodeInboxRow(parsed: ParsedMail, code: string | null): boolean {
+  if (!code) return false;
+  const addr = parsed.from?.value?.[0]?.address?.toLowerCase().trim() || '';
+  if (!isAdobeSenderAddress(addr)) return false;
+  const subj = (parsed.subject || '').trim().toLowerCase();
+  if (MARKETING_OR_ONBOARDING_SUBJECT.test(subj)) return false;
+  if (VERIFICATION_INTENT_SUBJECT.test(subj)) return true;
+  if (/\bcode\b/.test(subj) && !/postal|zip\s*code|area\s*code|promo|discount|referral|source\s*code/i.test(subj)) return true;
+  return false;
+}
 
 const CPANEL_HOST = process.env.CPANEL_HOST;
 const CPANEL_USERNAME = process.env.CPANEL_USERNAME;
@@ -333,6 +360,8 @@ router.post('/inbox', verifyUser, async (req, res) => {
       const text = parsed.text || '';
 
       const code = extractAdobeVerificationCode(text);
+      if (!isAdobeVerificationCodeInboxRow(parsed, code)) continue;
+
       const snippet = buildInboxSnippetFromBody(text, 220, code);
 
       parsedMessages.push({
