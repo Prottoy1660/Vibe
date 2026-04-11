@@ -62,9 +62,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { role: r, phone: p };
   }, [user?.id]);
 
-  // Fetch role + phone once when user changes — single query for Layout gate + admin checks
+  // Fetch role + phone when the signed-in user id changes — single query for Layout gate + admin checks.
+  // Depend on user?.id only: Supabase often replaces the `user` object on session refresh / updateUser
+  // (same id, new reference). Re-running this effect would clear role/phone and race with explicit
+  // refreshUserProfile() (e.g. PhoneRequired save), producing false "Number not saved" failures.
   useEffect(() => {
-    if (!user) {
+    const uid = user?.id;
+    if (!uid) {
       setRole(null);
       setProfilePhone(null);
       return;
@@ -75,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setProfilePhone(null);
     let cancelled = false;
     void (async () => {
-      const { data } = await supabase.from('users').select('role, phone').eq('id', user.id).single();
+      const { data } = await supabase.from('users').select('role, phone').eq('id', uid).single();
       if (cancelled) return;
       setRole(data?.role ?? 'customer');
       setProfilePhone(data?.phone ?? null);
@@ -83,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     const applyAuthTokensFromDeepLinkUrl = async (url: string) => {

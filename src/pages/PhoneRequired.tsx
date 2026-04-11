@@ -36,16 +36,21 @@ export const PhoneRequired = () => {
 
     setSaving(true);
     try {
-      const { error: uErr } = await supabase.from('users').update({ phone: trimmed }).eq('id', user.id);
+      const { data: updatedRow, error: uErr } = await supabase
+        .from('users')
+        .update({ phone: trimmed })
+        .eq('id', user.id)
+        .select('phone')
+        .single();
       if (uErr) throw uErr;
+      if (!hasMinimumPhone(updatedRow?.phone)) {
+        setError('Number not saved — try again.');
+        return;
+      }
       const { error: aErr } = await supabase.auth.updateUser({ data: { phone: trimmed } });
       if (aErr) throw aErr;
-      const fresh = await refreshUserProfile();
-      if (fresh && hasMinimumPhone(fresh.phone)) {
-        navigate('/', { replace: true });
-      } else {
-        setError('Number not saved — try again.');
-      }
+      await refreshUserProfile();
+      navigate('/', { replace: true });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not save. Please try again.');
     } finally {
