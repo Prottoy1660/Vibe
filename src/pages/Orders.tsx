@@ -24,9 +24,9 @@ type StatusFilter = 'all' | 'pending' | 'paid' | 'completed' | 'issue';
 function statusCaption(effectiveStatus: string): string {
   switch (effectiveStatus.toLowerCase()) {
     case 'completed':
-      return 'Your order is complete — use Adobe Email for login details.';
+      return 'Order complete — open Adobe Email for login.';
     case 'paid':
-      return 'Payment received. We are assigning your access; check Adobe Email shortly.';
+      return 'Paid — we are assigning access; check Adobe Email shortly.';
     case 'pending':
       return 'Complete payment to confirm this order.';
     case 'cancelled':
@@ -382,25 +382,25 @@ export const Orders = () => {
           </div>
         ) : filteredOrders.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-[720px] w-full divide-y divide-gray-100 dark:divide-white/10">
+            <table className="min-w-[760px] w-full divide-y divide-gray-100 dark:divide-white/10">
               <thead>
                 <tr className="bg-gray-50/90 dark:bg-white/[0.03] text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  <th scope="col" className="px-4 sm:px-5 py-3">
+                  <th scope="col" className="px-4 sm:px-5 py-3 whitespace-nowrap">
                     Order
                   </th>
-                  <th scope="col" className="px-4 sm:px-5 py-3">
+                  <th scope="col" className="px-4 sm:px-5 py-3 min-w-[140px]">
                     Product
                   </th>
-                  <th scope="col" className="px-4 sm:px-5 py-3 hidden sm:table-cell">
+                  <th scope="col" className="px-4 sm:px-5 py-3 hidden sm:table-cell whitespace-nowrap">
                     Date
                   </th>
-                  <th scope="col" className="px-4 sm:px-5 py-3">
+                  <th scope="col" className="px-4 sm:px-5 py-3 whitespace-nowrap">
                     Total
                   </th>
-                  <th scope="col" className="px-4 sm:px-5 py-3 min-w-[200px]">
+                  <th scope="col" className="px-4 sm:px-5 py-3 min-w-[160px]">
                     Status
                   </th>
-                  <th scope="col" className="px-4 sm:px-5 py-3 text-right">
+                  <th scope="col" className="px-4 sm:px-5 py-3 text-right whitespace-nowrap">
                     Actions
                   </th>
                 </tr>
@@ -410,39 +410,55 @@ export const Orders = () => {
                   const effectiveStatus = getEffectiveStatus(order);
                   const cap = statusCaption(effectiveStatus);
                   return (
-                    <tr key={order.id} className="hover:bg-gray-50/80 dark:hover:bg-white/[0.02] transition-colors align-top">
-                      <td className="px-4 sm:px-5 py-4">
-                        <span className="font-mono text-xs font-medium text-gray-900 dark:text-gray-100">#{order.id.substring(0, 8)}</span>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 sm:hidden">{format(new Date(order.created_at), 'MMM d, yyyy')}</p>
+                    <tr key={order.id} className="hover:bg-gray-50/80 dark:hover:bg-white/[0.02] transition-colors align-middle">
+                      <td className="px-4 sm:px-5 py-3 align-middle">
+                        <span className="font-mono text-xs font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                          #{order.id.substring(0, 8)}
+                        </span>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1 sm:hidden whitespace-nowrap">
+                          {format(new Date(order.created_at), 'MMM d, yyyy')}
+                        </p>
                       </td>
-                      <td className="px-4 sm:px-5 py-4">
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{order.product.title}</span>
+                      <td className="px-4 sm:px-5 py-3 min-w-0 max-w-[200px] sm:max-w-[280px] align-middle">
+                        <span
+                          className="text-sm font-medium text-gray-900 dark:text-gray-100 block truncate"
+                          title={order.product.title}
+                        >
+                          {order.product.title}
+                        </span>
                       </td>
-                      <td className="px-4 sm:px-5 py-4 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap hidden sm:table-cell">
+                      <td className="px-4 sm:px-5 py-3 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap hidden sm:table-cell align-middle">
                         {format(new Date(order.created_at), 'MMM d, yyyy')}
                       </td>
-                      <td className="px-4 sm:px-5 py-4 text-sm font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap tabular-nums">
+                      <td className="px-4 sm:px-5 py-3 text-sm font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap tabular-nums align-middle">
                         ৳{Number(order.total_amount).toFixed(2)}
                       </td>
-                      <td className="px-4 sm:px-5 py-4">
-                        <div className="space-y-1.5 max-w-xs">
-                          {getStatusBadge(effectiveStatus, order.created_at)}
-                          {cap ? <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{cap}</p> : null}
+                      <td className="px-4 sm:px-5 py-3 min-w-0 max-w-[220px] sm:max-w-[300px] align-middle">
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <div className="shrink-0">{getStatusBadge(effectiveStatus, order.created_at)}</div>
+                          {cap ? (
+                            <p
+                              className="min-w-0 truncate text-[11px] sm:text-xs text-gray-500 dark:text-gray-400"
+                              title={cap}
+                            >
+                              {cap}
+                            </p>
+                          ) : null}
                         </div>
                       </td>
-                      <td className="px-4 sm:px-5 py-4 text-right">
-                        <div className="flex flex-col items-end gap-2">
+                      <td className="px-4 sm:px-5 py-3 text-right align-middle">
+                        <div className="flex flex-col items-end gap-1.5">
                           {effectiveStatus === 'pending' ? (
                             <button
                               type="button"
                               onClick={() => handlePayNow(order.id, order.total_amount)}
                               disabled={processingId === order.id}
-                              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs sm:text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors w-full sm:w-auto"
+                              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors"
                             >
                               {processingId === order.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
                               ) : (
-                                <CreditCard className="h-4 w-4" />
+                                <CreditCard className="h-3.5 w-3.5 shrink-0" />
                               )}
                               Pay now
                             </button>
@@ -450,17 +466,17 @@ export const Orders = () => {
                           {(effectiveStatus === 'paid' || effectiveStatus === 'completed') && (
                             <Link
                               to="/adobe-email"
-                              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2 text-xs sm:text-sm font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15 transition-colors w-full sm:w-auto"
+                              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/15 transition-colors"
                             >
-                              <Package className="h-4 w-4 shrink-0" />
+                              <Package className="h-3.5 w-3.5 shrink-0" />
                               Adobe email
-                              <ExternalLink className="h-3.5 w-3.5 opacity-70" />
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
                             </Link>
                           )}
                           <button
                             type="button"
                             onClick={() => copyOrderId(order.id)}
-                            className="inline-flex items-center justify-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+                            className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
                           >
                             {copiedId === order.id ? (
                               <>
