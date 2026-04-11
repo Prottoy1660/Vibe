@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { User } from '@supabase/supabase-js';
 import { Loader2, Phone, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { errorMessageFromUnknown } from '../lib/errorMessage';
 import { hasMinimumPhone, phoneDigitsOnly } from '../lib/phoneRequired';
+
+function profileDisplayName(u: User): string {
+  const full =
+    u.user_metadata && typeof u.user_metadata.full_name === 'string' ? u.user_metadata.full_name.trim() : '';
+  if (full) return full.slice(0, 100);
+  const email = u.email?.trim() ?? '';
+  const local = email.split('@')[0];
+  if (local) return local.slice(0, 100);
+  return 'User';
+}
 
 /**
  * Shown after OAuth (or any login) when `public.users.phone` is missing/invalid.
@@ -41,16 +52,53 @@ export const PhoneRequired = () => {
     try {
       // Avoid `.single()`: PostgREST errors with "Cannot coerce the result to a single JSON object"
       // when the update matches 0 rows (RLS / missing profile row). `.maybeSingle()` returns null data instead.
-      const { data: updatedRow, error: uErr } = await supabase
+      const { data: afterUpdate, error: uErr } = await supabase
         .from('users')
         .update({ phone: stored })
         .eq('id', user.id)
         .select('phone')
         .maybeSingle();
       if (uErr) throw uErr;
-      if (!hasMinimumPhone(updatedRow?.phone)) {
+
+      let savedRow = afterUpdate;
+      if (!hasMinimumPhone(savedRow?.phone)) {
+        const email = user.email?.trim();
+        if (!email) {
+          setError('Your account has no email, so we cannot create a profile. Please contact support.');
+          return;
+        }
+        const { data: afterInsert, error: iErr } = await supabase
+          .from('users')
+          .insert({
+            id: user.id,
+            email,
+            name: profileDisplayName(user),
+            role: 'user',
+            phone: stored,
+          })
+          .select('phone')
+          .maybeSingle();
+        if (iErr) {
+          if (iErr.code === '23505') {
+            const retry = await supabase
+              .from('users')
+              .update({ phone: stored })
+              .eq('id', user.id)
+              .select('phone')
+              .maybeSingle();
+            if (retry.error) throw retry.error;
+            savedRow = retry.data ?? null;
+          } else {
+            throw iErr;
+          }
+        } else {
+          savedRow = afterInsert ?? null;
+        }
+      }
+
+      if (!hasMinimumPhone(savedRow?.phone)) {
         setError(
-          'Your profile could not be updated (no matching row returned). Try signing out and signing in again, or contact support.',
+          'Your profile could not be saved. Try signing out and signing in again, or contact support.',
         );
         return;
       }
