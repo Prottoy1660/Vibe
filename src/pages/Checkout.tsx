@@ -337,22 +337,26 @@ export const Checkout = () => {
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                   {product.title_bn || product.title}
                 </h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <p className="text-sm mt-1 leading-relaxed flex flex-wrap items-baseline gap-x-2 gap-y-1">
                   {storeSavePct != null && product.list_price != null ? (
-                    <span className="text-zinc-400 line-through tabular-nums">৳{Number(product.list_price)}</span>
+                    <span className="text-zinc-400 dark:text-zinc-500 line-through tabular-nums">৳{Number(product.list_price)}</span>
                   ) : null}
-                  <span className="font-medium text-accent-green tabular-nums">
+                  <span className="font-semibold text-zinc-900 dark:text-zinc-50 tabular-nums tracking-tight">
                     ৳{product.price}
                   </span>
                   {storeSavePct != null ? (
-                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-accent-green/15 text-accent-green">
+                    <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-primary/12 text-primary dark:bg-primary/18 dark:text-primary-light border border-primary/15 dark:border-primary/25">
                       Save {storeSavePct}%
                     </span>
                   ) : null}
-                  <span className="text-zinc-500 dark:text-zinc-500"> · </span>
-                  {product.duration}
-                  <span className="text-zinc-500 dark:text-zinc-500"> · </span>
-                  Adobe Creative Cloud access via Vibe Access
+                  <span className="text-zinc-400 dark:text-zinc-600" aria-hidden>
+                    ·
+                  </span>
+                  <span className="text-zinc-500 dark:text-zinc-400 tabular-nums">{product.duration}</span>
+                  <span className="text-zinc-400 dark:text-zinc-600" aria-hidden>
+                    ·
+                  </span>
+                  <span className="text-zinc-600 dark:text-zinc-400">Adobe Creative Cloud access via Vibe Access</span>
                 </p>
                 {personalEmail && (
                   <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1.5 inline-block">
@@ -361,17 +365,14 @@ export const Checkout = () => {
                 )}
               </div>
             </div>
-            <div className="mt-5 flex flex-wrap gap-3 pt-5 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 pt-5 border-t border-zinc-100 dark:border-zinc-800">
               {[
-                { icon: ShieldCheck, label: 'Secure checkout', tone: 'text-emerald-600 dark:text-emerald-400' },
-                { icon: Zap, label: 'Fast delivery', tone: 'text-sky-600 dark:text-sky-400' },
-                { icon: Lock, label: 'Encrypted payment', tone: 'text-amber-700 dark:text-amber-400' },
-              ].map(({ icon: Icon, label, tone }) => (
-                <div
-                  key={label}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-400"
-                >
-                  <Icon className={`w-4 h-4 ${tone}`} />
+                { icon: ShieldCheck, label: 'Secure checkout' },
+                { icon: Zap, label: 'Fast delivery' },
+                { icon: Lock, label: 'Encrypted payment' },
+              ].map(({ icon: Icon, label }) => (
+                <div key={label} className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                  <Icon className="w-4 h-4 shrink-0 text-primary dark:text-primary-light opacity-90" aria-hidden />
                   {label}
                 </div>
               ))}
@@ -387,7 +388,7 @@ export const Checkout = () => {
             <div className="grid grid-cols-2 divide-x divide-zinc-100 dark:divide-zinc-800 bg-zinc-50/80 dark:bg-zinc-900/30">
               <div
                 className={`px-4 py-3 flex items-center gap-2 ${
-                  detailsDone ? 'text-emerald-700 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400'
+                  detailsDone ? 'text-primary dark:text-primary-light' : 'text-zinc-500 dark:text-zinc-400'
                 }`}
               >
                 {detailsDone ? (
@@ -467,8 +468,8 @@ export const Checkout = () => {
                   {paymentError && <p className="text-red-600 dark:text-red-400 text-sm mt-2 whitespace-pre-wrap">{paymentError}</p>}
                 </div>
               ) : (
-                <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/35 px-4 py-3">
-                  <p className="text-sm text-emerald-900 dark:text-emerald-100 font-medium flex items-center gap-2">
+                <div className="rounded-xl border border-indigo-200/90 dark:border-indigo-800/60 bg-indigo-50/90 dark:bg-indigo-950/35 px-4 py-3">
+                  <p className="text-sm text-indigo-950 dark:text-indigo-100 font-medium flex items-center gap-2">
                     <CheckCircle2 className="w-5 h-5 shrink-0" />
                     No card payment needed — wallet or coupon covers the total.
                   </p>
@@ -540,25 +541,25 @@ export const Checkout = () => {
                 </div>
                 {couponError && <p className="text-red-600 dark:text-red-400 text-xs mt-1.5">{couponError}</p>}
                 {discount > 0 && !couponError && (
-                  <p className="text-emerald-700 dark:text-emerald-400 text-xs mt-1.5 font-medium">Coupon applied (−{discount}%)</p>
+                  <p className="text-indigo-700 dark:text-indigo-300 text-xs mt-1.5 font-medium">Coupon applied (−{discount}%)</p>
                 )}
               </div>
 
               {discount > 0 && (
-                <div className="flex justify-between text-sm text-emerald-700 dark:text-emerald-400">
+                <div className="flex justify-between text-sm text-indigo-700 dark:text-indigo-300">
                   <span>Discount</span>
                   <span className="tabular-nums">−৳{(originalPrice * (discount / 100)).toFixed(2)}</span>
                 </div>
               )}
 
               {spendableWallet > 0 && finalPrice > 0 && (
-                <div className="rounded-xl border border-sky-200 dark:border-sky-900/50 bg-sky-50/80 dark:bg-sky-950/25 p-3">
+                <div className="rounded-xl border border-indigo-200/80 dark:border-indigo-800/50 bg-indigo-50/60 dark:bg-indigo-950/25 p-3">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
-                      <Wallet className="w-4 h-4 text-sky-600" />
+                      <Wallet className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                       Wallet · ৳{spendableWallet.toFixed(2)}
                       {walletPromotional > 0 && (
-                        <span className="text-[10px] font-normal text-sky-700 dark:text-sky-300">
+                        <span className="text-[10px] font-normal text-indigo-800 dark:text-indigo-300">
                           (incl. ৳{walletPromotional.toFixed(2)} subscription credits)
                         </span>
                       )}
@@ -575,7 +576,9 @@ export const Checkout = () => {
                         }
                       }}
                       className={`text-xs font-semibold rounded-lg px-2.5 py-1 ${
-                        useWallet ? 'bg-sky-600 text-white' : 'border border-sky-300 dark:border-sky-700 text-sky-800 dark:text-sky-200'
+                        useWallet
+                          ? 'bg-indigo-600 text-white'
+                          : 'border border-indigo-300/90 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200'
                       }`}
                     >
                       {useWallet ? 'On' : 'Use'}
@@ -590,12 +593,12 @@ export const Checkout = () => {
                         step="0.01"
                         value={walletAmount}
                         onChange={(e) => setWalletAmount(e.target.value)}
-                        className="w-full rounded-lg border border-sky-200 dark:border-sky-800 bg-white dark:bg-zinc-950 px-3 py-2 text-sm"
+                        className="w-full rounded-lg border border-indigo-200 dark:border-indigo-800/70 bg-white dark:bg-zinc-950 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100"
                       />
                       <button
                         type="button"
                         onClick={() => setWalletAmount(Math.min(spendableWallet, finalPrice).toFixed(2))}
-                        className="text-xs font-medium text-sky-700 dark:text-sky-300"
+                        className="text-xs font-medium text-indigo-700 dark:text-indigo-300"
                       >
                         Use max
                       </button>
@@ -611,7 +614,7 @@ export const Checkout = () => {
                 <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100 tabular-nums">৳{finalPrice.toFixed(2)}</span>
               </div>
               {walletDeduction > 0 && (
-                <div className="flex justify-between text-sm text-sky-800 dark:text-sky-200">
+                <div className="flex justify-between text-sm text-indigo-800 dark:text-indigo-200">
                   <span>From wallet (credits used first)</span>
                   <span className="tabular-nums">−৳{walletDeduction.toFixed(2)}</span>
                 </div>
@@ -626,7 +629,7 @@ export const Checkout = () => {
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/30 px-3 py-3 space-y-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                      <Zap className="w-4 h-4 text-amber-500 shrink-0" aria-hidden />
+                      <Zap className="w-4 h-4 text-indigo-500 dark:text-indigo-400 shrink-0" aria-hidden />
                       Auto-renew from wallet
                     </p>
                     <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-0.5 leading-snug">

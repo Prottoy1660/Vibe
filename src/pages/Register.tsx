@@ -249,11 +249,11 @@ export const Register = () => {
   };
 
   return (
-    <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-indigo-500/30 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
+    <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-primary/25 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className={`absolute top-0 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-purple-600/20 mix-blend-screen' : 'bg-purple-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-indigo-600/20 mix-blend-screen' : 'bg-indigo-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute top-1/2 left-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-fuchsia-600/20 mix-blend-screen' : 'bg-fuchsia-500/15 mix-blend-multiply'}`} />
+        <div className={`absolute top-0 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-violet-600/18 mix-blend-screen' : 'bg-violet-500/12 mix-blend-multiply'}`} />
+        <div className={`absolute bottom-1/4 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-violet-500/14 mix-blend-screen' : 'bg-violet-400/10 mix-blend-multiply'}`} />
+        <div className={`absolute top-1/2 left-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-violet-800/16 mix-blend-screen' : 'bg-violet-600/11 mix-blend-multiply'}`} />
         <div className={`absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] ${isDark ? 'opacity-20 mix-blend-overlay' : 'opacity-10 mix-blend-multiply'}`}></div>
       </div>
 
@@ -342,7 +342,7 @@ export const Register = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'name' 
-                    ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -351,7 +351,7 @@ export const Register = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <User className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'name' ? 'text-indigo-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <User className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'name' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type="text"
@@ -368,7 +368,7 @@ export const Register = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'email' 
-                    ? 'border-purple-500 bg-purple-500/5 shadow-[0_0_20px_rgba(168,85,247,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -377,7 +377,7 @@ export const Register = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Mail className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'email' ? 'text-purple-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <Mail className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'email' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type="email"
@@ -400,7 +400,7 @@ export const Register = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'phone' 
-                    ? 'border-fuchsia-500 bg-fuchsia-500/5 shadow-[0_0_20px_rgba(217,70,239,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -409,7 +409,7 @@ export const Register = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Phone className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'phone' ? 'text-fuchsia-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <Phone className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'phone' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type="tel"
@@ -426,7 +426,7 @@ export const Register = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'password' 
-                    ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -435,7 +435,7 @@ export const Register = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'password' ? 'text-indigo-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <Lock className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'password' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type="password"
@@ -451,23 +451,20 @@ export const Register = () => {
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: 1.005 }}
+              whileTap={{ scale: 0.995 }}
               type="submit"
               disabled={loading}
-              className={`w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-bold text-white transition-all disabled:opacity-50 group overflow-hidden relative mt-6 ${isDark ? 'bg-white/10 hover:bg-white/20 border border-white/10' : 'bg-slate-900 hover:bg-slate-800 border border-slate-900 shadow-lg shadow-slate-900/10'}`}
+              className="mt-6 w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-semibold text-white transition-[box-shadow,filter,transform] duration-200 disabled:opacity-50 disabled:pointer-events-none group bg-gradient-primary shadow-[0_1px_2px_rgba(0,0,0,0.08),0_8px_28px_-6px_rgba(124,58,237,0.38)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_10px_36px_-8px_rgba(139,92,246,0.32)] ring-1 ring-inset ring-white/15 hover:brightness-[1.04] hover:shadow-[0_1px_2px_rgba(0,0,0,0.1),0_12px_40px_-8px_rgba(124,58,237,0.45)] dark:hover:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_14px_44px_-10px_rgba(139,92,246,0.38)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0A0A0A] focus-visible:ring-offset-slate-50"
             >
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative z-10 flex items-center gap-2">
-                {loading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    Create Account
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </>
-                )}
-              </span>
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  Create Account
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
             </motion.button>
           </form>
 
@@ -558,7 +555,7 @@ export const Register = () => {
           <div className="mt-8 text-center">
             <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
               Already have an account?{' '}
-              <Link to="/login" className={`font-bold transition-colors underline underline-offset-4 ${isDark ? 'text-white hover:text-purple-400 decoration-white/30 hover:decoration-purple-400' : 'text-slate-900 hover:text-purple-600 decoration-slate-300 hover:decoration-purple-400'}`}>
+              <Link to="/login" className={`font-bold transition-colors underline underline-offset-4 ${isDark ? 'text-white hover:text-primary-light decoration-white/30 hover:decoration-primary-light/60' : 'text-slate-900 hover:text-primary decoration-slate-300 hover:decoration-primary/50'}`}>
                 Sign in instead
               </Link>
             </p>

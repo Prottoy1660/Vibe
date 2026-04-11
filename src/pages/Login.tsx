@@ -316,11 +316,11 @@ export const Login = () => {
   };
 
   return (
-    <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-indigo-500/30 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
+    <div className={`min-h-[100dvh] lg:h-screen flex overflow-hidden relative selection:bg-primary/25 transition-colors duration-300 ${isDark ? 'bg-[#0A0A0A] text-white' : 'bg-slate-50 text-slate-950'}`}>
       <div className="absolute inset-0 z-0 pointer-events-none">
-        <div className={`absolute top-0 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-indigo-600/20 mix-blend-screen' : 'bg-indigo-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute top-1/4 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-purple-600/20 mix-blend-screen' : 'bg-purple-500/15 mix-blend-multiply'}`} />
-        <div className={`absolute -bottom-32 left-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-fuchsia-600/20 mix-blend-screen' : 'bg-fuchsia-500/15 mix-blend-multiply'}`} />
+        <div className={`absolute top-0 left-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob ${isDark ? 'bg-violet-600/18 mix-blend-screen' : 'bg-violet-500/12 mix-blend-multiply'}`} />
+        <div className={`absolute top-1/4 right-1/4 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-2000 ${isDark ? 'bg-violet-500/14 mix-blend-screen' : 'bg-violet-400/10 mix-blend-multiply'}`} />
+        <div className={`absolute -bottom-32 left-1/2 w-96 h-96 rounded-full filter blur-[128px] animate-blob animation-delay-4000 ${isDark ? 'bg-violet-800/16 mix-blend-screen' : 'bg-violet-600/11 mix-blend-multiply'}`} />
         <div className={`absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] ${isDark ? 'opacity-20 mix-blend-overlay' : 'opacity-10 mix-blend-multiply'}`}></div>
       </div>
 
@@ -394,7 +394,7 @@ export const Login = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'identifier' 
-                    ? 'border-indigo-500 bg-indigo-500/5 shadow-[0_0_20px_rgba(99,102,241,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -403,7 +403,7 @@ export const Login = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <User className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'identifier' ? 'text-indigo-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <User className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'identifier' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type="text"
@@ -420,7 +420,7 @@ export const Login = () => {
               <motion.div 
                 className={`relative rounded-2xl overflow-hidden border transition-all duration-300 ${
                   focusedInput === 'password' 
-                    ? 'border-purple-500 bg-purple-500/5 shadow-[0_0_20px_rgba(168,85,247,0.1)]' 
+                    ? 'border-primary bg-primary/5 shadow-[0_0_0_1px_rgba(139,92,246,0.15),0_0_24px_-4px_rgba(139,92,246,0.2)]' 
                     : isDark
                       ? 'border-white/10 bg-white/5 hover:bg-white/[0.07]'
                       : 'border-slate-200 bg-white/80 hover:bg-white shadow-sm'
@@ -429,7 +429,7 @@ export const Login = () => {
                 transition={{ type: "spring", stiffness: 300, damping: 20 }}
               >
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <Lock className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'password' ? 'text-purple-400' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
+                  <Lock className={`h-5 w-5 transition-colors duration-300 ${focusedInput === 'password' ? 'text-primary-light' : isDark ? 'text-gray-500' : 'text-slate-400'}`} />
                 </div>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -464,11 +464,11 @@ export const Login = () => {
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
+              whileHover={{ scale: 1.005 }}
+              whileTap={{ scale: 0.995 }}
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-semibold text-white transition-all disabled:opacity-50 disabled:pointer-events-none group bg-gradient-primary shadow-lg shadow-primary/30 ring-1 ring-white/15 hover:opacity-[0.98] hover:shadow-xl hover:shadow-primary/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0A0A0A] focus-visible:ring-offset-slate-50"
+              className="w-full flex items-center justify-center gap-2 py-4 px-4 rounded-2xl text-sm font-semibold text-white transition-[box-shadow,filter,transform] duration-200 disabled:opacity-50 disabled:pointer-events-none group bg-gradient-primary shadow-[0_1px_2px_rgba(0,0,0,0.08),0_8px_28px_-6px_rgba(124,58,237,0.38)] dark:shadow-[0_1px_2px_rgba(0,0,0,0.35),0_10px_36px_-8px_rgba(139,92,246,0.32)] ring-1 ring-inset ring-white/15 hover:brightness-[1.04] hover:shadow-[0_1px_2px_rgba(0,0,0,0.1),0_12px_40px_-8px_rgba(124,58,237,0.45)] dark:hover:shadow-[0_1px_2px_rgba(0,0,0,0.4),0_14px_44px_-10px_rgba(139,92,246,0.38)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0A0A0A] focus-visible:ring-offset-slate-50"
             >
               {loading ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -568,7 +568,7 @@ export const Login = () => {
           <div className="mt-10 text-center">
             <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
               New to VibeAccess?{' '}
-              <Link to="/register" className={`font-bold transition-colors underline underline-offset-4 ${isDark ? 'text-white hover:text-indigo-400 decoration-white/30 hover:decoration-indigo-400' : 'text-slate-900 hover:text-indigo-600 decoration-slate-300 hover:decoration-indigo-400'}`}>
+              <Link to="/register" className={`font-bold transition-colors underline underline-offset-4 ${isDark ? 'text-white hover:text-primary-light decoration-white/30 hover:decoration-primary-light/60' : 'text-slate-900 hover:text-primary decoration-slate-300 hover:decoration-primary/50'}`}>
                 Create an account
               </Link>
             </p>
