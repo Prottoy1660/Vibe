@@ -26,8 +26,6 @@ interface WelcomePopupRow {
   is_active: boolean;
   created_at: string;
   hero_image_url?: string | null;
-  cta_label?: string | null;
-  cta_url?: string | null;
   snooze_hours?: number | null;
 }
 
@@ -43,14 +41,9 @@ export const AdminWelcomePopup = () => {
   const pendingDeleteRef = useRef<WelcomePopupRow | null>(null);
   const pendingDeleteTimerRef = useRef<number | null>(null);
 
-  const [formData, setFormData] = useState<Partial<WelcomePopupRow>>({
-    title: '',
-    content: '',
-    type: 'info',
+  const [formData, setFormData] = useState({
     is_active: true,
     hero_image_url: '',
-    cta_label: '',
-    cta_url: '',
     snooze_hours: 6,
   });
 
@@ -104,23 +97,26 @@ export const AdminWelcomePopup = () => {
   };
 
   const buildPayload = () => {
+    const row = editingId ? rows.find((r) => r.id === editingId) : null;
     const snooze = Math.min(168, Math.max(1, Math.floor(Number(formData.snooze_hours) || 6)));
+    const title = row && row.title?.trim() ? row.title : 'Welcome';
+    const content = row && row.content?.trim() ? row.content : ' ';
     return {
-      title: formData.title?.trim() || '',
-      content: formData.content || '',
-      type: formData.type || 'info',
+      title,
+      content,
+      type: row?.type ?? 'info',
       is_active: formData.is_active ?? true,
       hero_image_url: formData.hero_image_url?.trim() || null,
-      cta_label: formData.cta_label?.trim() || null,
-      cta_url: formData.cta_url?.trim() || null,
+      cta_label: null,
+      cta_url: null,
       snooze_hours: snooze,
     };
   };
 
   const handleSave = async () => {
     try {
-      if (!formData.title || !formData.content) {
-        toast.warning('Title and content are required');
+      if (!formData.hero_image_url?.trim()) {
+        toast.warning('Hero image is required (upload or paste an image URL)');
         return;
       }
 
@@ -137,13 +133,8 @@ export const AdminWelcomePopup = () => {
       setIsAdding(false);
       setEditingId(null);
       setFormData({
-        title: '',
-        content: '',
-        type: 'info',
         is_active: true,
         hero_image_url: '',
-        cta_label: '',
-        cta_url: '',
         snooze_hours: 6,
       });
       void fetchRows();
@@ -171,13 +162,8 @@ export const AdminWelcomePopup = () => {
 
   const startEdit = (row: WelcomePopupRow) => {
     setFormData({
-      title: row.title,
-      content: row.content,
-      type: row.type,
       is_active: row.is_active,
       hero_image_url: row.hero_image_url ?? '',
-      cta_label: row.cta_label ?? '',
-      cta_url: row.cta_url ?? '',
       snooze_hours: row.snooze_hours ?? 6,
     });
     setEditingId(row.id);
@@ -186,13 +172,8 @@ export const AdminWelcomePopup = () => {
 
   const startAdd = () => {
     setFormData({
-      title: '',
-      content: '',
-      type: 'info',
       is_active: true,
       hero_image_url: '',
-      cta_label: '',
-      cta_url: '',
       snooze_hours: 6,
     });
     setIsAdding(true);
@@ -279,12 +260,6 @@ export const AdminWelcomePopup = () => {
     setStatusFilter('all');
   };
 
-  const getTypePill = (type: string) => {
-    if (type === 'error') return 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-300';
-    if (type === 'warning') return 'bg-yellow-100 dark:bg-amber-500/10 text-yellow-700 dark:text-amber-300';
-    return 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300';
-  };
-
   if (loading) {
     return (
       <div className="flex justify-center p-8">
@@ -298,22 +273,22 @@ export const AdminWelcomePopup = () => {
       <div className="p-6 border-b border-gray-100 dark:border-[#26262d] flex justify-between items-start gap-4">
         <div className="min-w-0 flex-1 pr-2">
           <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2">
-            <PanelTop className="h-5 w-5 shrink-0 text-violet-500" aria-hidden />
+            <PanelTop className="h-5 w-5 shrink-0 text-primary" aria-hidden />
             Welcome popup
           </h3>
           <div className="mt-2 flex max-w-2xl items-start gap-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" aria-hidden />
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary/80" aria-hidden />
             <p className="min-w-0">
               Separate from <strong className="font-semibold text-gray-700 dark:text-gray-200">Important Notices</strong>{' '}
-              (dashboard list). Only <strong className="font-semibold text-gray-700 dark:text-gray-200">Active</strong>{' '}
-              rows can show as the customer welcome modal. If several are active, the newest wins until the user snoozes
-              it.
+              (dashboard list). Each popup needs a <strong className="font-semibold text-gray-700 dark:text-gray-200">hero image</strong>
+              . Only <strong className="font-semibold text-gray-700 dark:text-gray-200">Active</strong> rows show as the
+              customer welcome modal; if several are active, the newest wins until the user snoozes it.
             </p>
           </div>
         </div>
         <button
           onClick={startAdd}
-          className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors flex items-center justify-center whitespace-nowrap"
+          className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors flex items-center justify-center whitespace-nowrap shadow-sm shadow-primary/20"
           type="button"
         >
           <Plus className="w-4 h-4 mr-1" />
@@ -339,14 +314,14 @@ export const AdminWelcomePopup = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search title/content…"
-                className="w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100"
+                className="w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100"
               />
             </div>
 
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as 'all' | 'info' | 'warning' | 'error')}
-              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="all">All types</option>
               <option value="info">Info</option>
@@ -357,7 +332,7 @@ export const AdminWelcomePopup = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+              className="px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-lg text-sm bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
               <option value="all">All statuses</option>
               <option value="active">Active only</option>
@@ -393,72 +368,15 @@ export const AdminWelcomePopup = () => {
               {editingId ? 'Edit welcome popup' : 'New welcome popup'}
             </h4>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Title</label>
-                  <input
-                    type="text"
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
-                    placeholder="e.g. Notice:"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Type</label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
-                  >
-                    <option value="info">Info</option>
-                    <option value="warning">Warning</option>
-                    <option value="error">Error</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Body text</label>
-                <textarea
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  className="w-full p-3 border border-gray-300 dark:border-[#303038] rounded-lg min-h-[120px] bg-white text-gray-900 placeholder:text-gray-400 dark:bg-[#111113] dark:text-gray-100 dark:placeholder:text-gray-500 transition-colors duration-300"
-                  placeholder="Message shown in the modal. Newlines are preserved."
-                />
-              </div>
-
-              <div className="rounded-lg border border-violet-200/80 bg-violet-50/60 p-4 dark:border-violet-500/25 dark:bg-violet-500/10">
+              <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-4 dark:border-[#303038] dark:bg-[#111113]">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
                     <NoticeHeroImageField
-                      imageUrl={formData.hero_image_url ?? ''}
+                      imageUrl={formData.hero_image_url}
                       onChange={(url) => setFormData({ ...formData, hero_image_url: url })}
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                      CTA button label
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.cta_label ?? ''}
-                      onChange={(e) => setFormData({ ...formData, cta_label: e.target.value })}
-                      className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
-                      placeholder="Learn more"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">CTA URL</label>
-                    <input
-                      type="url"
-                      value={formData.cta_url ?? ''}
-                      onChange={(e) => setFormData({ ...formData, cta_url: e.target.value })}
-                      className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
-                      placeholder="https://…"
-                    />
-                  </div>
-                  <div>
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                       Snooze after close (hours)
                     </label>
@@ -466,11 +384,11 @@ export const AdminWelcomePopup = () => {
                       type="number"
                       min={1}
                       max={168}
-                      value={formData.snooze_hours ?? 6}
+                      value={formData.snooze_hours}
                       onChange={(e) =>
                         setFormData({ ...formData, snooze_hours: Number(e.target.value) || 6 })
                       }
-                      className="w-full p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
+                      className="w-full max-w-xs p-2 border border-gray-300 dark:border-[#303038] rounded-lg bg-white text-gray-900 dark:bg-[#111113] dark:text-gray-100 transition-colors duration-300"
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       1–168. Per device (browser storage).
@@ -485,7 +403,7 @@ export const AdminWelcomePopup = () => {
                     type="checkbox"
                     checked={formData.is_active}
                     onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    className="rounded border-gray-300 dark:border-[#303038] text-violet-600 focus:ring-violet-500"
+                    className="rounded border-gray-300 dark:border-[#303038] text-primary focus:ring-primary"
                   />
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Active (can show to customers)</span>
                 </label>
@@ -505,8 +423,8 @@ export const AdminWelcomePopup = () => {
                 <button
                   type="button"
                   onClick={() => void handleSave()}
-                  disabled={!formData.title || !formData.content}
-                  className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 flex items-center justify-center disabled:opacity-50"
+                  disabled={!formData.hero_image_url?.trim()}
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 flex items-center justify-center disabled:opacity-50 shadow-sm shadow-primary/20"
                 >
                   <Save className="w-4 h-4 mr-2" />
                   Save
@@ -521,7 +439,6 @@ export const AdminWelcomePopup = () => {
             <thead>
               <tr className="border-b border-gray-200 dark:border-[#26262d]">
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Popup</th>
-                <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Type</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Date</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300">Status</th>
                 <th className="py-3 px-4 text-sm font-semibold text-gray-600 dark:text-gray-300 text-right">Actions</th>
@@ -534,15 +451,23 @@ export const AdminWelcomePopup = () => {
                   className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300"
                 >
                   <td className="py-3 px-4">
-                    <div className="font-bold text-gray-900 dark:text-gray-100">{row.title}</div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-md">{row.content}</div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span
-                      className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getTypePill(row.type)}`}
-                    >
-                      {row.type}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      {row.hero_image_url?.trim() ? (
+                        <img
+                          src={row.hero_image_url.trim()}
+                          alt=""
+                          className="h-12 w-20 shrink-0 rounded-md object-cover border border-gray-200 dark:border-[#303038]"
+                        />
+                      ) : (
+                        <div className="h-12 w-20 shrink-0 rounded-md border border-dashed border-gray-300 dark:border-[#303038] bg-gray-50 dark:bg-white/5" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="font-bold text-gray-900 dark:text-gray-100 truncate">{row.title}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1 max-w-md">
+                          {row.content?.trim() || 'Image only'}
+                        </div>
+                      </div>
+                    </div>
                   </td>
                   <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
                     {format(new Date(row.created_at), 'MMM dd, yyyy')}
@@ -584,7 +509,7 @@ export const AdminWelcomePopup = () => {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-8 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={4} className="py-8 text-center text-gray-500 dark:text-gray-400">
                     No welcome popups match your filters.
                   </td>
                 </tr>
@@ -692,8 +617,8 @@ function NoticeHeroImageField({
         Upload a banner or paste an HTTPS image URL. Leave empty for the built-in gradient.
       </p>
 
-      <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1c1c21] overflow-hidden">
-        <div className="relative flex min-h-[140px] items-center justify-center bg-gray-50 dark:bg-black/30 p-3">
+      <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#0f0f12] overflow-hidden">
+        <div className="relative flex min-h-[140px] items-center justify-center bg-gray-50 dark:bg-[#141418] p-3">
           {showPreview ? (
             <img
               src={imageUrl.trim()}
@@ -707,8 +632,8 @@ function NoticeHeroImageField({
             </div>
           )}
           {uploading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-black/60 backdrop-blur-[2px]">
-              <Loader2 className="w-8 h-8 animate-spin text-violet-500" aria-hidden />
+            <div className="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-[#0a0a0c]/75 backdrop-blur-[2px]">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" aria-hidden />
             </div>
           )}
         </div>
@@ -725,7 +650,7 @@ function NoticeHeroImageField({
             type="button"
             onClick={pickFile}
             disabled={uploading}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/25 bg-primary text-white text-sm font-semibold shadow-sm shadow-primary/15 hover:bg-primary/90 hover:border-primary/35 disabled:opacity-50 dark:shadow-primary/10"
           >
             <Upload className="w-4 h-4 shrink-0" aria-hidden />
             {imageUrl.trim() ? 'Replace image' : 'Upload image'}

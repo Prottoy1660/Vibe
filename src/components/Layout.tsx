@@ -180,7 +180,7 @@ export const Layout = () => {
     }
     const { data, error } = await supabase
       .from('welcome_popups')
-      .select('id, title, content, type, created_at, hero_image_url, cta_label, cta_url, snooze_hours')
+      .select('id, title, content, type, created_at, hero_image_url, snooze_hours')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(12);

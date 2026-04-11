@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bell, ExternalLink } from 'lucide-react';
+import { X, Bell } from 'lucide-react';
 import { snoozeNoticeModal } from '../lib/noticeModalStorage';
 
 /** Active row from `welcome_popups` shown in the customer welcome modal. */
@@ -12,8 +12,6 @@ export type WelcomePopupContent = {
   type: string;
   created_at: string;
   hero_image_url?: string | null;
-  cta_label?: string | null;
-  cta_url?: string | null;
   snooze_hours?: number | null;
 };
 
@@ -25,9 +23,10 @@ type Props = {
 export const CustomerNoticeModal: React.FC<Props> = ({ notice, onClose }) => {
   const snoozeH = Math.min(168, Math.max(1, Math.floor(Number(notice.snooze_hours) || 6)));
   const hasHero = Boolean(notice.hero_image_url?.trim());
-  const ctaLabel = notice.cta_label?.trim() || 'Learn more';
-  const ctaUrl = notice.cta_url?.trim() || '';
   const [heroBroken, setHeroBroken] = useState(false);
+  const titleText = notice.title?.trim() ?? '';
+  const bodyText = notice.content?.trim() ?? '';
+  const showTextBlock = Boolean(titleText || bodyText);
 
   useEffect(() => {
     setHeroBroken(false);
@@ -41,19 +40,12 @@ export const CustomerNoticeModal: React.FC<Props> = ({ notice, onClose }) => {
     return { ring: 'ring-violet-500/35' };
   }, [notice.type]);
 
-  const btnPrimaryGlass =
-    'inline-flex items-center justify-center gap-2 rounded-full border border-white/45 bg-white/22 px-6 py-3.5 text-sm font-semibold text-white shadow-[0_6px_28px_rgba(0,0,0,0.35)] backdrop-blur-xl transition hover:border-white/60 hover:bg-white/32 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70';
-
   const btnSecondaryGlass =
     'inline-flex items-center justify-center gap-2 rounded-full border border-white/30 bg-white/12 px-6 py-3.5 text-sm font-semibold text-white/95 shadow-[0_4px_20px_rgba(0,0,0,0.25)] backdrop-blur-xl transition hover:border-white/45 hover:bg-white/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60';
 
   const handleDismiss = () => {
     snoozeNoticeModal(notice.id, snoozeH);
     onClose();
-  };
-
-  const openCta = () => {
-    if (ctaUrl) window.open(ctaUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (typeof document === 'undefined') return null;
@@ -91,7 +83,7 @@ export const CustomerNoticeModal: React.FC<Props> = ({ notice, onClose }) => {
           {hasHero && !heroBroken ? (
             <>
               <span id="customer-notice-title" className="sr-only">
-                {notice.title}. {notice.content}
+                {showTextBlock ? `${titleText}. ${bodyText}` : 'Announcement image'}
               </span>
               {/* One surface: hero fills the card; chrome floats on soft gradients (no solid black bars). */}
               <div className="relative bg-zinc-950 text-white">
@@ -156,26 +148,28 @@ export const CustomerNoticeModal: React.FC<Props> = ({ notice, onClose }) => {
 
                 <h2
                   id="customer-notice-title"
-                  className="text-center text-xl font-bold leading-snug tracking-tight text-white drop-shadow-md sm:text-2xl"
+                  className={
+                    titleText
+                      ? 'text-center text-xl font-bold leading-snug tracking-tight text-white drop-shadow-md sm:text-2xl'
+                      : 'sr-only'
+                  }
                 >
-                  {notice.title}
+                  {titleText || 'Announcement'}
                 </h2>
 
-                <div className="mt-6 space-y-4 text-center text-sm leading-[1.65] text-white/92 drop-shadow-sm sm:text-[15px]">
-                  {notice.content.split('\n').map((paragraph, i) => (
-                    <p key={i} className="whitespace-pre-wrap break-words">
-                      {paragraph}
-                    </p>
-                  ))}
-                </div>
+                {bodyText ? (
+                  <div className="mt-6 space-y-4 text-center text-sm leading-[1.65] text-white/92 drop-shadow-sm sm:text-[15px]">
+                    {notice.content.split('\n').map((paragraph, i) => (
+                      <p key={i} className="whitespace-pre-wrap break-words">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
 
-                <div className="mt-9 flex flex-col items-stretch gap-3 sm:mt-11 sm:flex-row sm:justify-center">
-                  {ctaUrl ? (
-                    <button type="button" onClick={openCta} className={btnPrimaryGlass}>
-                      {ctaLabel}
-                      <ExternalLink className="h-4 w-4 opacity-90" aria-hidden />
-                    </button>
-                  ) : null}
+                <div
+                  className={`flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center ${showTextBlock ? 'mt-9 sm:mt-11' : 'mt-6 sm:mt-8'}`}
+                >
                   <button type="button" onClick={handleDismiss} className={btnSecondaryGlass}>
                     Close
                   </button>
