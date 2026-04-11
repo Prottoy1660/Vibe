@@ -30,6 +30,7 @@ import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
 import { toast } from '../lib/toast';
+import { buildInboxSnippetFromBody } from '../lib/inboxSnippet';
 
 function getNextAdobeSlotUnlockAt(
   orderCreatedAt: string | undefined,
@@ -54,6 +55,16 @@ function isAdobeSlotTimingAllowed(
   const unlockAt = getNextAdobeSlotUnlockAt(orderCreatedAt, intervalDays, emailsGenerated, slotLimit);
   if (!unlockAt) return true;
   return new Date() >= unlockAt;
+}
+
+function verificationCodePlain(code: string): string {
+  return code.replace(/\D/g, '');
+}
+
+function verificationCodeDisplay(code: string): string {
+  const plain = verificationCodePlain(code);
+  if (plain.length === 6) return plain.split('').join(' ');
+  return code.trim();
 }
 
 interface UserEmail {
@@ -1597,7 +1608,7 @@ export const AdobeEmail = () => {
               <div className="mt-4 flex gap-2 rounded-xl border border-indigo-100/80 dark:border-indigo-500/20 bg-white/70 dark:bg-[#1a1a22]/80 px-3 py-2.5 text-left">
                 <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" aria-hidden />
                 <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                  Use this inbox when Adobe sends a <span className="font-medium text-gray-800 dark:text-gray-200">sign-in or verification code</span>. New mail can take a minute — tap <span className="font-medium">Refresh</span> if you do not see it yet.
+                  This inbox only receives mail from <span className="font-medium text-gray-800 dark:text-gray-200">Adobe</span> (Creative Cloud sign-in and verification). New messages can take a minute — tap <span className="font-medium">Refresh</span> if nothing appears yet.
                 </p>
               </div>
             </div>
@@ -1625,7 +1636,10 @@ export const AdobeEmail = () => {
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-0.5">
                         Recent messages ({inboxMessages.length})
                       </p>
-                      {inboxMessages.map((msg) => (
+                      {inboxMessages.map((msg) => {
+                        const snippetPreview = buildInboxSnippetFromBody(msg.snippet || '', 280) || null;
+                        const codePlain = msg.code ? verificationCodePlain(msg.code) : '';
+                        return (
                         <div
                           key={msg.id}
                           className="bg-white dark:bg-[#18181f] border border-gray-200 dark:border-[#2e2e38] rounded-xl p-4 shadow-sm hover:border-indigo-300/60 dark:hover:border-indigo-500/40 transition-colors"
@@ -1636,19 +1650,48 @@ export const AdobeEmail = () => {
                               {format(new Date(msg.date), 'MMM d, HH:mm')}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed">{msg.snippet}</p>
+                          {snippetPreview ? (
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3 leading-relaxed line-clamp-4">{snippetPreview}</p>
+                          ) : msg.code ? (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 leading-relaxed">
+                              Adobe verification message — copy the code below into Adobe.
+                            </p>
+                          ) : null}
                           {msg.code && (
-                            <div className="rounded-lg border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/90 dark:bg-indigo-950/35 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide">
-                                Verification code
-                              </span>
-                              <span className="text-xl font-mono font-bold text-indigo-700 dark:text-indigo-300 tracking-[0.2em] bg-white dark:bg-[#151518] px-3 py-1.5 rounded-md shadow-inner border border-indigo-100 dark:border-indigo-900/50">
-                                {msg.code}
-                              </span>
+                            <div className="rounded-lg border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/90 dark:bg-indigo-950/35 px-3 py-3 space-y-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide">
+                                  Verification code
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    copyToClipboard(codePlain, `inbox-code-${msg.id}`);
+                                    toast.success('Code copied — paste it in Adobe');
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200/90 dark:border-indigo-500/40 bg-white/90 dark:bg-[#151518] px-2.5 py-1.5 text-xs font-semibold text-indigo-800 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/80 transition-colors"
+                                >
+                                  {copiedId === `inbox-code-${msg.id}` ? (
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" aria-hidden />
+                                  )}
+                                  {copiedId === `inbox-code-${msg.id}` ? 'Copied' : 'Copy code'}
+                                </button>
+                              </div>
+                              <div className="text-center sm:text-left">
+                                <span
+                                  className="inline-block text-2xl font-mono font-bold text-indigo-700 dark:text-indigo-300 tracking-[0.35em] bg-white dark:bg-[#151518] px-4 py-2.5 rounded-lg shadow-inner border border-indigo-100 dark:border-indigo-900/50 select-all"
+                                  title={codePlain}
+                                >
+                                  {verificationCodeDisplay(msg.code)}
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : !inboxLoading ? (
                     <div className="rounded-2xl border border-dashed border-gray-200 dark:border-zinc-700 bg-gray-50/80 dark:bg-zinc-900/40 px-5 py-10 text-center">

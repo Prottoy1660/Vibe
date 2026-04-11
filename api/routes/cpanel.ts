@@ -5,6 +5,7 @@ import { simpleParser } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
 import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
+import { buildInboxSnippetFromBody, extractAdobeVerificationCode } from '../../src/lib/inboxSnippet.ts';
 
 dotenv.config();
 
@@ -330,18 +331,9 @@ router.post('/inbox', verifyUser, async (req, res) => {
       
       const subject = parsed.subject || 'No Subject';
       const text = parsed.text || '';
-      
-      // Generate a snippet
-      const snippet = text.substring(0, 100).replace(/\s+/g, ' ') + '...';
-      
-      // Try to extract an Adobe verification code (usually a 6 digit number)
-      let code = null;
-      // Look for common code patterns (e.g., "code is 123456" or just big 6 digit numbers)
-      const codeMatch = text.match(/\b\d{6}\b/);
-      if (codeMatch) {
-        // Simple heuristic: if it says Adobe or Verification near it, or just grab the first 6 digit number
-        code = codeMatch[0];
-      }
+
+      const code = extractAdobeVerificationCode(text);
+      const snippet = buildInboxSnippetFromBody(text, 220, code);
 
       parsedMessages.push({
         id,
