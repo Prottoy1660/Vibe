@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Loader2, Phone, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { hasMinimumPhone } from '../lib/phoneRequired';
+import { errorMessageFromUnknown } from '../lib/errorMessage';
+import { hasMinimumPhone, phoneDigitsOnly } from '../lib/phoneRequired';
 
 /**
  * Shown after OAuth (or any login) when `public.users.phone` is missing/invalid.
@@ -34,11 +35,13 @@ export const PhoneRequired = () => {
     }
     if (!user) return;
 
+    const stored = phoneDigitsOnly(trimmed);
+
     setSaving(true);
     try {
       const { data: updatedRow, error: uErr } = await supabase
         .from('users')
-        .update({ phone: trimmed })
+        .update({ phone: stored })
         .eq('id', user.id)
         .select('phone')
         .single();
@@ -47,12 +50,15 @@ export const PhoneRequired = () => {
         setError('Number not saved — try again.');
         return;
       }
-      const { error: aErr } = await supabase.auth.updateUser({ data: { phone: trimmed } });
-      if (aErr) throw aErr;
+      // App gate uses `public.users.phone`; auth metadata is best-effort (OAuth sessions can reject updates).
+      const { error: aErr } = await supabase.auth.updateUser({ data: { phone: stored } });
+      if (aErr) {
+        console.warn('[PhoneRequired] auth.updateUser phone metadata failed', aErr);
+      }
       await refreshUserProfile();
       navigate('/', { replace: true });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not save. Please try again.');
+      setError(errorMessageFromUnknown(err, 'Could not save. Please try again.'));
     } finally {
       setSaving(false);
     }
