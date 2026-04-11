@@ -293,7 +293,7 @@ export const Store = () => {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: idx * 0.1 }}
               key={product.id}
-              className="bg-white dark:bg-[#151518] rounded-2xl shadow-soft dark:shadow-none dark:ring-1 dark:ring-primary/10 hover:shadow-glow dark:hover:shadow-[0_0_24px_rgba(139,92,246,0.22)] hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col group"
+              className="bg-white dark:bg-[#151518] rounded-2xl border border-gray-100/90 dark:border-white/[0.06] shadow-soft dark:shadow-none transition-all duration-300 overflow-hidden flex flex-col group hover:-translate-y-0.5 hover:border-primary/18 dark:hover:border-white/[0.1] hover:shadow-[0_12px_40px_-14px_rgba(15,23,42,0.14)] dark:hover:shadow-[0_24px_48px_-20px_rgba(0,0,0,0.65)]"
             >
               {/* Product Banner — brand gradient from tailwind primary → secondary */}
               <div className="h-32 bg-gradient-to-r from-primary via-primary-dark to-secondary relative flex items-center justify-center overflow-hidden">
@@ -324,7 +324,7 @@ export const Store = () => {
                     <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-300 leading-snug">
                       {bullets.map((line, i) => (
                         <li key={i} className="flex gap-2 items-start">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-accent-green shrink-0 mt-0.5" aria-hidden />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-primary dark:text-primary-light shrink-0 mt-0.5 opacity-90" aria-hidden />
                           <span>{line}</span>
                         </li>
                       ))}
@@ -344,12 +344,12 @@ export const Store = () => {
                             ৳{formatBdt(Number(product.list_price))}
                           </span>
                         ) : null}
-                        <p className="text-2xl font-bold text-accent-green tabular-nums">
+                        <p className="text-2xl font-bold text-gray-900 dark:text-gray-50 tabular-nums tracking-tight">
                           ৳{formatBdt(Number(product.price))}
                         </p>
                       </div>
                       {savePct != null ? (
-                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-accent-green text-gray-900">
+                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-primary/12 text-primary dark:bg-primary/18 dark:text-primary-light border border-primary/15 dark:border-primary/25">
                           Save {savePct}%
                         </span>
                       ) : null}
@@ -363,7 +363,7 @@ export const Store = () => {
                   <div className="flex flex-col gap-2">
                     <button
                       onClick={() => handleBuyNow(product.id)}
-                      className="w-full py-3 px-4 rounded-xl font-bold text-gray-900 bg-accent-green hover:brightness-110 shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0f6b32] focus:ring-offset-white dark:focus:ring-[#0a5228] dark:focus:ring-offset-[#151518] transition-all flex items-center justify-center uppercase tracking-wide text-sm"
+                      className="w-full py-3 px-4 rounded-xl font-bold text-white bg-primary hover:bg-primary-dark shadow-[0_1px_2px_rgba(0,0,0,0.06),0_4px_14px_-2px_rgba(139,92,246,0.32)] hover:shadow-[0_1px_2px_rgba(0,0,0,0.08),0_8px_22px_-4px_rgba(139,92,246,0.38)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary/55 focus:ring-offset-white dark:focus:ring-offset-[#151518] active:scale-[0.99] transition-[background-color,box-shadow,transform] flex items-center justify-center uppercase tracking-wide text-sm"
                     >
                       <ShoppingBag className="w-4 h-4 mr-2" />
                       Buy Now
