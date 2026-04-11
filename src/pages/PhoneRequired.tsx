@@ -39,15 +39,19 @@ export const PhoneRequired = () => {
 
     setSaving(true);
     try {
+      // Avoid `.single()`: PostgREST errors with "Cannot coerce the result to a single JSON object"
+      // when the update matches 0 rows (RLS / missing profile row). `.maybeSingle()` returns null data instead.
       const { data: updatedRow, error: uErr } = await supabase
         .from('users')
         .update({ phone: stored })
         .eq('id', user.id)
         .select('phone')
-        .single();
+        .maybeSingle();
       if (uErr) throw uErr;
       if (!hasMinimumPhone(updatedRow?.phone)) {
-        setError('Number not saved — try again.');
+        setError(
+          'Your profile could not be updated (no matching row returned). Try signing out and signing in again, or contact support.',
+        );
         return;
       }
       // App gate uses `public.users.phone`; auth metadata is best-effort (OAuth sessions can reject updates).
