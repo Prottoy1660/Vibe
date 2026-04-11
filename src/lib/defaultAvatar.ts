@@ -45,8 +45,26 @@ function detectAvatarUrlFromName(name?: string | null): string | null {
   return null;
 }
 
-/** Picks male/female PNG from name when possible; otherwise stable pseudo-random between the two URLs. */
-export function getDefaultAvatarUrl(seed?: string | null, name?: string | null): string {
+export type AvatarDefaultGender = 'auto' | 'male' | 'female';
+
+export function parseAvatarDefaultGender(raw: unknown): AvatarDefaultGender {
+  if (raw === 'male' || raw === 'female' || raw === 'auto') return raw;
+  return 'auto';
+}
+
+/**
+ * Picks default character PNG when user has no custom `avatar_url`.
+ * `preference`: profile override — male/female skip name/hash; auto uses name tokens then stable hash.
+ */
+export function getDefaultAvatarUrl(
+  seed?: string | null,
+  name?: string | null,
+  preference?: AvatarDefaultGender | null,
+): string {
+  const p = preference ?? 'auto';
+  if (p === 'male') return DEFAULT_AVATAR_MALE_URL;
+  if (p === 'female') return DEFAULT_AVATAR_FEMALE_URL;
+
   const byName = detectAvatarUrlFromName(name);
   if (byName) return byName;
 

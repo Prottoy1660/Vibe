@@ -47,7 +47,7 @@ import { NotificationBell } from './NotificationBell';
 import { LobbyMusicPlayer } from './LobbyMusicPlayer';
 import { SupportChatWidget } from './support/SupportChatWidget';
 import { PushEnablePrompt } from './PushEnablePrompt';
-import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
+import { getDefaultAvatarUrl, parseAvatarDefaultGender, type AvatarDefaultGender } from '../lib/defaultAvatar';
 
 // Utility for merging tailwind classes
 export function cn(...inputs: ClassValue[]) {
@@ -69,11 +69,13 @@ export const Layout = () => {
   const showCustomerInboxBell = Boolean(user && !location.pathname.startsWith('/admin'));
   /** `public.users.avatar_url` for topbar — matches Dashboard / Profile default image when empty */
   const [headerAvatarUrl, setHeaderAvatarUrl] = useState<string | null>(null);
+  const [headerAvatarGender, setHeaderAvatarGender] = useState<AvatarDefaultGender>('auto');
 
   // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
     if (!user) {
       setHeaderAvatarUrl(null);
+      setHeaderAvatarGender('auto');
       return;
     }
 
@@ -82,13 +84,14 @@ export const Layout = () => {
     const checkUserStatus = async () => {
       const { data } = await supabase
         .from('users')
-        .select('is_banned, preferred_language, avatar_url')
+        .select('is_banned, preferred_language, avatar_url, avatar_default_gender')
         .eq('id', user.id)
         .single();
 
       if (cancelled) return;
 
       setHeaderAvatarUrl(typeof data?.avatar_url === 'string' && data.avatar_url.trim() ? data.avatar_url.trim() : null);
+      setHeaderAvatarGender(parseAvatarDefaultGender(data?.avatar_default_gender));
 
       if (data?.is_banned) {
         toast.error('Your account has been suspended.');
@@ -107,8 +110,13 @@ export const Layout = () => {
     };
 
     void checkUserStatus();
+    const onHeaderAvatarRefresh = () => {
+      void checkUserStatus();
+    };
+    window.addEventListener('vibe:header-avatar-refresh', onHeaderAvatarRefresh);
     return () => {
       cancelled = true;
+      window.removeEventListener('vibe:header-avatar-refresh', onHeaderAvatarRefresh);
     };
   }, [user, signOut]);
 
@@ -172,8 +180,8 @@ export const Layout = () => {
   const topbarAvatarSrc = useMemo(() => {
     if (!user) return null;
     const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
-    return headerAvatarUrl || getDefaultAvatarUrl(user.email || user.id, name);
-  }, [user, headerAvatarUrl]);
+    return headerAvatarUrl || getDefaultAvatarUrl(user.email || user.id, name, headerAvatarGender);
+  }, [user, headerAvatarUrl, headerAvatarGender]);
 
   const navigation = useMemo(
     () =>

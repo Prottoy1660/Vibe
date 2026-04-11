@@ -20,7 +20,9 @@ import {
 import { setStoredLanguage, type AppLanguage } from '../lib/language';
 import { hasMinimumPhone } from '../lib/phoneRequired';
 import { disableWebPush, enableWebPush, getPushPermission } from '../lib/webPushClient';
-import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
+import { getDefaultAvatarUrl, parseAvatarDefaultGender, type AvatarDefaultGender } from '../lib/defaultAvatar';
+
+const HEADER_AVATAR_REFRESH_EVENT = 'vibe:header-avatar-refresh';
 
 export const Profile = () => {
   const { user } = useAuth();
@@ -36,11 +38,13 @@ export const Profile = () => {
     email: '',
     phone: '',
     password: '',
-    avatar_url: ''
+    avatar_url: '',
+    avatar_default_gender: 'auto' as AvatarDefaultGender,
   });
   const [preferredLanguage, setPreferredLanguage] = useState<AppLanguage>('en');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const initialAvatarGenderRef = useRef<AvatarDefaultGender>('auto');
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -58,12 +62,15 @@ export const Profile = () => {
           const lang = data.preferred_language === 'bn' ? 'bn' : 'en';
           setPreferredLanguage(lang);
           setStoredLanguage(lang);
+          const ag = parseAvatarDefaultGender(data.avatar_default_gender);
+          initialAvatarGenderRef.current = ag;
           setFormData({
             name: data.name || '',
             email: data.email || '',
             phone: data.phone || '',
             password: '', // We don't fetch password
-            avatar_url: data.avatar_url || ''
+            avatar_url: data.avatar_url || '',
+            avatar_default_gender: ag,
           });
         }
       } catch (error) {
@@ -164,6 +171,7 @@ export const Profile = () => {
           phone: formData.phone,
           email: formData.email, // Sync email to public table as well
           preferred_language: preferredLanguage,
+          avatar_default_gender: formData.avatar_default_gender,
         })
         .eq('id', user.id);
 
@@ -175,6 +183,10 @@ export const Profile = () => {
       if (formData.email !== user.email) changes.push('Email');
       if (formData.phone) changes.push('Phone Number');
       if (formData.password) changes.push('Password');
+      if (formData.avatar_default_gender !== initialAvatarGenderRef.current) {
+        changes.push('Default avatar character');
+      }
+      initialAvatarGenderRef.current = formData.avatar_default_gender;
 
       if (changes.length > 0) {
         await supabase.from('user_activity_logs').insert({
@@ -191,7 +203,7 @@ export const Profile = () => {
       }
       
       setFormData(prev => ({ ...prev, password: '' })); // Clear password field
-      
+      window.dispatchEvent(new Event(HEADER_AVATAR_REFRESH_EVENT));
     } catch (error: any) {
       console.error('Error updating profile:', error);
       setMessage({ type: 'error', text: error.message || 'Failed to update profile.' });
@@ -214,7 +226,11 @@ export const Profile = () => {
   const emailVerified = Boolean(user?.email_confirmed_at);
   const phoneOk = hasMinimumPhone(formData.phone);
   const languageLabel = preferredLanguage === 'bn' ? 'Bangla (বাংলা)' : 'English';
-  const avatarFallbackUrl = getDefaultAvatarUrl(formData.email || user?.id, formData.name);
+  const avatarFallbackUrl = getDefaultAvatarUrl(
+    formData.email || user?.id,
+    formData.name,
+    formData.avatar_default_gender,
+  );
 
   const inputClass =
     'pl-10 w-full rounded-lg border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] px-4 py-2.5 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500/25 focus:border-indigo-500 dark:focus:border-indigo-400 outline-none transition-shadow';
@@ -282,6 +298,59 @@ export const Profile = () => {
                 Change profile photo
               </button>
 
+              <div className="mt-4 rounded-xl border border-gray-200/90 bg-white/80 p-3.5 dark:border-white/[0.08] dark:bg-white/[0.04]">
+                <p className="text-xs font-semibold text-gray-900 dark:text-gray-100">Default character (no photo)</p>
+                <p className="mt-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+                  We pick a style from your name when possible. If the wrong one appears, choose male or female — only
+                  used when you have not uploaded a profile photo.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  {(
+                    [
+                      { value: 'auto' as const, label: 'Automatic' },
+                      { value: 'male' as const, label: 'Male' },
+                      { value: 'female' as const, label: 'Female' },
+                    ] as const
+                  ).map(({ value, label }) => {
+                    const checked = formData.avatar_default_gender === value;
+                    return (
+                      <label
+                        key={value}
+                        className={`flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500/30 dark:focus-within:ring-violet-500/25 ${
+                          checked
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-900 dark:border-indigo-400/70 dark:bg-indigo-950/40 dark:text-indigo-100'
+                            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 dark:border-[#303038] dark:bg-[#1a1a1f] dark:text-gray-200 dark:hover:border-[#3f3f46]'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="avatar_default_gender"
+                          value={value}
+                          checked={checked}
+                          onChange={() =>
+                            setFormData((prev) => ({ ...prev, avatar_default_gender: value }))
+                          }
+                          className="sr-only"
+                        />
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                            checked
+                              ? 'border-indigo-400 bg-indigo-100/80 dark:border-violet-400/85 dark:bg-violet-950/50'
+                              : 'border-gray-300 bg-white dark:border-zinc-600 dark:bg-zinc-900/60'
+                          }`}
+                          aria-hidden
+                        >
+                          {checked ? (
+                            <span className="h-2 w-2 rounded-full bg-indigo-500 shadow-sm dark:bg-violet-300" />
+                          ) : null}
+                        </span>
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="mt-4 flex min-h-0 flex-col lg:mt-5 lg:min-h-0 lg:flex-1">
                 <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-indigo-100/90 bg-white/75 p-3.5 shadow-sm dark:border-white/[0.08] dark:bg-white/[0.04] dark:shadow-none sm:p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
@@ -327,7 +396,7 @@ export const Profile = () => {
                   <div className="mt-4 flex min-h-0 flex-1 flex-col justify-end border-t border-gray-200/80 pt-3 dark:border-white/10">
                     <p className="text-[11px] font-semibold text-gray-600 dark:text-gray-400">Quick tips</p>
                     <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-snug text-gray-500 dark:text-gray-400">
-                      <li>Name, phone, email, language, and password need Save changes.</li>
+                      <li>Name, phone, email, language, default character, and password need Save changes.</li>
                       <li>Photos save as soon as you pick a file — no extra save step.</li>
                     </ul>
                   </div>
@@ -335,7 +404,8 @@ export const Profile = () => {
               </div>
 
               <p className="mt-3 shrink-0 border-t border-gray-200/80 pt-3 pb-4 text-[11px] leading-snug text-gray-500 dark:border-white/10 dark:text-gray-400 sm:pb-5">
-                Photo saves on file pick. Everything else uses <span className="font-medium text-gray-700 dark:text-gray-300">Save changes</span>.
+                Photo saves on file pick. Everything else (including default character) uses{' '}
+                <span className="font-medium text-gray-700 dark:text-gray-300">Save changes</span>.
               </p>
             </div>
           </div>

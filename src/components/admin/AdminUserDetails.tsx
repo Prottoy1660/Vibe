@@ -8,7 +8,7 @@ import {
 import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { getApiBaseUrl } from '../../lib/apiBase';
-import { getDefaultAvatarUrl } from '../../lib/defaultAvatar';
+import { getDefaultAvatarUrl, parseAvatarDefaultGender } from '../../lib/defaultAvatar';
 
 interface AdminUserDetailsProps {
   userId: string;
@@ -311,7 +311,11 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
     { id: 'emails' as const, label: 'Adobe accounts', short: 'Accounts', icon: Mail, count: emails.length },
     { id: 'activity' as const, label: 'Activity', short: 'Log', icon: History, count: activityLogs.length },
   ];
-  const avatarFallbackUrl = getDefaultAvatarUrl(userProfile.email || userProfile.id, userProfile.name);
+  const avatarFallbackUrl = getDefaultAvatarUrl(
+    userProfile.email || userProfile.id,
+    userProfile.name,
+    parseAvatarDefaultGender(userProfile.avatar_default_gender),
+  );
 
   return (
     <div className="space-y-5 animate-in fade-in duration-300 max-w-6xl mx-auto">

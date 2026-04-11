@@ -26,7 +26,7 @@ import {
 import { postJsonWithFallback } from '../lib/apiClient';
 import { toast } from '../lib/toast';
 import { isStalePendingOrder } from '../lib/orderHistoryVisibility';
-import { getDefaultAvatarUrl } from '../lib/defaultAvatar';
+import { getDefaultAvatarUrl, parseAvatarDefaultGender, type AvatarDefaultGender } from '../lib/defaultAvatar';
 
 interface Stats {
   totalOrders: number;
@@ -136,6 +136,12 @@ export const Dashboard = () => {
   const [showRechargeModal, setShowRechargeModal] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState('');
   const [recharging, setRecharging] = useState(false);
+  /** Row fields for welcome avatar (custom photo + default character preference). */
+  const [avatarRow, setAvatarRow] = useState<{
+    avatar_url: string | null;
+    avatar_default_gender: AvatarDefaultGender;
+    name: string | null;
+  } | null>(null);
 
   // Instant admin redirect using cached role from AuthContext (no extra query)
   useEffect(() => {
@@ -156,7 +162,7 @@ export const Dashboard = () => {
           .eq('user_id', user.id),
         supabase
           .from('users')
-          .select('wallet_balance,wallet_promotional_balance')
+          .select('wallet_balance,wallet_promotional_balance,avatar_url,avatar_default_gender,name')
           .eq('id', user.id)
           .single(),
         supabase
@@ -170,6 +176,20 @@ export const Dashboard = () => {
       const orders = ordersResult.data;
       const walletData = walletResult.data;
       const noticesData = noticesResult.data;
+
+      if (walletData) {
+        const url =
+          typeof walletData.avatar_url === 'string' && walletData.avatar_url.trim()
+            ? walletData.avatar_url.trim()
+            : null;
+        setAvatarRow({
+          avatar_url: url,
+          avatar_default_gender: parseAvatarDefaultGender(
+            (walletData as { avatar_default_gender?: unknown }).avatar_default_gender,
+          ),
+          name: typeof walletData.name === 'string' && walletData.name.trim() ? walletData.name.trim() : null,
+        });
+      }
 
       if (orders) {
         const now = Date.now();
@@ -257,7 +277,14 @@ export const Dashboard = () => {
   }, [user, isAdmin, fetchDashboardData]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
-  const avatarFallbackUrl = getDefaultAvatarUrl(user?.email || user?.id, userName);
+  const nameForDefaultAvatar = avatarRow?.name || userName;
+  const welcomeAvatarSrc =
+    avatarRow?.avatar_url ||
+    getDefaultAvatarUrl(
+      user?.email || user?.id,
+      nameForDefaultAvatar,
+      avatarRow?.avatar_default_gender ?? 'auto',
+    );
 
   const handleRecharge = async () => {
     const amount = Number(rechargeAmount);
@@ -357,7 +384,7 @@ export const Dashboard = () => {
         <div className="flex items-center gap-3 sm:gap-4">
           <div className="relative h-12 w-12 sm:h-[3.25rem] sm:w-[3.25rem] shrink-0 overflow-hidden rounded-full border border-gray-100 bg-gray-50 shadow-sm dark:border-2 dark:border-[#2a2a32] dark:bg-[#1a1a1f] dark:shadow-none dark:ring-1 dark:ring-white/[0.06]">
             <img
-              src={avatarFallbackUrl}
+              src={welcomeAvatarSrc}
               alt=""
               loading="lazy"
               decoding="async"
