@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import imaps from 'imap-simple';
-import { simpleParser, type ParsedMail } from 'mailparser';
+import { simpleParser } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
 import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
@@ -20,28 +20,6 @@ const IMAP_PORT = parseInt(process.env.IMAP_PORT || '993', 10);
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-function isAdobeSender(parsed: ParsedMail): boolean {
-  const list = parsed.from?.value;
-  if (!list?.length) return false;
-  return list.some(({ address }) => {
-    const a = (address || '').toLowerCase();
-    return /\.adobe\.com$/i.test(a) || /@adobe\.com$/i.test(a);
-  });
-}
-
-/** Inbox modal: only Adobe verification-code emails (not welcome / marketing). */
-function isAdobeVerificationCodeMessage(subject: string, text: string): boolean {
-  const s = (subject || '').toLowerCase().trim();
-  const t = (text || '').slice(0, 4000).toLowerCase();
-  if (s.includes('verification code')) return true;
-  if (/\bverification\b/.test(s) && /\bcode\b/.test(s)) return true;
-  if (/\byour verification code\b/.test(t) || /\bverification code is\b/.test(t)) return true;
-  if (/\byour code is\b/.test(t)) return true;
-  if (/\bone[-\s]?time code\b/.test(t) || /\bone[-\s]?time password\b/.test(t)) return true;
-  if (/\bsecurity code\b/.test(t) && /\b\d{6}\b/.test(t)) return true;
-  return false;
-}
 
 const verifyUser = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
@@ -355,10 +333,6 @@ router.post('/inbox', verifyUser, async (req, res) => {
       const text = parsed.text || '';
 
       const code = extractAdobeVerificationCode(text);
-      if (!code || !isAdobeSender(parsed) || !isAdobeVerificationCodeMessage(subject, text)) {
-        continue;
-      }
-
       const snippet = buildInboxSnippetFromBody(text, 220, code);
 
       parsedMessages.push({

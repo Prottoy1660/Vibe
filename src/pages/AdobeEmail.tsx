@@ -26,7 +26,6 @@ import {
   EyeOff
 } from 'lucide-react';
 import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
-import { formatInTimeZone } from 'date-fns-tz';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
@@ -1609,7 +1608,7 @@ export const AdobeEmail = () => {
               <div className="mt-4 flex gap-2 rounded-xl border border-indigo-100/80 dark:border-indigo-500/20 bg-white/70 dark:bg-[#1a1a22]/80 px-3 py-2.5 text-left">
                 <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" aria-hidden />
                 <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                  Only <span className="font-medium text-gray-800 dark:text-gray-200">Adobe verification-code</span> emails are listed (Bangladesh time). Welcome or promo mail from Adobe is hidden. New mail can take a minute — tap <span className="font-medium">Refresh</span> if nothing appears yet.
+                  This inbox only receives mail from <span className="font-medium text-gray-800 dark:text-gray-200">Adobe</span> (Creative Cloud sign-in and verification). New messages can take a minute — tap <span className="font-medium">Refresh</span> if nothing appears yet.
                 </p>
               </div>
             </div>
@@ -1635,7 +1634,7 @@ export const AdobeEmail = () => {
                   {inboxMessages.length > 0 ? (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 px-0.5">
-                        Verification codes ({inboxMessages.length})
+                        Recent messages ({inboxMessages.length})
                       </p>
                       {inboxMessages.map((msg) => {
                         const snippetPreview = buildInboxSnippetFromBody(msg.snippet || '', 280) || null;
@@ -1647,11 +1646,8 @@ export const AdobeEmail = () => {
                         >
                           <div className="flex justify-between items-start gap-2 mb-2">
                             <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-snug pr-2">{msg.subject}</h4>
-                            <span
-                              className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0"
-                              title={formatInTimeZone(new Date(msg.date), 'Asia/Dhaka', 'PPpp (Bangladesh time)')}
-                            >
-                              {formatInTimeZone(new Date(msg.date), 'Asia/Dhaka', 'MMM d, HH:mm')} BDT
+                            <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0">
+                              {format(new Date(msg.date), 'MMM d, HH:mm')}
                             </span>
                           </div>
                           {snippetPreview ? (
@@ -1702,9 +1698,9 @@ export const AdobeEmail = () => {
                       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-zinc-200/80 bg-white dark:border-zinc-700 dark:bg-zinc-800/80 text-indigo-600 dark:text-indigo-400">
                         <Mail className="w-8 h-8 opacity-90" />
                       </div>
-                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No verification codes yet</p>
+                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No messages yet</p>
                       <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 max-w-sm mx-auto leading-relaxed">
-                        Only Adobe emails that include a sign-in verification code appear here (other Adobe mail is filtered out). After you request a code, wait a moment, then tap <span className="font-medium text-gray-700 dark:text-gray-300">Refresh</span>.
+                        Your inbox is empty right now. After you request a code from Adobe, it should show up here — wait a moment, then use <span className="font-medium text-gray-700 dark:text-gray-300">Refresh</span>.
                       </p>
                       <button
                         type="button"
