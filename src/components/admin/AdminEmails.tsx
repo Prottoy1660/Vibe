@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
@@ -33,8 +34,11 @@ import {
   Plus,
   ArrowRight,
   Search,
+  Inbox,
+  X,
 } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
+import { buildInboxSnippetFromBody } from '../../lib/inboxSnippet';
 
 interface EmailTeam {
   id: string;
@@ -62,6 +66,14 @@ interface EmailPool {
   } | null;
   email_teams?: { name: string } | null;
 }
+
+type InboxMessage = {
+  id: number;
+  subject: string;
+  snippet: string;
+  date: string;
+  code: string | null;
+};
 
 /** Strip ILIKE wildcards so user input cannot broaden the pattern. */
 function sanitizeEmailSearchFragment(s: string): string {
@@ -95,6 +107,10 @@ export const AdminEmails = () => {
   const [deletingAll, setDeletingAll] = useState(false);
   const [collapsedDates, setCollapsedDates] = useState<Record<string, boolean>>({});
   const [assigningBulk, setAssigningBulk] = useState(false);
+  const [isInboxOpen, setIsInboxOpen] = useState(false);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
+  const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
 
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
@@ -618,6 +634,53 @@ export const AdminEmails = () => {
     } catch (err: any) {
       toast.error(`Failed to update: ${err.message}`);
     }
+  };
+
+  const loadInboxMessages = async (
+    emailAddress: string,
+    password?: string,
+    options?: { closeOnError?: boolean }
+  ): Promise<boolean> => {
+    const closeOnError = options?.closeOnError ?? false;
+    setInboxLoading(true);
+    try {
+      const API_URL = getApiBaseUrl();
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+
+      const response = await fetch(`${API_URL}/api/cpanel/inbox`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: emailAddress, password }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to connect to email server');
+      setInboxMessages((data.messages || []) as InboxMessage[]);
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to connect to email server';
+      toast.error(message);
+      setInboxMessages([]);
+      if (closeOnError) setIsInboxOpen(false);
+      return false;
+    } finally {
+      setInboxLoading(false);
+    }
+  };
+
+  const handleOpenInbox = async (emailAddress: string, password?: string) => {
+    setInboxCredentials({ email: emailAddress, password });
+    setIsInboxOpen(true);
+    await loadInboxMessages(emailAddress, password, { closeOnError: true });
+  };
+
+  const refreshInbox = async () => {
+    if (!inboxCredentials?.email) return;
+    await loadInboxMessages(inboxCredentials.email, inboxCredentials.password, { closeOnError: false });
   };
 
   const burnedEmails = emails.filter((e) => e.is_burned);
@@ -1411,14 +1474,25 @@ export const AdminEmails = () => {
                                 {format(parseISO(email.created_at), 'HH:mm')}
                               </td>
                               <td className="py-2.5 px-4 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(email.id, email.status)}
-                                  className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="inline-flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleOpenInbox(email.email, email.password)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200/90 dark:border-indigo-500/30 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                                    title="Open inbox"
+                                  >
+                                    <Inbox className="w-3.5 h-3.5" />
+                                    Inbox
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDelete(email.id, email.status)}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10"
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -1571,6 +1645,123 @@ export const AdminEmails = () => {
           )}
         </div>
       )}
+      {isInboxOpen &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[110] flex min-h-[100dvh] w-full items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div
+              className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+              role="dialog"
+              aria-labelledby="admin-inbox-modal-title"
+            >
+              <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-[#1a1a1f]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
+                      <Inbox className="w-5 h-5" aria-hidden />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 id="admin-inbox-modal-title" className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">
+                        Email inbox
+                      </h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all">
+                        {inboxCredentials?.email ?? 'Loading...'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void refreshInbox()}
+                      disabled={inboxLoading || !inboxCredentials?.email}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                      title="Check again for new mail"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${inboxLoading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsInboxOpen(false);
+                        setInboxCredentials(null);
+                      }}
+                      className="p-2 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors"
+                      aria-label="Close inbox"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-600 dark:text-gray-300 bg-white/70 dark:bg-[#1a1a22]/80 rounded-lg border border-indigo-100/80 dark:border-indigo-500/20 px-3 py-2">
+                  Verification messages and codes will appear here. Use refresh if a new email is delayed.
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50/50 dark:bg-[#12121a]/50">
+                {inboxLoading && inboxMessages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-14 px-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Connecting to mailbox...</p>
+                  </div>
+                ) : inboxMessages.length > 0 ? (
+                  <div className="space-y-3">
+                    {inboxMessages.map((msg) => {
+                      const snippetPreview = buildInboxSnippetFromBody(msg.snippet || '', 260) || null;
+                      return (
+                        <div
+                          key={msg.id}
+                          className="bg-white dark:bg-[#18181f] border border-gray-200 dark:border-[#2e2e38] rounded-xl p-4 shadow-sm"
+                        >
+                          <div className="flex justify-between items-start gap-2 mb-2">
+                            <h4 className="font-semibold text-gray-900 dark:text-gray-100 text-sm leading-snug pr-2">{msg.subject}</h4>
+                            <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-white/10 px-2 py-1 rounded-lg shrink-0">
+                              {format(parseISO(msg.date), 'MMM d, HH:mm')}
+                            </span>
+                          </div>
+                          {snippetPreview ? (
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-2 leading-relaxed line-clamp-4">{snippetPreview}</p>
+                          ) : null}
+                          {msg.code ? (
+                            <div className="mt-2 rounded-lg border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/90 dark:bg-indigo-950/35 px-3 py-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide">
+                                  Code
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(msg.code || '', `inbox-code-${msg.id}`)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200/90 dark:border-indigo-500/40 bg-white/90 dark:bg-[#151518] px-2.5 py-1.5 text-xs font-semibold text-indigo-800 dark:text-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/80 transition-colors"
+                                >
+                                  {copiedId === `inbox-code-${msg.id}` ? (
+                                    <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                  )}
+                                  {copiedId === `inbox-code-${msg.id}` ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
+                              <div className="mt-2 font-mono text-xl font-bold text-indigo-700 dark:text-indigo-300 tracking-[0.35em]">
+                                {msg.code}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-gray-200 dark:border-zinc-700 bg-gray-50/80 dark:bg-zinc-900/40 px-5 py-10 text-center">
+                    <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No messages found</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Check again after a minute if a new verification message was just sent.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };
