@@ -93,6 +93,15 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
   }
 };
 
+function generateStrongMailboxPassword(length = 14): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return out;
+}
+
 // Endpoint to create email accounts via cPanel API
 router.post('/create-emails', verifyAdmin, async (req, res) => {
   try {
@@ -220,6 +229,97 @@ router.post('/create-emails', verifyAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error in create-emails:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Endpoint to rotate password for one or many mailboxes.
+router.post('/rotate-passwords', verifyAdmin, async (req, res) => {
+  try {
+    const { accounts } = req.body as { accounts?: Array<{ id?: string; email?: string }> };
+    if (!Array.isArray(accounts) || accounts.length === 0) {
+      return res.status(400).json({ success: false, error: 'accounts[] is required' });
+    }
+
+    if (!CPANEL_HOST || !CPANEL_USERNAME || !CPANEL_API_TOKEN) {
+      return res.status(500).json({ success: false, error: 'cPanel credentials not configured' });
+    }
+
+    const results: Array<{ id: string; email: string; success: boolean; password?: string; error?: string }> = [];
+
+    for (const row of accounts) {
+      const id = String(row.id || '');
+      const email = String(row.email || '').trim();
+      if (!id || !email) {
+        results.push({ id, email, success: false, error: 'Missing id/email' });
+        continue;
+      }
+
+      const [emailUser, domain] = email.split('@');
+      if (!emailUser || !domain) {
+        results.push({ id, email, success: false, error: 'Invalid email format' });
+        continue;
+      }
+
+      const newPassword = generateStrongMailboxPassword(14);
+      const apiUrl = `${CPANEL_HOST}/execute/Email/passwd_pop`;
+      const params = new URLSearchParams();
+      params.append('email', emailUser);
+      params.append('domain', domain);
+      params.append('password', newPassword);
+
+      try {
+        const response = await fetch(`${apiUrl}?${params.toString()}`, {
+          method: 'GET',
+          headers: { Authorization: `cpanel ${CPANEL_USERNAME}:${CPANEL_API_TOKEN}` },
+          signal: AbortSignal.timeout(25000),
+        });
+
+        const responseText = await response.text();
+        let data: any;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          results.push({ id, email, success: false, error: 'Invalid response from cPanel' });
+          continue;
+        }
+
+        if (data.status !== 1) {
+          results.push({
+            id,
+            email,
+            success: false,
+            error: data.errors?.[0] || data.error || 'Failed to update password in cPanel',
+          });
+          continue;
+        }
+
+        const { error: dbError } = await supabase.from('emails_pool').update({ password: newPassword }).eq('id', id).eq('email', email);
+        if (dbError) {
+          results.push({ id, email, success: false, error: `Password changed in cPanel, DB update failed: ${dbError.message}` });
+          continue;
+        }
+
+        results.push({ id, email, success: true, password: newPassword });
+      } catch (err: any) {
+        results.push({ id, email, success: false, error: err?.message || 'Network error' });
+      }
+    }
+
+    const successCount = results.filter((r) => r.success).length;
+    const failCount = results.length - successCount;
+    if (successCount === 0) {
+      return res.status(500).json({ success: false, error: 'Failed to rotate any password', results });
+    }
+
+    return res.json({
+      success: true,
+      updated: successCount,
+      failed: failCount,
+      results,
+    });
+  } catch (error: any) {
+    console.error('Error in rotate-passwords:', error);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 

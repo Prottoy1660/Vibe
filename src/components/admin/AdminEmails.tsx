@@ -27,6 +27,7 @@ import {
   CircleDashed,
   Sparkles,
   Info,
+  KeyRound,
   LayoutDashboard,
   Wand2,
   Table2,
@@ -111,6 +112,8 @@ export const AdminEmails = () => {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxMessages, setInboxMessages] = useState<InboxMessage[]>([]);
   const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
+  const [rotatingSingleId, setRotatingSingleId] = useState<string | null>(null);
+  const [rotatingBulk, setRotatingBulk] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
@@ -409,11 +412,27 @@ export const AdminEmails = () => {
       if (!ok) return;
     }
     try {
-      const { error } = await supabase.from('emails_pool').delete().eq('id', id);
-      if (error) throw error;
+      const row = emails.find((e) => e.id === id);
+      if (!row?.email) throw new Error('Email row not found');
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ email: row.email }),
+      });
+      const out = await res.json();
+      if (!res.ok || !out?.success) {
+        throw new Error(out?.error || 'Failed to delete mailbox');
+      }
       setEmails((prev) => prev.filter((e) => e.id !== id));
+      toast.success('Mailbox deleted from cPanel and inventory.');
     } catch {
-      toast.error('Failed to delete email');
+      toast.error('Failed to delete from cPanel/inventory');
     }
   };
 
@@ -681,6 +700,88 @@ export const AdminEmails = () => {
   const refreshInbox = async () => {
     if (!inboxCredentials?.email) return;
     await loadInboxMessages(inboxCredentials.email, inboxCredentials.password, { closeOnError: false });
+  };
+
+  const rotatePasswords = async (targets: Array<{ id: string; email: string }>) => {
+    const token = await getAccessTokenForApi();
+    if (!token) {
+      toast.error('Session expired. Please sign in again.');
+      return null;
+    }
+    const API_URL = getApiBaseUrl();
+    const res = await fetch(`${API_URL}/api/cpanel/rotate-passwords`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ accounts: targets }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Failed to rotate passwords');
+    }
+    return data as { updated: number; failed: number; results: Array<{ email: string; success: boolean; error?: string }> };
+  };
+
+  const handleRotateSinglePassword = async (emailRow: EmailPool) => {
+    const ok = await confirm({
+      title: `Generate a new password for ${emailRow.email}?`,
+      description: 'This updates cPanel and saves the new password in inventory. Old password will stop working.',
+      confirmLabel: 'Generate new password',
+    });
+    if (!ok) return;
+    setRotatingSingleId(emailRow.id);
+    try {
+      const out = await rotatePasswords([{ id: emailRow.id, email: emailRow.email }]);
+      await fetchEmails();
+      const failed = out?.results?.find((r) => !r.success);
+      if (failed) {
+        toast.error(failed.error || 'Password rotation failed');
+      } else {
+        toast.success('New password generated and saved.');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to rotate password');
+    } finally {
+      setRotatingSingleId(null);
+    }
+  };
+
+  const handleRotateBulkPasswords = async () => {
+    const targets = filteredForInventory.map((e) => ({ id: e.id, email: e.email }));
+    if (!targets.length) {
+      toast.warning('No emails found for bulk password generation.');
+      return;
+    }
+    const ok = await confirm({
+      title: `Generate new passwords for ${targets.length} email(s)?`,
+      description:
+        'This will rotate password for all currently shown inventory rows. cPanel + database will both be updated.',
+      confirmLabel: 'Generate all',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setRotatingBulk(true);
+    try {
+      const out = await rotatePasswords(targets);
+      await fetchEmails();
+      if (!out) return;
+      if (out.failed > 0) {
+        const failedList = out.results
+          .filter((r) => !r.success)
+          .slice(0, 5)
+          .map((r) => `${r.email}: ${r.error || 'failed'}`)
+          .join('\n');
+        toast.warning(`Generated ${out.updated}, failed ${out.failed}`, {
+          description: failedList || undefined,
+          duration: 10000,
+        });
+      } else {
+        toast.success(`All ${out.updated} passwords generated successfully.`);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk password generation failed');
+    } finally {
+      setRotatingBulk(false);
+    }
   };
 
   const burnedEmails = emails.filter((e) => e.is_burned);
@@ -1227,6 +1328,16 @@ export const AdminEmails = () => {
               <span className="text-xs text-gray-500">
                 Showing {filteredForInventory.length} of {activeEmails.length} (non-burned)
               </span>
+              <button
+                type="button"
+                onClick={() => void handleRotateBulkPasswords()}
+                disabled={rotatingBulk || filteredForInventory.length === 0}
+                className="ml-auto inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-2 disabled:opacity-50"
+                title="Generate passwords for all shown inventory emails"
+              >
+                {rotatingBulk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                Generate all passwords
+              </button>
             </div>
           )}
           {loading && emails.length === 0 ? (
@@ -1483,6 +1594,20 @@ export const AdminEmails = () => {
                                   >
                                     <Inbox className="w-3.5 h-3.5" />
                                     Inbox
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleRotateSinglePassword(email)}
+                                    disabled={rotatingSingleId === email.id}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200/90 dark:border-emerald-500/30 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-50"
+                                    title="Generate new password"
+                                  >
+                                    {rotatingSingleId === email.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <KeyRound className="w-3.5 h-3.5" />
+                                    )}
+                                    New pass
                                   </button>
                                   <button
                                     type="button"
