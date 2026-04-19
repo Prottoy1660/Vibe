@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { getLastApiDebug, postJsonWithFallback } from '../lib/apiClient';
@@ -33,6 +33,7 @@ export const Checkout = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const personalEmail = searchParams.get('personal_email');
+  const location = useLocation();
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -55,6 +56,8 @@ export const Checkout = () => {
     };
   } | null>(null);
   const [linkingBkash, setLinkingBkash] = useState(false);
+  /** Shown once after returning from bKash agreement redirect. */
+  const [bkashWelcome, setBkashWelcome] = useState(false);
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
   /**
@@ -108,42 +111,62 @@ export const Checkout = () => {
     fetchProductAndUser();
   }, [id, navigate, user]);
 
-  useEffect(() => {
+  const refreshCheckoutGateways = useCallback(async () => {
     if (!user) return;
+    try {
+      const d = await postJsonWithFallback(
+        '/api/payment/checkout-gateway-status',
+        {},
+        { skipErrorPageRedirect: true },
+      );
+      if (!d?.success) return;
+      setCheckoutGateways({
+        uddoktapay_offered: Boolean(d.uddoktapay_offered),
+        bkash_tokenized: {
+          configured: Boolean(d.bkash_tokenized?.configured),
+          offered_at_checkout: Boolean(d.bkash_tokenized?.offered_at_checkout),
+          has_agreement: Boolean(d.bkash_tokenized?.has_agreement),
+        },
+      });
+    } catch {
+      setCheckoutGateways({
+        uddoktapay_offered: false,
+        bkash_tokenized: {
+          configured: false,
+          offered_at_checkout: false,
+          has_agreement: false,
+        },
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    void refreshCheckoutGateways();
+  }, [refreshCheckoutGateways]);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(location.search);
+    if (sp.get('bkash') !== 'linked') return;
     let cancelled = false;
     void (async () => {
-      try {
-        const d = await postJsonWithFallback(
-          '/api/payment/checkout-gateway-status',
-          {},
-          { skipErrorPageRedirect: true },
-        );
-        if (cancelled || !d?.success) return;
-        setCheckoutGateways({
-          uddoktapay_offered: Boolean(d.uddoktapay_offered),
-          bkash_tokenized: {
-            configured: Boolean(d.bkash_tokenized?.configured),
-            offered_at_checkout: Boolean(d.bkash_tokenized?.offered_at_checkout),
-            has_agreement: Boolean(d.bkash_tokenized?.has_agreement),
-          },
-        });
-      } catch {
-        if (!cancelled) {
-          setCheckoutGateways({
-            uddoktapay_offered: false,
-            bkash_tokenized: {
-              configured: false,
-              offered_at_checkout: false,
-              has_agreement: false,
-            },
-          });
-        }
-      }
+      await refreshCheckoutGateways();
+      if (cancelled) return;
+      setBkashWelcome(true);
+      setPaymentMethod('bkash_tokenized');
+      sp.delete('bkash');
+      const q = sp.toString();
+      navigate({ pathname: location.pathname, search: q ? `?${q}` : '' }, { replace: true });
     })();
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [location.pathname, location.search, navigate, refreshCheckoutGateways]);
+
+  useEffect(() => {
+    if (!bkashWelcome) return;
+    const t = window.setTimeout(() => setBkashWelcome(false), 12000);
+    return () => clearTimeout(t);
+  }, [bkashWelcome]);
 
   useEffect(() => {
     if (!checkoutGateways) return;
@@ -439,15 +462,55 @@ export const Checkout = () => {
         { skipErrorPageRedirect: true },
       );
       if (data.success && data.payment_url) {
+        try {
+          sessionStorage.setItem(
+            'bkash_checkout_return',
+            JSON.stringify({
+              pathname: window.location.pathname,
+              search: window.location.search,
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
         window.location.href = data.payment_url as string;
         return;
       }
       setPaymentError((data.message as string) || 'Could not start bKash linking.');
     } catch (e: unknown) {
-      setPaymentError(e instanceof Error ? e.message : 'Could not start bKash linking.');
+      const raw = e instanceof Error ? e.message : 'Could not start bKash linking.';
+      setPaymentError(raw.replace(/\s*\[\/api\/[^\]]+\]\s*$/, ''));
     } finally {
       setLinkingBkash(false);
     }
+  };
+
+  const primaryButtonLabel =
+    finalPrice === 0
+      ? 'Claim free'
+      : dueNow === 0
+        ? 'Complete order'
+        : paymentMethod === 'bkash_tokenized' &&
+            checkoutGateways?.bkash_tokenized?.offered_at_checkout &&
+            checkoutGateways.bkash_tokenized.configured &&
+            !checkoutGateways.bkash_tokenized.has_agreement
+          ? linkingBkash
+            ? 'Opening bKash…'
+            : 'Continue with bKash (one-time OTP)'
+          : `Pay ৳${dueNow.toFixed(2)}`;
+
+  const runPrimaryCheckout = () => {
+    if (
+      dueNow > 0 &&
+      paymentMethod === 'bkash_tokenized' &&
+      checkoutGateways?.bkash_tokenized?.offered_at_checkout &&
+      checkoutGateways.bkash_tokenized.configured &&
+      !checkoutGateways.bkash_tokenized.has_agreement
+    ) {
+      void startBkashAgreement();
+      return;
+    }
+    void handlePayment();
   };
 
   const btnPrimary =
@@ -587,6 +650,15 @@ export const Checkout = () => {
 
               {dueNow > 0 ? (
                 <div>
+                  {bkashWelcome ? (
+                    <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/35 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100 mb-3 max-w-md flex gap-2">
+                      <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" aria-hidden />
+                      <span>
+                        bKash is linked. Tap Pay below — on the next screen you only enter your wallet PIN to complete this
+                        order.
+                      </span>
+                    </div>
+                  ) : null}
                   <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
                     Gateway <span className="text-red-500">*</span>
                   </label>
@@ -636,32 +708,9 @@ export const Checkout = () => {
                             : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
                         }`}
                       >
-                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash (tokenized)</p>
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                          Direct bKash — link once with OTP, then pay with wallet PIN only. Requires admin setup.
-                        </p>
-                        {checkoutGateways.bkash_tokenized.configured &&
-                          !checkoutGateways.bkash_tokenized.has_agreement && (
-                            <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-1.5">
-                              One-time link required before first payment.
-                            </p>
-                          )}
+                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash</p>
                       </button>
                     ) : null}
-                    {paymentMethod === 'bkash_tokenized' &&
-                      checkoutGateways?.bkash_tokenized.offered_at_checkout &&
-                      checkoutGateways.bkash_tokenized.configured &&
-                      !checkoutGateways.bkash_tokenized.has_agreement && (
-                        <button
-                          type="button"
-                          onClick={() => void startBkashAgreement()}
-                          disabled={linkingBkash || requirePhone}
-                          className="w-full rounded-xl border border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 px-4 py-2.5 text-sm font-medium text-indigo-900 dark:text-indigo-100 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/50 disabled:opacity-50"
-                        >
-                          {linkingBkash ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : null}
-                          Link bKash wallet (OTP on bKash page)
-                        </button>
-                      )}
                   </div>
                   {paymentError && <p className="text-red-600 dark:text-red-400 text-sm mt-2 whitespace-pre-wrap">{paymentError}</p>}
                 </div>
@@ -680,16 +729,18 @@ export const Checkout = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={handlePayment}
+                  onClick={runPrimaryCheckout}
                   disabled={
                     processing ||
                     !detailsDone ||
-                    (dueNow > 0 && (!paymentMethod || bkashNeedsAgreement))
+                    linkingBkash ||
+                    (dueNow > 0 && !paymentMethod) ||
+                    (bkashNeedsAgreement && requirePhone)
                   }
                   className={btnPrimary}
                 >
-                  {processing ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-                  {finalPrice === 0 ? 'Claim free' : dueNow === 0 ? 'Complete order' : `Pay ৳${dueNow.toFixed(2)}`}
+                  {(processing || linkingBkash) ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                  {primaryButtonLabel}
                 </button>
               </div>
             </div>

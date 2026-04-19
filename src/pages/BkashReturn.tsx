@@ -39,8 +39,23 @@ export const BkashReturn = () => {
           return;
         }
         if (data.success && data.flow === 'agreement') {
-          setPhase('done');
-          setMessage('Your bKash wallet is linked. You can return to checkout and pay with PIN only.');
+          let target = '/store?bkash=linked';
+          try {
+            const raw = sessionStorage.getItem('bkash_checkout_return');
+            if (raw) {
+              const { pathname, search } = JSON.parse(raw) as { pathname?: string; search?: string };
+              if (pathname && pathname.startsWith('/checkout')) {
+                const sp = new URLSearchParams((search || '').replace(/^\?/, ''));
+                sp.set('bkash', 'linked');
+                const q = sp.toString();
+                target = pathname + (q ? `?${q}` : '');
+              }
+            }
+          } catch {
+            /* use fallback */
+          }
+          sessionStorage.removeItem('bkash_checkout_return');
+          navigate(target, { replace: true });
           return;
         }
         if (!data.success) {
