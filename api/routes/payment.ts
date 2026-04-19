@@ -4,9 +4,20 @@ import dotenv from 'dotenv';
 import { assignEmailForOrder } from '../lib/emailAssignment.js';
 import { productDurationToMonths } from '../lib/productDuration.js';
 import { tryProcessReferralRewardsForOrder } from '../lib/referralEngine.js';
-import { getUddoktaPayCredentialsCached } from '../lib/uddoktapaySettings.js';
-import { getBkashTokenizedCredentialsCached } from '../lib/bkashTokenizedSettings.js';
-import { bkashGrantToken, bkashPostJson } from '../lib/bkashTokenizedClient.js';
+import {
+  getUddoktaPayCredentialsCached,
+  loadUddoktaPayStored,
+  resolveUddoktaPayCredentials,
+  isUddoktaPayOfferedAtCheckout,
+} from '../lib/uddoktapaySettings.js';
+import {
+  getBkashTokenizedCredentialsCached,
+  loadBkashTokenizedStored,
+  resolveBkashTokenizedCredentials,
+  isBkashTokenizedOfferedAtCheckout,
+  type BkashTokenizedResolvedCredentials,
+} from '../lib/bkashTokenizedSettings.js';
+import { appendBkashGrantTroubleshooting, bkashGrantToken, bkashPostJson } from '../lib/bkashTokenizedClient.js';
 
 dotenv.config();
 
@@ -429,6 +440,31 @@ router.post('/create', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid payment gateway.' });
     }
 
+    if (gatewayAmount > 0) {
+      const storedUd = await loadUddoktaPayStored(supabase);
+      const resolvedUd = resolveUddoktaPayCredentials(storedUd);
+      const udOffered = isUddoktaPayOfferedAtCheckout(storedUd, resolvedUd);
+      const storedBd = await loadBkashTokenizedStored(supabase);
+      const resolvedBd = resolveBkashTokenizedCredentials(storedBd);
+      const bOffered = isBkashTokenizedOfferedAtCheckout(storedBd, resolvedBd);
+
+      if (paymentGateway === 'uddoktapay' && !udOffered) {
+        await supabase.from('orders').delete().eq('id', order_id);
+        const msg =
+          !resolvedUd.apiKey || !resolvedUd.baseUrl
+            ? 'UddoktaPay is not configured or is unavailable.'
+            : 'UddoktaPay checkout is turned off. Choose another payment method or contact support.';
+        return res.status(503).json({ success: false, message: msg });
+      }
+      if (paymentGateway === 'bkash_tokenized' && !bOffered) {
+        await supabase.from('orders').delete().eq('id', order_id);
+        const msg = !resolvedBd
+          ? 'bKash (tokenized) is not configured or is unavailable.'
+          : 'bKash (tokenized) checkout is turned off. Choose another payment method or contact support.';
+        return res.status(503).json({ success: false, message: msg });
+      }
+    }
+
     if (walletDeduction > 0) {
       const { data: wb } = await supabase
         .from('users')
@@ -790,6 +826,19 @@ router.post('/recharge', requireUser, async (req, res) => {
 
     const uddoktaCreds = await getUddoktaPayCredentialsCached(supabase);
     const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+    if (!isLocalhost) {
+      const storedUd = await loadUddoktaPayStored(supabase);
+      const resolvedUd = resolveUddoktaPayCredentials(storedUd);
+      if (!isUddoktaPayOfferedAtCheckout(storedUd, resolvedUd)) {
+        return res.status(503).json({
+          success: false,
+          message:
+            !resolvedUd.apiKey || !resolvedUd.baseUrl
+              ? 'Wallet recharge is unavailable (UddoktaPay not configured).'
+              : 'Wallet recharge via UddoktaPay is temporarily turned off. Contact support if you need help.',
+        });
+      }
+    }
     if (!uddoktaCreds.apiKey || !uddoktaCreds.baseUrl || isLocalhost) {
       console.warn("UddoktaPay dev mode: Simulating successful wallet recharge for dev/localhost.");
       
@@ -848,12 +897,15 @@ router.post('/recharge', requireUser, async (req, res) => {
 router.post('/bkash-tokenized/status', requireUser, async (req, res) => {
   try {
     const user = (req as any).user;
+    const stored = await loadBkashTokenizedStored(supabase);
     const creds = await getBkashTokenizedCredentialsCached(supabase);
+    const offered = isBkashTokenizedOfferedAtCheckout(stored, creds);
     const { data: u } = await supabase.from('users').select('bkash_agreement_id').eq('id', user.id).maybeSingle();
     const agreement = typeof u?.bkash_agreement_id === 'string' ? u.bkash_agreement_id.trim() : '';
     return res.json({
       success: true,
       configured: Boolean(creds),
+      offered_at_checkout: offered,
       has_agreement: Boolean(agreement),
     });
   } catch (e: any) {
@@ -861,7 +913,35 @@ router.post('/bkash-tokenized/status', requireUser, async (req, res) => {
   }
 });
 
+router.post('/checkout-gateway-status', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const storedUd = await loadUddoktaPayStored(supabase);
+    const resolvedUd = resolveUddoktaPayCredentials(storedUd);
+    const uddoktapay_offered = isUddoktaPayOfferedAtCheckout(storedUd, resolvedUd);
+
+    const storedBd = await loadBkashTokenizedStored(supabase);
+    const credsBd = await getBkashTokenizedCredentialsCached(supabase);
+    const bkash_offered = isBkashTokenizedOfferedAtCheckout(storedBd, credsBd);
+    const { data: urow } = await supabase.from('users').select('bkash_agreement_id').eq('id', user.id).maybeSingle();
+    const agreement = typeof urow?.bkash_agreement_id === 'string' ? urow.bkash_agreement_id.trim() : '';
+
+    return res.json({
+      success: true,
+      uddoktapay_offered,
+      bkash_tokenized: {
+        configured: Boolean(credsBd),
+        offered_at_checkout: bkash_offered,
+        has_agreement: Boolean(agreement),
+      },
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, message: e?.message || 'Error' });
+  }
+});
+
 router.post('/bkash-tokenized/agreement/start', requireUser, async (req, res) => {
+  let credsForErrors: BkashTokenizedResolvedCredentials | null = null;
   try {
     const user = (req as any).user;
     const { frontend_url } = req.body || {};
@@ -876,7 +956,9 @@ router.post('/bkash-tokenized/agreement/start', requireUser, async (req, res) =>
       }
     })();
 
+    const storedB = await loadBkashTokenizedStored(supabase);
     const creds = await getBkashTokenizedCredentialsCached(supabase);
+    if (creds) credsForErrors = creds;
     const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
     if (!creds || isLocalhost) {
       return res.status(400).json({
@@ -884,6 +966,12 @@ router.post('/bkash-tokenized/agreement/start', requireUser, async (req, res) =>
         message: isLocalhost
           ? 'bKash agreement cannot be completed from localhost. Use a deployed URL and sandbox credentials.'
           : 'bKash tokenized checkout is not configured (admin or server environment).',
+      });
+    }
+    if (!isBkashTokenizedOfferedAtCheckout(storedB, creds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'bKash (tokenized) is hidden from checkout right now. Ask the store admin to turn it on if you need it.',
       });
     }
 
@@ -941,7 +1029,12 @@ router.post('/bkash-tokenized/agreement/start', requireUser, async (req, res) =>
     return res.json({ success: true, payment_url: String(created.bkashURL) });
   } catch (e: any) {
     console.error('bkash agreement/start:', e);
-    return res.status(500).json({ success: false, message: e?.message || 'Agreement start failed' });
+    let msg = e?.message || 'Agreement start failed';
+    if (credsForErrors) {
+      msg = appendBkashGrantTroubleshooting(msg, credsForErrors);
+    }
+    const clientErr = /app key|app_secret|invalid|credential|unauthor|password|secret/i.test(msg);
+    return res.status(clientErr ? 400 : 500).json({ success: false, message: msg });
   }
 });
 

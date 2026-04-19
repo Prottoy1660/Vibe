@@ -22,6 +22,8 @@ import {
   toUddoktaPayAdminSettingsPayload,
   invalidateUddoktaPayCredentialsCache,
   UDDOKTAPAY_SETTINGS_KEY,
+  isUddoktaPayOfferedAtCheckout,
+  resolveUddoktaPayCheckoutToggle,
 } from '../lib/uddoktapaySettings.js';
 import {
   loadBkashTokenizedStored,
@@ -31,6 +33,8 @@ import {
   invalidateBkashTokenizedCredentialsCache,
   BKASH_TOKENIZED_SETTINGS_KEY,
   getBkashTokenizedCredentialsCached,
+  isBkashTokenizedOfferedAtCheckout,
+  resolveBkashTokenizedCheckoutToggle,
 } from '../lib/bkashTokenizedSettings.js';
 import { bkashGrantToken } from '../lib/bkashTokenizedClient.js';
 import { bkashRefundTokenized } from '../lib/bkashTokenizedRefund.js';
@@ -2094,11 +2098,14 @@ router.get('/ops/uddoktapay/settings', verifyAdmin, async (_req, res) => {
   try {
     const stored = await loadUddoktaPayStored(supabase);
     const resolved = resolveUddoktaPayCredentials(stored);
+    const toggle = resolveUddoktaPayCheckoutToggle(stored);
     return res.json({
       success: true,
       settings: toUddoktaPayAdminSettingsPayload(stored, resolved),
       effective: {
         checkout_ready: Boolean(resolved.apiKey && resolved.baseUrl),
+        checkout_offered: isUddoktaPayOfferedAtCheckout(stored, resolved),
+        checkout_toggle_locked_by_env: toggle.locked_by_env,
         api_key_from_env: resolved.api_key_from_env,
         base_url_from_env: resolved.base_url_from_env,
       },
@@ -2124,11 +2131,14 @@ router.patch('/ops/uddoktapay/settings', verifyAdmin, async (req, res) => {
     if (error) throw error;
     invalidateUddoktaPayCredentialsCache();
     const resolved = resolveUddoktaPayCredentials(merged);
+    const toggle = resolveUddoktaPayCheckoutToggle(merged);
     return res.json({
       success: true,
       settings: toUddoktaPayAdminSettingsPayload(merged, resolved),
       effective: {
         checkout_ready: Boolean(resolved.apiKey && resolved.baseUrl),
+        checkout_offered: isUddoktaPayOfferedAtCheckout(merged, resolved),
+        checkout_toggle_locked_by_env: toggle.locked_by_env,
         api_key_from_env: resolved.api_key_from_env,
         base_url_from_env: resolved.base_url_from_env,
       },
@@ -2143,11 +2153,14 @@ router.get('/ops/bkash-tokenized/settings', verifyAdmin, async (_req, res) => {
   try {
     const stored = await loadBkashTokenizedStored(supabase);
     const resolved = resolveBkashTokenizedCredentials(stored);
+    const toggle = resolveBkashTokenizedCheckoutToggle(stored);
     return res.json({
       success: true,
       settings: toBkashTokenizedAdminSettingsPayload(stored, resolved),
       effective: {
         configured: Boolean(resolved),
+        checkout_offered: isBkashTokenizedOfferedAtCheckout(stored, resolved),
+        checkout_toggle_locked_by_env: toggle.locked_by_env,
         api_root_from_env: Boolean(resolved?.api_root_from_env),
         app_key_from_env: Boolean(resolved?.app_key_from_env),
       },
@@ -2173,11 +2186,14 @@ router.patch('/ops/bkash-tokenized/settings', verifyAdmin, async (req, res) => {
     if (error) throw error;
     invalidateBkashTokenizedCredentialsCache();
     const resolved = resolveBkashTokenizedCredentials(merged);
+    const toggle = resolveBkashTokenizedCheckoutToggle(merged);
     return res.json({
       success: true,
       settings: toBkashTokenizedAdminSettingsPayload(merged, resolved),
       effective: {
         configured: Boolean(resolved),
+        checkout_offered: isBkashTokenizedOfferedAtCheckout(merged, resolved),
+        checkout_toggle_locked_by_env: toggle.locked_by_env,
         api_root_from_env: Boolean(resolved?.api_root_from_env),
         app_key_from_env: Boolean(resolved?.app_key_from_env),
       },

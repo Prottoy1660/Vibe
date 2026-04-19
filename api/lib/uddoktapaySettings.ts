@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parseCheckoutEnabledPatch, readEnvBooleanFlag } from './envToggles.js';
 import { maskKeyHint } from './supportChatSettings.js';
 
 export const UDDOKTAPAY_SETTINGS_KEY = 'uddoktapay_gateway';
@@ -7,6 +8,8 @@ export type UddoktaPayStoredValue = {
   api_key?: string;
   /** Merchant API base, e.g. https://sandbox.uddoktapay.com */
   base_url?: string;
+  /** When false, checkout / recharge must not offer UddoktaPay (admin toggle). Default true if unset. */
+  checkout_enabled?: boolean;
 };
 
 export type UddoktaPayResolvedCredentials = {
@@ -41,6 +44,29 @@ export async function loadUddoktaPayStored(supabase: SupabaseClient): Promise<Ud
 }
 
 /** Server `.env` wins when set so production key rotation does not stick on an old DB value. */
+const UDDOKTAPAY_CHECKOUT_ENV = 'UDDOKTAPAY_CHECKOUT_ENABLED';
+
+export function uddoktaPayCheckoutEnvOverride(): boolean | null {
+  return readEnvBooleanFlag(UDDOKTAPAY_CHECKOUT_ENV);
+}
+
+/** Whether the admin/DB toggle allows showing UddoktaPay at checkout (ignores whether API keys exist). */
+export function resolveUddoktaPayCheckoutToggle(stored: UddoktaPayStoredValue): { enabled: boolean; locked_by_env: boolean } {
+  const env = uddoktaPayCheckoutEnvOverride();
+  if (env !== null) {
+    return { enabled: env, locked_by_env: true };
+  }
+  return { enabled: stored.checkout_enabled !== false, locked_by_env: false };
+}
+
+export function isUddoktaPayOfferedAtCheckout(
+  stored: UddoktaPayStoredValue,
+  resolved: UddoktaPayResolvedCredentials,
+): boolean {
+  const credsOk = Boolean(resolved.apiKey && resolved.baseUrl);
+  return credsOk && resolveUddoktaPayCheckoutToggle(stored).enabled;
+}
+
 export function resolveUddoktaPayCredentials(stored: UddoktaPayStoredValue): UddoktaPayResolvedCredentials {
   const envKey = (process.env.UDDOKTAPAY_API_KEY || '').trim();
   const envBase = normalizeUddoktaPayBaseUrl(process.env.UDDOKTAPAY_BASE_URL || '');
@@ -77,6 +103,7 @@ export type UddoktaPayAdminSettingsPayload = {
   api_key_hint: string | null;
   env_api_key: boolean;
   env_base_url: boolean;
+  checkout_enabled: boolean;
 };
 
 export function toUddoktaPayAdminSettingsPayload(
@@ -89,6 +116,7 @@ export function toUddoktaPayAdminSettingsPayload(
     api_key_hint: maskKeyHint(typeof stored.api_key === 'string' ? stored.api_key : null),
     env_api_key: resolved.api_key_from_env,
     env_base_url: resolved.base_url_from_env,
+    checkout_enabled: stored.checkout_enabled !== false,
   };
 }
 
@@ -125,6 +153,10 @@ export function mergeUddoktaPayPatch(
         next.api_key = t.slice(0, 500);
       }
     }
+  }
+
+  if ('checkout_enabled' in patch) {
+    next.checkout_enabled = parseCheckoutEnabledPatch(patch.checkout_enabled);
   }
 
   return next;

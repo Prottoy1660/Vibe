@@ -313,6 +313,8 @@ export async function postJsonWithFallback<T = any>(path: string, body: Json, op
         maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;
+        e.apiStatus = res.status;
+        e.apiBody = data;
         throw e;
       }
 
@@ -411,6 +413,8 @@ export async function getJsonWithFallback<T = any>(path: string, opts?: JsonFetc
         maybeHttpErrorRedirect(res.status, opts);
         const e: any = new Error(message);
         e.__alreadyLogged = true;
+        e.apiStatus = res.status;
+        e.apiBody = data;
         throw e;
       }
 

@@ -67,11 +67,8 @@ const AdminActivityLog = React.lazy(() =>
 const AdminSubscriptionReminders = React.lazy(() =>
   import('../components/admin/AdminSubscriptionReminders').then((m) => ({ default: m.AdminSubscriptionReminders })),
 );
-const AdminUddoktaPaySettings = React.lazy(() =>
-  import('../components/admin/AdminUddoktaPaySettings').then((m) => ({ default: m.AdminUddoktaPaySettings })),
-);
-const AdminBkashTokenizedSettings = React.lazy(() =>
-  import('../components/admin/AdminBkashTokenizedSettings').then((m) => ({ default: m.AdminBkashTokenizedSettings })),
+const AdminPaymentGateways = React.lazy(() =>
+  import('../components/admin/AdminPaymentGateways').then((m) => ({ default: m.AdminPaymentGateways })),
 );
 
 const AdminTabFallback = () => (
@@ -90,6 +87,12 @@ export const AdminDashboard = () => {
   const setActiveTab = (tab: string) => {
     navigate(`/admin?tab=${tab}`);
   };
+
+  useEffect(() => {
+    if (activeTab === 'uddoktapay' || activeTab === 'bkash_tokenized') {
+      navigate('/admin?tab=payment_gateways', { replace: true });
+    }
+  }, [activeTab, navigate]);
 
   const [stats, setStats] = useState({
     activeUsers: 0,
@@ -362,16 +365,10 @@ export const AdminDashboard = () => {
               </span>
             )}
             {activeTab === 'platform_settings' && 'Platform status'}
-            {activeTab === 'uddoktapay' && (
+            {activeTab === 'payment_gateways' && (
               <span className="flex items-center gap-2">
                 <CreditCard className="w-6 h-6" />
-                UddoktaPay payments
-              </span>
-            )}
-            {activeTab === 'bkash_tokenized' && (
-              <span className="flex items-center gap-2">
-                <CreditCard className="w-6 h-6" />
-                bKash tokenized
+                Payment gateways
               </span>
             )}
             {activeTab === 'subscription_reminders' && (
@@ -416,8 +413,7 @@ export const AdminDashboard = () => {
         {activeTab === 'support' && <AdminSupport />}
         {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
-        {activeTab === 'uddoktapay' && <AdminUddoktaPaySettings />}
-        {activeTab === 'bkash_tokenized' && <AdminBkashTokenizedSettings />}
+        {activeTab === 'payment_gateways' && <AdminPaymentGateways />}
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}

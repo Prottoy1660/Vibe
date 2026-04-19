@@ -1,15 +1,29 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { parseCheckoutEnabledPatch, readEnvBooleanFlag } from './envToggles.js';
 import { maskKeyHint } from './supportChatSettings.js';
 
 export const BKASH_TOKENIZED_SETTINGS_KEY = 'bkash_tokenized_gateway';
 
+/** bKash-documented tokenized API roots; override with BKASH_TOKENIZED_API_ROOT in .env if bKash gives a different host. */
+export const BKASH_TOKENIZED_URL_SANDBOX = 'https://tokenized.sandbox.bka.sh/v1.2.0-beta/tokenized';
+export const BKASH_TOKENIZED_URL_LIVE = 'https://tokenized.pay.bka.sh/v1.2.0-beta/tokenized';
+
+export type BkashTokenizedEnvironment = 'sandbox' | 'live';
+
 export type BkashTokenizedStoredValue = {
-  /** e.g. https://tokenized.sandbox.bka.sh/v1.2.0-beta/tokenized */
+  /**
+   * Which bKash environment to use — server fills `api_root` from built-in URLs unless overridden.
+   * Legacy rows may only have `api_root` set; we infer environment from that.
+   */
+  environment?: BkashTokenizedEnvironment;
+  /** Legacy / explicit override; prefer `environment` + defaults for new saves. */
   api_root?: string;
   app_key?: string;
   app_secret?: string;
   username?: string;
   password?: string;
+  /** When false, checkout must not offer bKash tokenized (admin toggle). Default true if unset. */
+  checkout_enabled?: boolean;
 };
 
 export type BkashTokenizedResolvedCredentials = {
@@ -38,6 +52,35 @@ export function normalizeBkashApiRoot(raw: string | undefined | null): string {
   return raw.trim().replace(/\/+$/, '');
 }
 
+/** Trim BOM / smart quotes from values pasted from docs or email. */
+export function normalizeBkashCredentialPart(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^\uFEFF+/, '')
+    .replace(/[\u2018\u2019\u201C\u201D]/g, "'");
+}
+
+export function defaultTokenizedApiRoot(env: BkashTokenizedEnvironment): string {
+  return env === 'live' ? BKASH_TOKENIZED_URL_LIVE : BKASH_TOKENIZED_URL_SANDBOX;
+}
+
+export function inferBkashEnvironment(stored: BkashTokenizedStoredValue): BkashTokenizedEnvironment {
+  if (stored.environment === 'live' || stored.environment === 'sandbox') {
+    return stored.environment;
+  }
+  const r = (stored.api_root || '').toLowerCase();
+  if (r.includes('sandbox')) return 'sandbox';
+  if (r.includes('pay.bka') || r.includes('checkout.pay')) return 'live';
+  return 'sandbox';
+}
+
+/** Resolved DB-side API root when env var is not set. */
+export function resolveStoredBkashApiRoot(stored: BkashTokenizedStoredValue): string {
+  const explicit = normalizeBkashApiRoot(stored.api_root);
+  if (explicit) return explicit;
+  return defaultTokenizedApiRoot(inferBkashEnvironment(stored));
+}
+
 export async function loadBkashTokenizedStored(supabase: SupabaseClient): Promise<BkashTokenizedStoredValue> {
   const { data, error } = await supabase
     .from('system_settings')
@@ -57,16 +100,18 @@ export function resolveBkashTokenizedCredentials(
   const envRoot = normalizeBkashApiRoot(
     process.env.BKASH_TOKENIZED_API_ROOT || process.env.BKASH_TOKENIZE_BASE_URL || '',
   );
-  const envKey = (process.env.BKASH_APP_KEY || process.env.BKASH_TOKENIZE_APP_KEY || '').trim();
-  const envSecret = (process.env.BKASH_APP_SECRET || process.env.BKASH_TOKENIZE_APP_SECRET || '').trim();
-  const envUser = (process.env.BKASH_USERNAME || process.env.BKASH_TOKENIZE_USER_NAME || '').trim();
-  const envPass = (process.env.BKASH_PASSWORD || process.env.BKASH_TOKENIZE_PASSWORD || '').trim();
+  const envKey = normalizeBkashCredentialPart(process.env.BKASH_APP_KEY || process.env.BKASH_TOKENIZE_APP_KEY || '');
+  const envSecret = normalizeBkashCredentialPart(
+    process.env.BKASH_APP_SECRET || process.env.BKASH_TOKENIZE_APP_SECRET || '',
+  );
+  const envUser = normalizeBkashCredentialPart(process.env.BKASH_USERNAME || process.env.BKASH_TOKENIZE_USER_NAME || '');
+  const envPass = normalizeBkashCredentialPart(process.env.BKASH_PASSWORD || process.env.BKASH_TOKENIZE_PASSWORD || '');
 
-  const dbRoot = normalizeBkashApiRoot(stored.api_root);
-  const dbKey = typeof stored.app_key === 'string' ? stored.app_key.trim() : '';
-  const dbSecret = typeof stored.app_secret === 'string' ? stored.app_secret.trim() : '';
-  const dbUser = typeof stored.username === 'string' ? stored.username.trim() : '';
-  const dbPass = typeof stored.password === 'string' ? stored.password.trim() : '';
+  const dbRoot = resolveStoredBkashApiRoot(stored);
+  const dbKey = typeof stored.app_key === 'string' ? normalizeBkashCredentialPart(stored.app_key) : '';
+  const dbSecret = typeof stored.app_secret === 'string' ? normalizeBkashCredentialPart(stored.app_secret) : '';
+  const dbUser = typeof stored.username === 'string' ? normalizeBkashCredentialPart(stored.username) : '';
+  const dbPass = typeof stored.password === 'string' ? normalizeBkashCredentialPart(stored.password) : '';
 
   const apiRoot = envRoot || dbRoot;
   const appKey = envKey || dbKey;
@@ -89,6 +134,30 @@ export function resolveBkashTokenizedCredentials(
   };
 }
 
+const BKASH_CHECKOUT_ENV = 'BKASH_TOKENIZED_CHECKOUT_ENABLED';
+
+export function bkashTokenizedCheckoutEnvOverride(): boolean | null {
+  return readEnvBooleanFlag(BKASH_CHECKOUT_ENV);
+}
+
+export function resolveBkashTokenizedCheckoutToggle(stored: BkashTokenizedStoredValue): {
+  enabled: boolean;
+  locked_by_env: boolean;
+} {
+  const env = bkashTokenizedCheckoutEnvOverride();
+  if (env !== null) {
+    return { enabled: env, locked_by_env: true };
+  }
+  return { enabled: stored.checkout_enabled !== false, locked_by_env: false };
+}
+
+export function isBkashTokenizedOfferedAtCheckout(
+  stored: BkashTokenizedStoredValue,
+  resolved: BkashTokenizedResolvedCredentials | null,
+): boolean {
+  return Boolean(resolved) && resolveBkashTokenizedCheckoutToggle(stored).enabled;
+}
+
 export async function getBkashTokenizedCredentialsCached(
   supabase: SupabaseClient,
 ): Promise<BkashTokenizedResolvedCredentials | null> {
@@ -103,27 +172,35 @@ export async function getBkashTokenizedCredentialsCached(
 }
 
 export type BkashTokenizedAdminSettingsPayload = {
+  /** Resolved URL (for display / debugging); prefer `environment` in UI. */
   api_root: string;
+  environment: BkashTokenizedEnvironment;
   has_stored_app_secret: boolean;
   app_secret_hint: string | null;
   app_key: string;
   username: string;
   env_api_root: boolean;
   env_app_key: boolean;
+  checkout_enabled: boolean;
 };
 
 export function toBkashTokenizedAdminSettingsPayload(
   stored: BkashTokenizedStoredValue,
   resolved: BkashTokenizedResolvedCredentials | null,
 ): BkashTokenizedAdminSettingsPayload {
+  const env = inferBkashEnvironment(stored);
+  const resolvedRoot =
+    normalizeBkashApiRoot(stored.api_root) || defaultTokenizedApiRoot(env);
   return {
-    api_root: typeof stored.api_root === 'string' ? stored.api_root.trim() : '',
+    api_root: resolvedRoot,
+    environment: env,
     has_stored_app_secret: Boolean(stored.app_secret && String(stored.app_secret).trim()),
     app_secret_hint: maskKeyHint(typeof stored.app_secret === 'string' ? stored.app_secret : null),
     app_key: typeof stored.app_key === 'string' ? stored.app_key.trim() : '',
     username: typeof stored.username === 'string' ? stored.username.trim() : '',
     env_api_root: Boolean(resolved?.api_root_from_env),
     env_app_key: Boolean(resolved?.app_key_from_env),
+    checkout_enabled: stored.checkout_enabled !== false,
   };
 }
 
@@ -133,14 +210,25 @@ export function mergeBkashTokenizedPatch(
 ): BkashTokenizedStoredValue {
   const next: BkashTokenizedStoredValue = { ...existing };
 
-  if ('api_root' in patch) {
+  if ('environment' in patch) {
+    const raw = String(patch.environment ?? '').toLowerCase();
+    const env: BkashTokenizedEnvironment = raw === 'live' ? 'live' : 'sandbox';
+    next.environment = env;
+    next.api_root = defaultTokenizedApiRoot(env);
+  }
+
+  if ('api_root' in patch && !('environment' in patch)) {
     const s = String(patch.api_root ?? '').trim().slice(0, 500);
-    if (s) next.api_root = normalizeBkashApiRoot(s);
-    else delete next.api_root;
+    if (s) {
+      next.api_root = normalizeBkashApiRoot(s);
+      delete next.environment;
+    } else {
+      delete next.api_root;
+    }
   }
 
   if ('app_key' in patch) {
-    const s = String(patch.app_key ?? '').trim().slice(0, 300);
+    const s = normalizeBkashCredentialPart(String(patch.app_key ?? '')).slice(0, 300);
     if (s) next.app_key = s;
     else delete next.app_key;
   }
@@ -185,6 +273,10 @@ export function mergeBkashTokenizedPatch(
         next.app_secret = t.slice(0, 300);
       }
     }
+  }
+
+  if ('checkout_enabled' in patch) {
+    next.checkout_enabled = parseCheckoutEnabledPatch(patch.checkout_enabled);
   }
 
   return next;

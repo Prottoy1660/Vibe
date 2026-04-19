@@ -6,6 +6,31 @@ function joinUrl(root: string, path: string): string {
   return `${r}${p}`;
 }
 
+function grantErrorMessage(data: Record<string, unknown>, httpStatus: number): string {
+  const statusCode = data.statusCode != null ? String(data.statusCode) : '';
+  const msg = String(data.errorMessage || data.statusMessage || '').trim();
+  if (msg) return msg;
+  if (statusCode && statusCode !== '0000') return `bKash grant failed (statusCode ${statusCode})`;
+  return `bKash grant HTTP ${httpStatus}`;
+}
+
+/** Extra guidance when bKash rejects credentials (do not log secrets). */
+export function appendBkashGrantTroubleshooting(
+  message: string,
+  creds: BkashTokenizedResolvedCredentials,
+): string {
+  const m = message.toLowerCase();
+  if (!m.includes('app key') && !m.includes('app_secret') && !m.includes('invalid') && !m.includes('credential')) {
+    return message;
+  }
+  const root = creds.apiRoot.toLowerCase();
+  const looksSandbox = root.includes('sandbox');
+  const envWord = looksSandbox ? 'sandbox' : 'live/production';
+  return (
+    `${message} — Use App key, App secret, username, and password from the bKash **${envWord}** merchant portal, with an API root URL for the **same** environment (your root is ${looksSandbox ? 'sandbox' : 'live'}). If the server sets BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_USERNAME, BKASH_PASSWORD, or BKASH_TOKENIZED_API_ROOT in .env, those override the admin panel; remove or correct any wrong value.`
+  );
+}
+
 export async function bkashGrantToken(creds: BkashTokenizedResolvedCredentials): Promise<string> {
   const url = joinUrl(creds.apiRoot, '/checkout/token/grant');
   const res = await fetch(url, {
@@ -20,15 +45,18 @@ export async function bkashGrantToken(creds: BkashTokenizedResolvedCredentials):
     signal: AbortSignal.timeout(30_000),
   });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const statusCodeStr = data.statusCode != null ? String(data.statusCode) : '';
+
+  // bKash often returns HTTP 200 with statusCode + errorMessage in JSON (no id_token).
+  if (statusCodeStr && statusCodeStr !== '0000') {
+    throw new Error(grantErrorMessage(data, res.status));
+  }
   if (!res.ok) {
-    throw new Error(String(data.errorMessage || data.statusMessage || `bKash grant HTTP ${res.status}`));
+    throw new Error(grantErrorMessage(data, res.status));
   }
   const id = data.id_token;
   if (typeof id !== 'string' || !id.trim()) {
-    throw new Error(String(data.errorMessage || data.statusMessage || 'bKash grant token: missing id_token'));
-  }
-  if (data.statusCode != null && String(data.statusCode) !== '0000') {
-    throw new Error(String(data.errorMessage || data.statusMessage || 'bKash grant token rejected'));
+    throw new Error(grantErrorMessage(data, res.status));
   }
   return id.trim();
 }
@@ -54,6 +82,10 @@ export async function bkashPostJson(
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     throw new Error(String(data.errorMessage || data.statusMessage || `bKash API HTTP ${res.status}`));
+  }
+  const sc = data.statusCode != null ? String(data.statusCode) : '';
+  if (sc && sc !== '0000') {
+    throw new Error(String(data.errorMessage || data.statusMessage || `bKash API statusCode ${sc}`));
   }
   return data;
 }
