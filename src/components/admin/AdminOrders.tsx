@@ -32,6 +32,12 @@ interface Order {
   payment_method: string;
   total_amount: number;
   created_at: string;
+  /** bKash tokenized audit (set when payment completes via bKash execute). */
+  bkash_payment_id?: string | null;
+  bkash_trx_id?: string | null;
+  bkash_msisdn?: string | null;
+  bkash_gateway_amount?: number | null;
+  bkash_refund_trx_id?: string | null;
   redeem_seized_at?: string | null;
   personal_email?: string;
   renewed_from_order_id?: string | null;
@@ -92,6 +98,9 @@ function orderMatchesSearch(o: Order, query: string): boolean {
     o.payment_method,
     o.status,
     o.payment_status,
+    o.bkash_trx_id,
+    o.bkash_payment_id,
+    o.bkash_msisdn,
   ]
     .filter(Boolean)
     .map((x) => String(x).toLowerCase());
@@ -107,15 +116,19 @@ function paymentLabel(method: string, paymentStatus: string) {
   const pretty =
     m === 'uddoktapay' || m === 'gateway'
       ? 'Gateway'
-      : m === 'wallet+gateway' || m === 'wallet + gateway'
-        ? 'Wallet + gateway'
-        : m === 'wallet'
-          ? 'Wallet'
-          : m === 'coupon'
-            ? 'Coupon'
-            : m === 'redeem code' || m === 'redeem_code'
-              ? 'Redeem'
-              : m || 'Unknown';
+      : m === 'bkash tokenized' || m === 'bkash_tokenized'
+        ? 'bKash (tokenized)'
+        : m === 'wallet+bkash tokenized' || m === 'wallet+bkash_tokenized' || m === 'wallet + bkash tokenized'
+          ? 'Wallet + bKash'
+          : m === 'wallet+gateway' || m === 'wallet + gateway'
+            ? 'Wallet + gateway'
+            : m === 'wallet'
+              ? 'Wallet'
+              : m === 'coupon'
+                ? 'Coupon'
+                : m === 'redeem code' || m === 'redeem_code'
+                  ? 'Redeem'
+                  : m || 'Unknown';
   const ps = (paymentStatus || '').replace(/_/g, ' ');
   return { pretty, status: ps };
 }
@@ -374,85 +387,40 @@ export const AdminOrders = () => {
   };
 
   const handleRefund = async (orderId: string) => {
+    const row = rawOrders.find((o) => o.id === orderId);
+    const isBkash = Boolean(row && String(row.payment_method || '').includes('bkash'));
     const ok = await confirm({
       title: 'Refund this order?',
-      description: "This will revoke the user's email access where applicable.",
+      description: isBkash
+        ? 'Calls bKash Refund API for the gateway amount, then revokes email access where applicable. Only admins can do this; credentials stay on the server.'
+        : "This will revoke the user's email access where applicable.",
       confirmLabel: 'Refund',
       variant: 'danger',
     });
     if (!ok) return;
 
     try {
-      const { data: userEmails } = await supabase.from('user_emails').select('email_id').eq('order_id', orderId);
-
-      if (userEmails && userEmails.length > 0) {
-        const emailIds = userEmails.map((ue) => ue.email_id);
-
-        const { data: poolRows, error: poolErr } = await supabase
-          .from('emails_pool')
-          .select('id,current_users,product_id,assigned_at,is_burned')
-          .in('id', emailIds);
-
-        if (poolErr) throw poolErr;
-
-        const productIds = Array.from(
-          new Set((poolRows || []).map((r) => r.product_id).filter(Boolean))
-        );
-
-        const { data: productsRows, error: prodErr } = await supabase
-          .from('products')
-          .select('id,max_users_per_email')
-          .in('id', productIds);
-
-        if (prodErr) throw prodErr;
-
-        const maxMap = new Map((productsRows || []).map((p) => [p.id, p.max_users_per_email]));
-
-        for (const row of poolRows || []) {
-          // If already burned, the email is already revoked; just keep it burned.
-          if (row.is_burned) continue;
-
-          const current = Number(row.current_users || 0);
-          const nextCount = Math.max(0, current - 1);
-          const maxUsers = Number(maxMap.get(row.product_id as any) || 1);
-
-          if (nextCount === 0) {
-            await supabase
-              .from('emails_pool')
-              .update({
-                status: 'available',
-                assigned_at: null,
-                product_id: null,
-                current_users: 0,
-              })
-              .eq('id', row.id);
-          } else {
-            await supabase
-              .from('emails_pool')
-              .update({
-                current_users: nextCount,
-                // After refund, the slot is never "full", but compute safely.
-                status: nextCount >= maxUsers ? 'assigned' : 'available',
-              })
-              .eq('id', row.id);
-          }
-        }
-
-        await supabase.from('user_emails').delete().eq('order_id', orderId);
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        toast.error('Session expired. Please sign in again.');
+        return;
+      }
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/orders/${orderId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: 'Admin refund' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Refund failed');
       }
 
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'refunded', payment_status: 'refunded' })
-        .eq('id', orderId);
-
-      if (error) throw error;
-
-      toast.success('Order refunded and email access released where linked.');
+      toast.success(typeof data.message === 'string' ? data.message : 'Refund completed.');
       fetchOrders();
     } catch (error) {
       console.error('Error processing refund:', error);
-      toast.error('Failed to process refund');
+      toast.error(error instanceof Error ? error.message : 'Failed to process refund');
     }
   };
 
@@ -742,6 +710,24 @@ export const AdminOrders = () => {
                             <p className="text-xs text-gray-500 mt-0.5 capitalize">
                               {pay.pretty} · {pay.status}
                             </p>
+                            {String(order.payment_method || '').includes('bkash') &&
+                            (order.bkash_trx_id || order.bkash_msisdn || order.bkash_gateway_amount != null) ? (
+                              <div className="mt-1.5 space-y-0.5 text-[10px] text-gray-600 dark:text-gray-400 font-mono leading-snug">
+                                {order.bkash_msisdn ? <p title="Wallet used for bKash">bKash: {order.bkash_msisdn}</p> : null}
+                                {order.bkash_trx_id ? <p title="bKash transaction id">Trx: {order.bkash_trx_id}</p> : null}
+                                {order.bkash_payment_id ? (
+                                  <p className="truncate max-w-[200px]" title="bKash payment id">
+                                    PayID: {order.bkash_payment_id}
+                                  </p>
+                                ) : null}
+                                {order.bkash_gateway_amount != null && Number.isFinite(Number(order.bkash_gateway_amount)) ? (
+                                  <p>Gateway ৳{Number(order.bkash_gateway_amount).toFixed(2)}</p>
+                                ) : null}
+                                {order.bkash_refund_trx_id ? (
+                                  <p className="text-emerald-700 dark:text-emerald-400">Refund trx: {order.bkash_refund_trx_id}</p>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
                       </td>

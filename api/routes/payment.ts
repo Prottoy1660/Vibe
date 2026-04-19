@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 import { assignEmailForOrder } from '../lib/emailAssignment.js';
 import { productDurationToMonths } from '../lib/productDuration.js';
 import { tryProcessReferralRewardsForOrder } from '../lib/referralEngine.js';
+import { getUddoktaPayCredentialsCached } from '../lib/uddoktapaySettings.js';
+import { getBkashTokenizedCredentialsCached } from '../lib/bkashTokenizedSettings.js';
+import { bkashGrantToken, bkashPostJson } from '../lib/bkashTokenizedClient.js';
 
 dotenv.config();
 
@@ -12,9 +15,6 @@ const router = express.Router();
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-const UDDOKTAPAY_API_KEY = process.env.UDDOKTAPAY_API_KEY || '';
-const UDDOKTAPAY_BASE_URL = process.env.UDDOKTAPAY_BASE_URL || '';
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -140,15 +140,18 @@ async function saveIdempotentResponse(userId: string, endpoint: string, idemKey:
   }, { onConflict: 'user_id,endpoint,idem_key' });
 }
 
-async function postUddoktaCheckout(payload: any) {
+async function postUddoktaCheckout(
+  payload: any,
+  creds: { apiKey: string; baseUrl: string },
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(`${UDDOKTAPAY_BASE_URL}/api/checkout`, {
+    const response = await fetch(`${creds.baseUrl}/api/checkout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'RT-UDDOKTAPAY-API-KEY': UDDOKTAPAY_API_KEY
+        'RT-UDDOKTAPAY-API-KEY': creds.apiKey,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
@@ -171,14 +174,22 @@ async function logOrderEvent(orderId: string, userId: string | null, eventType: 
   } catch {}
 }
 
-async function logPaymentEvent(orderId: string | null, userId: string | null, eventType: string, amount: number | null, message: string, meta: any = {}) {
+async function logPaymentEvent(
+  orderId: string | null,
+  userId: string | null,
+  eventType: string,
+  amount: number | null,
+  message: string,
+  meta: any = {},
+  gateway: string = 'uddoktapay',
+) {
   try {
     await supabase.from('payment_events').insert({
       order_id: orderId,
       user_id: userId,
       event_type: eventType,
       amount,
-      gateway: 'uddoktapay',
+      gateway,
       message,
       meta,
     });
@@ -233,6 +244,105 @@ async function fulfillPersonalAdobeAccess(order: {
   }
 }
 
+/** Shared settlement after gateway confirms payment (UddoktaPay webhook or bKash execute). */
+async function settleOrderAfterGatewayPayment(params: {
+  orderId: string;
+  orderUserId: string;
+  walletDeduction: number;
+  gatewayPaid: number;
+  gatewayLabel: string;
+}): Promise<{ ok: true } | { ok: false; statusCode: number; publicMessage: string }> {
+  const { orderId, orderUserId, walletDeduction, gatewayPaid, gatewayLabel } = params;
+
+  const { data: payableOrder } = await supabase.from('orders').select('id, total_amount').eq('id', orderId).single();
+  const expectedTotal = Number(payableOrder?.total_amount) || 0;
+  const expectedGatewayDue = Math.max(0, expectedTotal - walletDeduction);
+  if (Number.isFinite(gatewayPaid) && gatewayPaid + 0.0001 < expectedGatewayDue) {
+    await logPaymentEvent(
+      orderId,
+      orderUserId || null,
+      'payment_failed_underpaid',
+      gatewayPaid,
+      'Gateway paid lower than expected due',
+      {},
+      gatewayLabel,
+    );
+    return { ok: false, statusCode: 400, publicMessage: 'Paid amount is lower than expected due amount.' };
+  }
+
+  const { data: existingOrder } = await supabase
+    .from('orders')
+    .select('id, status, payment_status')
+    .eq('id', orderId)
+    .single();
+
+  if (existingOrder?.payment_status === 'paid' && existingOrder?.status === 'completed') {
+    return { ok: true };
+  }
+
+  if (walletDeduction > 0 && orderUserId) {
+    const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
+      p_user_id: orderUserId,
+      p_amount: walletDeduction,
+    });
+    if (deductErr) {
+      await logPaymentEvent(
+        orderId,
+        orderUserId,
+        'payment_failed_wallet_insufficient',
+        walletDeduction,
+        'Insufficient wallet balance during settlement',
+        {},
+        gatewayLabel,
+      );
+      return { ok: false, statusCode: 400, publicMessage: 'Insufficient wallet balance during mixed-payment settlement.' };
+    }
+  }
+
+  const { error: updateError } = await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', orderId);
+  if (updateError) {
+    return { ok: false, statusCode: 500, publicMessage: 'Failed to update order status.' };
+  }
+
+  const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', orderId).single();
+
+  if (order) {
+    await logPaymentEvent(
+      order.id,
+      order.user_id,
+      'payment_completed',
+      gatewayPaid || expectedGatewayDue,
+      `Payment confirmed (${gatewayLabel})`,
+      {},
+      gatewayLabel,
+    );
+    await logOrderEvent(order.id, order.user_id, 'payment_completed', 'Payment confirmed');
+    if (order.products?.is_personal && order.personal_email) {
+      await fulfillPersonalAdobeAccess(order);
+    } else {
+      const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
+      if (!assignment.success) {
+        console.error(`[settleOrderAfterGatewayPayment] Email assignment failed for order ${order.id}: ${assignment.error || 'Unknown'}`);
+        await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
+        await logOrderEvent(order.id, order.user_id, 'provisioning_failed', assignment.error || 'Email assignment failed');
+        return { ok: false, statusCode: 500, publicMessage: assignment.error || 'Email assignment failed' };
+      }
+      await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Assigned product email successfully');
+    }
+
+    await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+    await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
+    await incrementCouponUsedIfPresent(order);
+    try {
+      await tryProcessReferralRewardsForOrder(supabase, order.id);
+    } catch (e) {
+      console.error('referral processing (settle):', e);
+    }
+  }
+
+  return { ok: true };
+}
+
 router.post('/create', requireUser, async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   // Silently destroy all pending/abandoned orders older than 30 minutes
@@ -255,6 +365,7 @@ router.post('/create', requireUser, async (req, res) => {
     }
 
     const user = (req as any).user;
+    const paymentGateway = String(req.body?.gateway || 'uddoktapay').toLowerCase().trim();
     const { order, productPrice } = await computeOrderPricing(order_id);
     if (order.user_id !== user.id) {
       return res.status(403).json({ success: false, message: 'Order does not belong to user' });
@@ -296,7 +407,7 @@ router.post('/create', requireUser, async (req, res) => {
     const gatewayAmount = Math.max(0, payableTotal - walletDeduction);
     const idempotencyKey = String(
       req.body?.idempotency_key ||
-      `order:${order_id}:wallet:${walletDeduction}:due:${gatewayAmount}`
+        `order:${order_id}:gw:${paymentGateway}:wallet:${walletDeduction}:due:${gatewayAmount}`,
     );
     const cachedCreate = await getIdempotentResponse(user.id, 'payment_create', idempotencyKey);
     if (cachedCreate) {
@@ -314,6 +425,10 @@ router.post('/create', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid computed payment amount' });
     }
 
+    if (gatewayAmount > 0 && paymentGateway !== 'uddoktapay' && paymentGateway !== 'bkash_tokenized') {
+      return res.status(400).json({ success: false, message: 'Invalid payment gateway.' });
+    }
+
     if (walletDeduction > 0) {
       const { data: wb } = await supabase
         .from('users')
@@ -329,11 +444,12 @@ router.post('/create', requireUser, async (req, res) => {
 
     // Persist normalized payable total (never replace a coupon line with full list price)
     try {
+      const gwTag = paymentGateway === 'bkash_tokenized' ? 'bkash_tokenized' : 'gateway';
       const paymentMethodResolved =
         gatewayAmount > 0
           ? walletDeduction > 0
-            ? 'wallet+gateway'
-            : 'gateway'
+            ? `wallet+${gwTag}`
+            : gwTag
           : walletDeduction > 0
             ? 'wallet'
             : (order as any).coupon_id
@@ -402,7 +518,157 @@ router.post('/create', requireUser, async (req, res) => {
     }
 
     const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
-    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL || isLocalhost) {
+    const baseOrigin = (() => {
+      try {
+        const raw = baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`;
+        return new URL(raw).origin;
+      } catch {
+        return String(baseUrl).replace(/\/$/, '');
+      }
+    })();
+
+    if (paymentGateway === 'bkash_tokenized') {
+      const bkashCreds = await getBkashTokenizedCredentialsCached(supabase);
+      if (isLocalhost) {
+        console.warn('bKash tokenized dev mode: Simulating successful payment on localhost.');
+        const { data: orderSim } = await supabase
+          .from('orders')
+          .select('*, products(is_personal, duration)')
+          .eq('id', order_id)
+          .single();
+        if (orderSim) {
+          await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
+          if (orderSim.products?.is_personal && orderSim.personal_email) {
+            await fulfillPersonalAdobeAccess(orderSim);
+          } else {
+            const assignment = await assignEmailForOrder(supabase, orderSim.id, orderSim.user_id, orderSim.product_id);
+            if (!assignment.success) {
+              await supabase.from('orders').update({ status: 'paid' }).eq('id', orderSim.id);
+              return res.status(500).json({
+                success: false,
+                error: assignment.error || 'Failed to assign an email for this order',
+              });
+            }
+          }
+          await supabase.from('orders').update({ status: 'completed' }).eq('id', order_id);
+          await incrementCouponUsedIfPresent(orderSim);
+          try {
+            await tryProcessReferralRewardsForOrder(supabase, orderSim.id);
+          } catch (e) {
+            console.error('referral processing (bkash dev sim):', e);
+          }
+        }
+        const payload = {
+          success: true,
+          payment_url: `${baseUrl}/adobe-email?payment=success&order_id=${order_id}`,
+        };
+        await logOrderEvent(order_id, user.id, 'payment_simulated_dev', 'bKash tokenized payment simulated in dev mode');
+        await logPaymentEvent(
+          order_id,
+          user.id,
+          'payment_simulated_dev',
+          gatewayAmount,
+          'Payment simulated in dev mode',
+          {},
+          'bkash_tokenized',
+        );
+        await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, payload);
+        return res.json(payload);
+      }
+
+      if (!bkashCreds) {
+        await supabase.from('orders').delete().eq('id', order_id);
+        return res.status(503).json({
+          success: false,
+          message: 'bKash tokenized checkout is not configured. Ask an admin to add credentials or set server environment variables.',
+        });
+      }
+
+      const { data: urow } = await supabase.from('users').select('bkash_agreement_id, phone').eq('id', user.id).single();
+      const agreementId = typeof urow?.bkash_agreement_id === 'string' ? urow.bkash_agreement_id.trim() : '';
+      if (!agreementId) {
+        return res.status(400).json({
+          success: false,
+          needs_bkash_agreement: true,
+          message: 'Link your bKash wallet once (tokenized agreement), then you can pay with PIN only.',
+        });
+      }
+
+      const digitsPhone = String(urow?.phone || '').replace(/\D/g, '').slice(0, 255);
+      const payerReference =
+        digitsPhone.length >= 10 ? digitsPhone : `u${String(user.id).replace(/-/g, '').slice(0, 24)}`;
+      const callbackURL = `${baseOrigin}/bkash-return`;
+      const merchantInvoiceNumber = `V${Date.now()}${String(order_id).replace(/-/g, '').slice(0, 12)}`.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 255);
+
+      const idToken = await bkashGrantToken(bkashCreds);
+      const amountStr =
+        gatewayAmount % 1 === 0 ? String(Math.round(gatewayAmount)) : gatewayAmount.toFixed(2);
+      const createBody: Record<string, unknown> = {
+        mode: '0001',
+        payerReference,
+        callbackURL,
+        agreementID: agreementId,
+        amount: amountStr,
+        currency: 'BDT',
+        intent: 'sale',
+        merchantInvoiceNumber,
+      };
+
+      const created = await bkashPostJson(bkashCreds, '/checkout/create', idToken, createBody);
+      if (String(created.statusCode || '') !== '0000' || !created.bkashURL) {
+        await logPaymentEvent(
+          order_id,
+          user.id,
+          'bkash_create_failed',
+          gatewayAmount,
+          String(created.statusMessage || created.errorMessage || 'bKash create failed'),
+          { raw: created },
+          'bkash_tokenized',
+        );
+        await supabase.from('orders').delete().eq('id', order_id);
+        return res.status(400).json({
+          success: false,
+          message: String(created.errorMessage || created.statusMessage || 'bKash could not start payment.'),
+        });
+      }
+
+      const paymentId = String(created.paymentID || '').trim();
+      if (!paymentId) {
+        await supabase.from('orders').delete().eq('id', order_id);
+        return res.status(500).json({ success: false, message: 'bKash did not return paymentID.' });
+      }
+
+      const { error: pendErr } = await supabase.from('bkash_pending_sessions').insert({
+        payment_id: paymentId,
+        user_id: user.id,
+        flow: 'checkout',
+        order_id,
+        wallet_deduction: walletDeduction,
+        gateway_amount: gatewayAmount,
+        merchant_invoice: merchantInvoiceNumber,
+      });
+      if (pendErr) {
+        console.error('bkash_pending_sessions insert:', pendErr);
+        await supabase.from('orders').delete().eq('id', order_id);
+        return res.status(500).json({ success: false, message: 'Could not store payment session.' });
+      }
+
+      await logPaymentEvent(
+        order_id,
+        user.id,
+        'bkash_session_created',
+        gatewayAmount,
+        'bKash tokenized checkout session created',
+        { payment_id: paymentId },
+        'bkash_tokenized',
+      );
+      const successPayload = { success: true, payment_url: String(created.bkashURL) };
+      await saveIdempotentResponse(user.id, 'payment_create', idempotencyKey, successPayload);
+      return res.json(successPayload);
+    }
+
+    const uddoktaCreds = await getUddoktaPayCredentialsCached(supabase);
+    if (!uddoktaCreds.apiKey || !uddoktaCreds.baseUrl || isLocalhost) {
       console.warn("UddoktaPay dev mode: Simulating successful payment flow for dev/localhost.");
       
       // Simulate webhook logic for local dev since we can't receive real webhooks easily
@@ -459,7 +725,7 @@ router.post('/create', requireUser, async (req, res) => {
       webhook_url: `${baseUrl}/api/payment/webhook`
     };
 
-    const response = await postUddoktaCheckout(payload);
+    const response = await postUddoktaCheckout(payload, uddoktaCreds);
 
     const data = await response.json() as any;
 
@@ -522,8 +788,9 @@ router.post('/recharge', requireUser, async (req, res) => {
     }
     await logPaymentEvent(null, user.id, 'recharge_init', normalizedAmount, 'Recharge initialization started');
 
+    const uddoktaCreds = await getUddoktaPayCredentialsCached(supabase);
     const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
-    if (!UDDOKTAPAY_API_KEY || !UDDOKTAPAY_BASE_URL || isLocalhost) {
+    if (!uddoktaCreds.apiKey || !uddoktaCreds.baseUrl || isLocalhost) {
       console.warn("UddoktaPay dev mode: Simulating successful wallet recharge for dev/localhost.");
       
       const { data: userData } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -557,7 +824,7 @@ router.post('/recharge', requireUser, async (req, res) => {
       webhook_url: `${baseUrl}/api/payment/webhook`
     };
 
-    const response = await postUddoktaCheckout(payload);
+    const response = await postUddoktaCheckout(payload, uddoktaCreds);
 
     const data = await response.json() as any;
 
@@ -578,6 +845,225 @@ router.post('/recharge', requireUser, async (req, res) => {
   }
 });
 
+router.post('/bkash-tokenized/status', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const creds = await getBkashTokenizedCredentialsCached(supabase);
+    const { data: u } = await supabase.from('users').select('bkash_agreement_id').eq('id', user.id).maybeSingle();
+    const agreement = typeof u?.bkash_agreement_id === 'string' ? u.bkash_agreement_id.trim() : '';
+    return res.json({
+      success: true,
+      configured: Boolean(creds),
+      has_agreement: Boolean(agreement),
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, message: e?.message || 'Error' });
+  }
+});
+
+router.post('/bkash-tokenized/agreement/start', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const { frontend_url } = req.body || {};
+    const origin = req.headers.origin;
+    const baseUrl = frontend_url || process.env.FRONTEND_URL || origin || 'https://vibeaccessbd.com';
+    const baseOrigin = (() => {
+      try {
+        const raw = String(baseUrl).startsWith('http') ? String(baseUrl) : `https://${baseUrl}`;
+        return new URL(raw).origin;
+      } catch {
+        return String(baseUrl).replace(/\/$/, '');
+      }
+    })();
+
+    const creds = await getBkashTokenizedCredentialsCached(supabase);
+    const isLocalhost = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+    if (!creds || isLocalhost) {
+      return res.status(400).json({
+        success: false,
+        message: isLocalhost
+          ? 'bKash agreement cannot be completed from localhost. Use a deployed URL and sandbox credentials.'
+          : 'bKash tokenized checkout is not configured (admin or server environment).',
+      });
+    }
+
+    const { data: urow } = await supabase.from('users').select('phone, bkash_agreement_id').eq('id', user.id).single();
+    if (typeof urow?.bkash_agreement_id === 'string' && urow.bkash_agreement_id.trim()) {
+      return res.status(400).json({ success: false, message: 'bKash account is already linked.' });
+    }
+    const digitsPhone = String(urow?.phone || '').replace(/\D/g, '');
+    if (digitsPhone.length < 10) {
+      return res.status(400).json({ success: false, message: 'Add a valid mobile number on your profile before linking bKash.' });
+    }
+
+    const idToken = await bkashGrantToken(creds);
+    const callbackURL = `${baseOrigin}/bkash-return`;
+    const merchantInvoiceNumber = `AGR${Date.now()}${String(user.id).replace(/-/g, '').slice(0, 10)}`.slice(0, 255);
+    const createBody: Record<string, unknown> = {
+      mode: '0000',
+      payerReference: digitsPhone.slice(0, 255),
+      callbackURL,
+      amount: '1',
+      currency: 'BDT',
+      intent: 'sale',
+      merchantInvoiceNumber,
+    };
+
+    const created = await bkashPostJson(creds, '/checkout/create', idToken, createBody);
+    if (String(created.statusCode || '') !== '0000' || !created.bkashURL) {
+      return res.status(400).json({
+        success: false,
+        message: String(created.errorMessage || created.statusMessage || 'Could not start bKash agreement.'),
+      });
+    }
+
+    const paymentId = String(created.paymentID || '').trim();
+    if (!paymentId) {
+      return res.status(500).json({ success: false, message: 'bKash did not return paymentID.' });
+    }
+
+    await supabase.from('bkash_pending_sessions').delete().eq('user_id', user.id).eq('flow', 'agreement');
+    const { error: insErr } = await supabase.from('bkash_pending_sessions').insert({
+      payment_id: paymentId,
+      user_id: user.id,
+      flow: 'agreement',
+      order_id: null,
+      wallet_deduction: 0,
+      gateway_amount: 0,
+      merchant_invoice: merchantInvoiceNumber,
+    });
+    if (insErr) {
+      console.error('bkash agreement pending insert:', insErr);
+      return res.status(500).json({ success: false, message: 'Could not store agreement session.' });
+    }
+
+    await logPaymentEvent(null, user.id, 'bkash_agreement_started', null, 'bKash agreement flow started', { payment_id: paymentId }, 'bkash_tokenized');
+    return res.json({ success: true, payment_url: String(created.bkashURL) });
+  } catch (e: any) {
+    console.error('bkash agreement/start:', e);
+    return res.status(500).json({ success: false, message: e?.message || 'Agreement start failed' });
+  }
+});
+
+router.post('/bkash-tokenized/finish', requireUser, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const paymentID = String(req.body?.payment_id || req.body?.paymentID || '').trim();
+    const statusQ = String(req.body?.status || '').toLowerCase();
+
+    if (!paymentID) {
+      return res.status(400).json({ success: false, message: 'Missing payment_id' });
+    }
+
+    const creds = await getBkashTokenizedCredentialsCached(supabase);
+    if (!creds) {
+      return res.status(503).json({ success: false, message: 'bKash is not configured.' });
+    }
+
+    const { data: row, error: rowErr } = await supabase
+      .from('bkash_pending_sessions')
+      .select('*')
+      .eq('payment_id', paymentID)
+      .maybeSingle();
+    if (rowErr || !row || row.user_id !== user.id) {
+      return res.status(404).json({ success: false, message: 'Unknown or expired bKash session.' });
+    }
+
+    if (statusQ === 'failure' || statusQ === 'cancel' || statusQ === 'cancelled') {
+      await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+      return res.json({
+        success: false,
+        cancelled: statusQ === 'cancel' || statusQ === 'cancelled',
+        message: 'Payment was not completed.',
+      });
+    }
+
+    const idToken = await bkashGrantToken(creds);
+    const execJson = await bkashPostJson(creds, '/checkout/execute', idToken, { paymentID });
+
+    if (row.flow === 'agreement') {
+      if (String(execJson.agreementStatus || '') !== 'Completed') {
+        return res.status(400).json({
+          success: false,
+          message: String(execJson.errorMessage || execJson.statusMessage || 'Agreement was not completed.'),
+        });
+      }
+      const agr = String(execJson.agreementID || '').trim();
+      if (!agr) {
+        return res.status(500).json({ success: false, message: 'No agreementID from bKash.' });
+      }
+      await supabase.from('users').update({ bkash_agreement_id: agr }).eq('id', user.id);
+      await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+      await logPaymentEvent(null, user.id, 'bkash_agreement_completed', null, 'bKash agreement linked', { agreement_id: agr }, 'bkash_tokenized');
+      return res.json({ success: true, flow: 'agreement' });
+    }
+
+    if (row.flow !== 'checkout' || !row.order_id) {
+      await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+      return res.status(400).json({ success: false, message: 'Invalid checkout session.' });
+    }
+
+    if (String(execJson.transactionStatus || '') !== 'Completed') {
+      return res.status(400).json({
+        success: false,
+        message: String(execJson.errorMessage || execJson.statusMessage || 'Payment was not completed.'),
+      });
+    }
+
+    const { data: ord } = await supabase.from('orders').select('user_id').eq('id', row.order_id).single();
+    if (!ord || ord.user_id !== user.id) {
+      return res.status(403).json({ success: false, message: 'Order mismatch.' });
+    }
+
+    const paid = Number(execJson.amount);
+    const gatewayPaid = Number.isFinite(paid) ? paid : Number(row.gateway_amount) || 0;
+    const settle = await settleOrderAfterGatewayPayment({
+      orderId: row.order_id,
+      orderUserId: user.id,
+      walletDeduction: Number(row.wallet_deduction) || 0,
+      gatewayPaid,
+      gatewayLabel: 'bkash_tokenized',
+    });
+    if (settle.ok === false) {
+      return res.status(settle.statusCode).json({ success: false, message: settle.publicMessage });
+    }
+
+    const trxId = String(execJson.trxID || '').trim();
+    const msisdn = String(execJson.customerMsisdn || execJson.payerReference || '')
+      .trim()
+      .slice(0, 20);
+    await supabase
+      .from('orders')
+      .update({
+        bkash_payment_id: paymentID,
+        bkash_trx_id: trxId || null,
+        bkash_msisdn: msisdn || null,
+        bkash_gateway_amount: gatewayPaid,
+      })
+      .eq('id', row.order_id);
+
+    await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+    await logPaymentEvent(
+      row.order_id,
+      user.id,
+      'bkash_payment_executed',
+      gatewayPaid,
+      'bKash execute completed',
+      { trx_id: trxId, payment_id: paymentID, msisdn: msisdn || undefined },
+      'bkash_tokenized',
+    );
+
+    return res.json({
+      success: true,
+      flow: 'checkout',
+      redirect_path: `/adobe-email?payment=success&order_id=${row.order_id}`,
+    });
+  } catch (e: any) {
+    console.error('bkash finish:', e);
+    return res.status(500).json({ success: false, message: e?.message || 'Finish failed' });
+  }
+});
+
 router.post('/webhook', async (req, res) => {
   // --- Background Lazy Auto-Cleanup Task --- //
   try {
@@ -588,10 +1074,12 @@ router.post('/webhook', async (req, res) => {
 
   try {
     const { metadata, status, amount } = req.body;
-    
-    const headerApiKey = req.headers['rt-uddoktapay-api-key'];
-    if (UDDOKTAPAY_API_KEY && headerApiKey !== UDDOKTAPAY_API_KEY) {
-       return res.status(401).json({ error: 'Unauthorized' });
+
+    const uddoktaCreds = await getUddoktaPayCredentialsCached(supabase);
+    const headerRaw = req.headers['rt-uddoktapay-api-key'];
+    const headerApiKey = Array.isArray(headerRaw) ? headerRaw[0] : headerRaw;
+    if (uddoktaCreds.apiKey && headerApiKey !== uddoktaCreds.apiKey) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     if (status === 'COMPLETED') {
@@ -637,85 +1125,19 @@ router.post('/webhook', async (req, res) => {
       const orderUserId = metadata?.user_id;
       const gatewayPaid = Number(amount);
 
-      // If gateway provides amount, ensure it is not lower than expected due amount.
-      const { data: payableOrder } = await supabase
-        .from('orders')
-        .select('id, total_amount')
-        .eq('id', orderId)
-        .single();
-      const expectedTotal = Number(payableOrder?.total_amount) || 0;
-      const expectedGatewayDue = Math.max(0, expectedTotal - walletDeduction);
-      if (Number.isFinite(gatewayPaid) && gatewayPaid + 0.0001 < expectedGatewayDue) {
-        await logPaymentEvent(orderId, orderUserId || null, 'payment_failed_underpaid', gatewayPaid, 'Gateway paid lower than expected due');
-        return res.status(400).json({ error: 'Gateway paid amount is lower than expected due amount' });
+      const settle = await settleOrderAfterGatewayPayment({
+        orderId,
+        orderUserId: String(orderUserId || ''),
+        walletDeduction,
+        gatewayPaid,
+        gatewayLabel: 'uddoktapay',
+      });
+      if (settle.ok === false) {
+        return res.status(settle.statusCode).json({ error: settle.publicMessage });
       }
 
-      const { data: existingOrder } = await supabase
-        .from('orders')
-        .select('id, status, payment_status')
-        .eq('id', orderId)
-        .single();
+      const { data: order } = await supabase.from('orders').select('user_id').eq('id', orderId).maybeSingle();
 
-      // Idempotency guard for repeated callbacks.
-      if (existingOrder?.payment_status === 'paid' && existingOrder?.status === 'completed') {
-        return res.status(200).json({ received: true });
-      }
-
-      // For mixed checkout, deduct wallet part only after gateway confirms completion.
-      if (walletDeduction > 0 && orderUserId) {
-        const { error: deductErr } = await supabase.rpc('deduct_subscription_wallet_combined', {
-          p_user_id: orderUserId,
-          p_amount: walletDeduction,
-        });
-        if (deductErr) {
-          await logPaymentEvent(orderId, orderUserId, 'payment_failed_wallet_insufficient', walletDeduction, 'Insufficient wallet balance during settlement');
-          return res.status(400).json({ error: 'Insufficient wallet balance during mixed-payment settlement' });
-        }
-      }
-      
-      const { error: updateError } = await supabase
-        .from('orders')
-        .update({ status: 'paid', payment_status: 'paid' })
-        .eq('id', orderId);
-
-      if (updateError) throw updateError;
-
-      const { data: order } = await supabase
-        .from('orders')
-        .select('*, products(is_personal, duration)')
-        .eq('id', orderId)
-        .single();
-
-      if (order) {
-        await logPaymentEvent(order.id, order.user_id, 'payment_completed', gatewayPaid || expectedGatewayDue, 'Payment webhook completed');
-        await logOrderEvent(order.id, order.user_id, 'payment_completed', 'Payment confirmed by webhook');
-        if (order.products?.is_personal && order.personal_email) {
-          await fulfillPersonalAdobeAccess(order);
-        } else {
-          // Use product-aware email assignment (respects email_slots & max_users_per_email)
-          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
-          if (!assignment.success) {
-            console.error(
-              `[payment/webhook] Email assignment failed for order ${order.id}: ${assignment.error || 'Unknown error'}`
-            );
-            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
-            await logOrderEvent(order.id, order.user_id, 'provisioning_failed', assignment.error || 'Email assignment failed');
-            return res.status(500).json({ error: assignment.error || 'Email assignment failed' });
-          }
-          await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Assigned product email successfully');
-        }
-
-        // Mark order as completed
-        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-        await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
-        await incrementCouponUsedIfPresent(order);
-        try {
-          await tryProcessReferralRewardsForOrder(supabase, order.id);
-        } catch (e) {
-          console.error('referral processing (webhook):', e);
-        }
-      }
-      
       // Legacy fallback for order metadata recharge fields.
       if (metadata.is_recharge && metadata.recharge_amount > 0 && order?.user_id) {
         // Legacy fallback for old orders that might still be processing

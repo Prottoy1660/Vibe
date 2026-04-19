@@ -6,6 +6,8 @@ import { cn } from '../Layout';
 const AVAILABLE_TABS = [
   { id: 'overview', label: 'Admin Dashboard' },
   { id: 'finance', label: 'Profit' },
+  { id: 'uddoktapay', label: 'UddoktaPay' },
+  { id: 'bkash_tokenized', label: 'bKash (tokenized)' },
   { id: 'analytics', label: 'Financial Analytics' },
   { id: 'activity', label: 'Activity log' },
   { id: 'products', label: 'Product Management' },

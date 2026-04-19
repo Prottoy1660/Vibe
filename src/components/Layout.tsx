@@ -33,6 +33,7 @@ import {
   Download,
   Loader2,
   PanelTop,
+  CreditCard,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
@@ -281,6 +282,8 @@ export const Layout = () => {
       items: [
         { name: 'Admin Dashboard', href: '/admin?tab=overview', icon: LayoutDashboard },
         { name: 'Profit', href: '/admin?tab=finance', icon: Wallet },
+        { name: 'UddoktaPay', href: '/admin?tab=uddoktapay', icon: CreditCard },
+        { name: 'bKash (tokenized)', href: '/admin?tab=bkash_tokenized', icon: CreditCard },
         { name: 'Expenses', href: '/admin?tab=expenses', icon: Receipt },
         { name: 'Financial Analytics', href: '/admin?tab=analytics', icon: TrendingUp },
         { name: 'Activity log', href: '/admin?tab=activity', icon: ScrollText },

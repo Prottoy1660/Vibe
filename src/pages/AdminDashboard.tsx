@@ -21,6 +21,7 @@ import {
   Wallet,
   BellRing,
   Download,
+  CreditCard,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -65,6 +66,12 @@ const AdminActivityLog = React.lazy(() =>
 );
 const AdminSubscriptionReminders = React.lazy(() =>
   import('../components/admin/AdminSubscriptionReminders').then((m) => ({ default: m.AdminSubscriptionReminders })),
+);
+const AdminUddoktaPaySettings = React.lazy(() =>
+  import('../components/admin/AdminUddoktaPaySettings').then((m) => ({ default: m.AdminUddoktaPaySettings })),
+);
+const AdminBkashTokenizedSettings = React.lazy(() =>
+  import('../components/admin/AdminBkashTokenizedSettings').then((m) => ({ default: m.AdminBkashTokenizedSettings })),
 );
 
 const AdminTabFallback = () => (
@@ -355,6 +362,18 @@ export const AdminDashboard = () => {
               </span>
             )}
             {activeTab === 'platform_settings' && 'Platform status'}
+            {activeTab === 'uddoktapay' && (
+              <span className="flex items-center gap-2">
+                <CreditCard className="w-6 h-6" />
+                UddoktaPay payments
+              </span>
+            )}
+            {activeTab === 'bkash_tokenized' && (
+              <span className="flex items-center gap-2">
+                <CreditCard className="w-6 h-6" />
+                bKash tokenized
+              </span>
+            )}
             {activeTab === 'subscription_reminders' && (
               <span className="flex items-center gap-2">
                 <BellRing className="w-6 h-6" />
@@ -397,6 +416,8 @@ export const AdminDashboard = () => {
         {activeTab === 'support' && <AdminSupport />}
         {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
+        {activeTab === 'uddoktapay' && <AdminUddoktaPaySettings />}
+        {activeTab === 'bkash_tokenized' && <AdminBkashTokenizedSettings />}
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
         {activeTab === 'lobby_music' && <AdminLobbyMusic />}
         {activeTab === 'user_notifications' && <AdminUserNotifications />}

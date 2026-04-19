@@ -46,6 +46,8 @@ export const Checkout = () => {
   const [couponError, setCouponError] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentError, setPaymentError] = useState('');
+  const [bkashStatus, setBkashStatus] = useState<{ configured: boolean; has_agreement: boolean } | null>(null);
+  const [linkingBkash, setLinkingBkash] = useState(false);
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
   /**
@@ -98,6 +100,30 @@ export const Checkout = () => {
 
     fetchProductAndUser();
   }, [id, navigate, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await postJsonWithFallback(
+          '/api/payment/bkash-tokenized/status',
+          {},
+          { skipErrorPageRedirect: true },
+        );
+        if (cancelled || !d?.success) return;
+        setBkashStatus({
+          configured: Boolean(d.configured),
+          has_agreement: Boolean(d.has_agreement),
+        });
+      } catch {
+        if (!cancelled) setBkashStatus({ configured: false, has_agreement: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!product?.is_personal || loading) return;
@@ -255,9 +281,26 @@ export const Checkout = () => {
           frontend_url: window.location.origin,
           user_id: user.id,
           wallet_deduction: safeWalletDeduction,
+          gateway: paymentMethod === 'bkash_tokenized' ? 'bkash_tokenized' : 'uddoktapay',
         },
         { skipErrorPageRedirect: true },
       );
+
+      if (data.needs_bkash_agreement) {
+        if (createdOrderId) {
+          try {
+            await supabase.from('orders').delete().eq('id', createdOrderId);
+          } catch {
+            /* ignore */
+          }
+          createdOrderId = null;
+        }
+        setPaymentError(
+          (data.message as string) ||
+            'Use “Link bKash wallet” below, complete OTP on bKash, then press Pay again (PIN only next time).',
+        );
+        return;
+      }
 
       if (data.success && data.payment_url) {
         window.location.href = data.payment_url;
@@ -306,7 +349,33 @@ export const Checkout = () => {
   const dueNow = Math.max(0, finalPrice - walletDeduction);
 
   const detailsDone = !requirePhone || (phone && phone.length >= 11);
-  const paymentReady = dueNow <= 0 || paymentMethod === 'uddoktapay';
+  const paymentReady = dueNow <= 0 || paymentMethod === 'uddoktapay' || paymentMethod === 'bkash_tokenized';
+
+  const startBkashAgreement = async () => {
+    if (!user) return;
+    setLinkingBkash(true);
+    setPaymentError('');
+    try {
+      if (requirePhone && phone && phone.length >= 11) {
+        await supabase.from('users').update({ phone }).eq('id', user.id);
+        await supabase.auth.updateUser({ data: { phone } });
+      }
+      const data = await postJsonWithFallback(
+        '/api/payment/bkash-tokenized/agreement/start',
+        { frontend_url: window.location.origin },
+        { skipErrorPageRedirect: true },
+      );
+      if (data.success && data.payment_url) {
+        window.location.href = data.payment_url as string;
+        return;
+      }
+      setPaymentError((data.message as string) || 'Could not start bKash linking.');
+    } catch (e: unknown) {
+      setPaymentError(e instanceof Error ? e.message : 'Could not start bKash linking.');
+    } finally {
+      setLinkingBkash(false);
+    }
+  };
 
   const btnPrimary =
     'inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed';
@@ -448,23 +517,60 @@ export const Checkout = () => {
                   <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
                     Gateway <span className="text-red-500">*</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPaymentMethod('uddoktapay');
-                      setPaymentError('');
-                    }}
-                    className={`w-full max-w-md rounded-xl border px-4 py-4 text-left transition-all ${
-                      paymentMethod === 'uddoktapay'
-                        ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
-                        : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
-                    }`}
-                  >
-                    <p className="font-semibold text-zinc-900 dark:text-zinc-100">Bkash, Nagad, Rocket</p>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                      Mobile wallets, card & bank (UddoktaPay gateway)
-                    </p>
-                  </button>
+                  <div className="space-y-3 max-w-md">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPaymentMethod('uddoktapay');
+                        setPaymentError('');
+                      }}
+                      className={`w-full rounded-xl border px-4 py-4 text-left transition-all ${
+                        paymentMethod === 'uddoktapay'
+                          ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
+                          : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
+                      }`}
+                    >
+                      <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash, Nagad, Rocket</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                        Mobile wallets, card & bank (UddoktaPay)
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={bkashStatus && !bkashStatus.configured}
+                      onClick={() => {
+                        setPaymentMethod('bkash_tokenized');
+                        setPaymentError('');
+                      }}
+                      className={`w-full rounded-xl border px-4 py-4 text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                        paymentMethod === 'bkash_tokenized'
+                          ? 'border-indigo-500 bg-indigo-500/10 ring-2 ring-indigo-500/30'
+                          : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
+                      }`}
+                    >
+                      <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash (tokenized)</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                        Direct bKash — link once with OTP, then pay with wallet PIN only. Requires admin setup.
+                      </p>
+                      {bkashStatus?.configured === false && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-1.5">Not configured on server yet.</p>
+                      )}
+                      {bkashStatus?.configured && !bkashStatus?.has_agreement && (
+                        <p className="text-[11px] text-indigo-700 dark:text-indigo-300 mt-1.5">One-time link required before first payment.</p>
+                      )}
+                    </button>
+                    {paymentMethod === 'bkash_tokenized' && bkashStatus?.configured && !bkashStatus?.has_agreement && (
+                      <button
+                        type="button"
+                        onClick={() => void startBkashAgreement()}
+                        disabled={linkingBkash || requirePhone}
+                        className="w-full rounded-xl border border-indigo-300 dark:border-indigo-700 bg-indigo-50/80 dark:bg-indigo-950/40 px-4 py-2.5 text-sm font-medium text-indigo-900 dark:text-indigo-100 hover:bg-indigo-100/80 dark:hover:bg-indigo-900/50 disabled:opacity-50"
+                      >
+                        {linkingBkash ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : null}
+                        Link bKash wallet (OTP on bKash page)
+                      </button>
+                    )}
+                  </div>
                   {paymentError && <p className="text-red-600 dark:text-red-400 text-sm mt-2 whitespace-pre-wrap">{paymentError}</p>}
                 </div>
               ) : (

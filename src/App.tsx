@@ -33,6 +33,7 @@ const PhoneRequired = React.lazy(() => import('./pages/PhoneRequired').then((m) 
 const HttpErrorPage = React.lazy(() =>
   import('./pages/HttpErrorPage').then((module) => ({ default: module.HttpErrorPage })),
 );
+const BkashReturn = React.lazy(() => import('./pages/BkashReturn').then((m) => ({ default: m.BkashReturn })));
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -112,6 +113,7 @@ function AppRoutes() {
           />
           <Route path="/store" element={<Store />} />
           <Route path="/checkout/:id" element={<Checkout />} />
+          <Route path="/bkash-return" element={<BkashReturn />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/redeem" element={<RedeemCoupon />} />
           <Route path="/adobe-email" element={<AdobeEmail />} />

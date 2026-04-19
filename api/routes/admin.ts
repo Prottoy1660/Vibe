@@ -16,6 +16,25 @@ import {
   SUPPORT_CHAT_SETTINGS_KEY,
 } from '../lib/supportChatSettings.js';
 import {
+  loadUddoktaPayStored,
+  mergeUddoktaPayPatch,
+  resolveUddoktaPayCredentials,
+  toUddoktaPayAdminSettingsPayload,
+  invalidateUddoktaPayCredentialsCache,
+  UDDOKTAPAY_SETTINGS_KEY,
+} from '../lib/uddoktapaySettings.js';
+import {
+  loadBkashTokenizedStored,
+  mergeBkashTokenizedPatch,
+  resolveBkashTokenizedCredentials,
+  toBkashTokenizedAdminSettingsPayload,
+  invalidateBkashTokenizedCredentialsCache,
+  BKASH_TOKENIZED_SETTINGS_KEY,
+  getBkashTokenizedCredentialsCached,
+} from '../lib/bkashTokenizedSettings.js';
+import { bkashGrantToken } from '../lib/bkashTokenizedClient.js';
+import { bkashRefundTokenized } from '../lib/bkashTokenizedRefund.js';
+import {
   loadReminderIntegrationsStored,
   mergeReminderIntegrationsPatch,
   resolveReminderOutbound,
@@ -132,6 +151,83 @@ function durationToMonths(duration: string | null | undefined) {
   return match ? Math.max(1, Number(match[0])) : 1;
 }
 
+/**
+ * Release pool emails linked to an order and mark the order refunded (shared by admin refund route).
+ */
+async function releaseOrderEmailsAndMarkRefunded(orderId: string): Promise<void> {
+  const { data: userEmails } = await supabase.from('user_emails').select('email_id').eq('order_id', orderId);
+
+  if (userEmails && userEmails.length > 0) {
+    const emailIds = userEmails.map((ue: { email_id: string }) => ue.email_id);
+
+    const { data: poolRows, error: poolErr } = await supabase
+      .from('emails_pool')
+      .select('id,current_users,product_id,assigned_at,is_burned')
+      .in('id', emailIds);
+
+    if (poolErr) throw poolErr;
+
+    const productIds = Array.from(new Set((poolRows || []).map((r: { product_id: string | null }) => r.product_id).filter(Boolean)));
+
+    let productsRows: { id: string; max_users_per_email: number | null }[] = [];
+    if (productIds.length > 0) {
+      const { data: pr, error: prodErr } = await supabase
+        .from('products')
+        .select('id,max_users_per_email')
+        .in('id', productIds as string[]);
+      if (prodErr) throw prodErr;
+      productsRows = (pr || []) as { id: string; max_users_per_email: number | null }[];
+    }
+
+    const maxMap = new Map(productsRows.map((p) => [p.id, p.max_users_per_email]));
+
+    for (const row of poolRows || []) {
+      const r = row as {
+        id: string;
+        current_users: number | null;
+        product_id: string | null;
+        is_burned: boolean | null;
+      };
+      if (r.is_burned) continue;
+
+      const current = Number(r.current_users || 0);
+      const nextCount = Math.max(0, current - 1);
+      const maxUsers = Number(maxMap.get(r.product_id as string) || 1);
+
+      if (nextCount === 0) {
+        const { error: uErr } = await supabase
+          .from('emails_pool')
+          .update({
+            status: 'available',
+            assigned_at: null,
+            product_id: null,
+            current_users: 0,
+          })
+          .eq('id', r.id);
+        if (uErr) throw uErr;
+      } else {
+        const { error: uErr } = await supabase
+          .from('emails_pool')
+          .update({
+            current_users: nextCount,
+            status: nextCount >= maxUsers ? 'assigned' : 'available',
+          })
+          .eq('id', r.id);
+        if (uErr) throw uErr;
+      }
+    }
+
+    const { error: delUe } = await supabase.from('user_emails').delete().eq('order_id', orderId);
+    if (delUe) throw delUe;
+  }
+
+  const { error: ordErr } = await supabase
+    .from('orders')
+    .update({ status: 'refunded', payment_status: 'refunded' })
+    .eq('id', orderId);
+  if (ordErr) throw ordErr;
+}
+
 // Middleware to verify admin
 const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
@@ -209,6 +305,128 @@ router.get('/orders/query', verifyAdmin, async (req, res) => {
   } catch (e: any) {
     console.error('admin orders/query:', e);
     return res.status(500).json({ error: e?.message || 'Failed to list orders' });
+  }
+});
+
+/**
+ * Full admin refund: optional bKash API reversal (when order was paid via tokenized bKash), then email release + refunded status.
+ * Requires admin JWT (verifyAdmin). bKash credentials never leave the server.
+ */
+router.post('/orders/:orderId/refund', verifyAdmin, async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    if (!orderId) return res.status(400).json({ success: false, error: 'orderId required' });
+
+    const reason =
+      typeof (req.body as any)?.reason === 'string' && String((req.body as any).reason).trim()
+        ? String((req.body as any).reason).trim().slice(0, 255)
+        : 'Admin refund';
+
+    const { data: order, error: oErr } = await supabase
+      .from('orders')
+      .select(
+        'id, user_id, status, payment_status, payment_method, bkash_payment_id, bkash_trx_id, bkash_gateway_amount',
+      )
+      .eq('id', orderId)
+      .single();
+
+    if (oErr || !order) {
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    if (order.status === 'refunded' && order.payment_status === 'refunded') {
+      return res.status(400).json({ success: false, error: 'Order is already refunded.' });
+    }
+
+    if (!['paid', 'completed'].includes(String(order.status))) {
+      return res.status(400).json({ success: false, error: 'Only paid or completed orders can be refunded.' });
+    }
+
+    const pm = String(order.payment_method || '');
+    const wantsBkashRefund = pm.includes('bkash');
+    let refundTrxId: string | null = null;
+
+    if (wantsBkashRefund) {
+      const pid = typeof order.bkash_payment_id === 'string' ? order.bkash_payment_id.trim() : '';
+      const trx = typeof order.bkash_trx_id === 'string' ? order.bkash_trx_id.trim() : '';
+      const gw = Number(order.bkash_gateway_amount);
+
+      if (!pid || !trx) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'This order was marked bKash but is missing bKash payment ID or transaction ID, so the bKash Refund API cannot be called. Use bKash merchant portal or settle manually.',
+        });
+      }
+      if (!Number.isFinite(gw) || gw <= 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Missing bKash gateway amount on this order; cannot determine refund amount.',
+        });
+      }
+
+      const creds = await getBkashTokenizedCredentialsCached(supabase);
+      if (!creds) {
+        return res.status(503).json({
+          success: false,
+          error: 'bKash credentials are not configured on the server; cannot call refund API.',
+        });
+      }
+
+      const idToken = await bkashGrantToken(creds);
+      const refundAmount = gw % 1 === 0 ? String(Math.round(gw)) : gw.toFixed(2);
+      const sku = `order-${orderId.replace(/-/g, '').slice(0, 20)}`;
+
+      const refundJson = await bkashRefundTokenized({
+        creds,
+        idToken,
+        paymentId: pid,
+        trxId: trx,
+        refundAmount,
+        sku,
+        reason,
+      });
+
+      refundTrxId = String(refundJson.refundTrxId || '').trim() || null;
+
+      const { error: metaErr } = await supabase
+        .from('orders')
+        .update({ bkash_refund_trx_id: refundTrxId })
+        .eq('id', orderId);
+      if (metaErr) console.error('orders bkash_refund_trx_id update:', metaErr);
+    }
+
+    await releaseOrderEmailsAndMarkRefunded(orderId);
+
+    try {
+      await supabase.from('payment_events').insert({
+        order_id: orderId,
+        user_id: order.user_id,
+        event_type: 'admin_refund_completed',
+        amount: Number(order.bkash_gateway_amount) || null,
+        gateway: wantsBkashRefund ? 'bkash_tokenized' : 'admin',
+        message: wantsBkashRefund
+          ? `Admin refund; bKash refund trx: ${refundTrxId || 'n/a'}`
+          : 'Admin refund (non-bKash gateway)',
+        meta: {
+          bkash_refund_trx_id: refundTrxId,
+          reason,
+        },
+      });
+    } catch (pe) {
+      console.error('payment_events admin_refund:', pe);
+    }
+
+    return res.json({
+      success: true,
+      message: wantsBkashRefund
+        ? `Refunded via bKash API and access released.${refundTrxId ? ` Refund trx: ${refundTrxId}.` : ''}`
+        : 'Order refunded and email access released where linked.',
+      bkash_refund_trx_id: refundTrxId,
+    });
+  } catch (e: any) {
+    console.error('admin orders/refund:', e);
+    return res.status(500).json({ success: false, error: e?.message || 'Refund failed' });
   }
 });
 
@@ -1868,6 +2086,104 @@ router.patch('/ops/support-chat/settings', verifyAdmin, async (req, res) => {
     });
   } catch (error: any) {
     console.error('support-chat settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/uddoktapay/settings', verifyAdmin, async (_req, res) => {
+  try {
+    const stored = await loadUddoktaPayStored(supabase);
+    const resolved = resolveUddoktaPayCredentials(stored);
+    return res.json({
+      success: true,
+      settings: toUddoktaPayAdminSettingsPayload(stored, resolved),
+      effective: {
+        checkout_ready: Boolean(resolved.apiKey && resolved.baseUrl),
+        api_key_from_env: resolved.api_key_from_env,
+        base_url_from_env: resolved.base_url_from_env,
+      },
+    });
+  } catch (error: any) {
+    console.error('uddoktapay settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/uddoktapay/settings', verifyAdmin, async (req, res) => {
+  try {
+    const stored = await loadUddoktaPayStored(supabase);
+    const merged = mergeUddoktaPayPatch(stored, (req.body || {}) as Record<string, unknown>);
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: UDDOKTAPAY_SETTINGS_KEY,
+        value: merged as any,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
+    invalidateUddoktaPayCredentialsCache();
+    const resolved = resolveUddoktaPayCredentials(merged);
+    return res.json({
+      success: true,
+      settings: toUddoktaPayAdminSettingsPayload(merged, resolved),
+      effective: {
+        checkout_ready: Boolean(resolved.apiKey && resolved.baseUrl),
+        api_key_from_env: resolved.api_key_from_env,
+        base_url_from_env: resolved.base_url_from_env,
+      },
+    });
+  } catch (error: any) {
+    console.error('uddoktapay settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/bkash-tokenized/settings', verifyAdmin, async (_req, res) => {
+  try {
+    const stored = await loadBkashTokenizedStored(supabase);
+    const resolved = resolveBkashTokenizedCredentials(stored);
+    return res.json({
+      success: true,
+      settings: toBkashTokenizedAdminSettingsPayload(stored, resolved),
+      effective: {
+        configured: Boolean(resolved),
+        api_root_from_env: Boolean(resolved?.api_root_from_env),
+        app_key_from_env: Boolean(resolved?.app_key_from_env),
+      },
+    });
+  } catch (error: any) {
+    console.error('bkash-tokenized settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/bkash-tokenized/settings', verifyAdmin, async (req, res) => {
+  try {
+    const stored = await loadBkashTokenizedStored(supabase);
+    const merged = mergeBkashTokenizedPatch(stored, (req.body || {}) as Record<string, unknown>);
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: BKASH_TOKENIZED_SETTINGS_KEY,
+        value: merged as any,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
+    invalidateBkashTokenizedCredentialsCache();
+    const resolved = resolveBkashTokenizedCredentials(merged);
+    return res.json({
+      success: true,
+      settings: toBkashTokenizedAdminSettingsPayload(merged, resolved),
+      effective: {
+        configured: Boolean(resolved),
+        api_root_from_env: Boolean(resolved?.api_root_from_env),
+        app_key_from_env: Boolean(resolved?.app_key_from_env),
+      },
+    });
+  } catch (error: any) {
+    console.error('bkash-tokenized settings patch:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
