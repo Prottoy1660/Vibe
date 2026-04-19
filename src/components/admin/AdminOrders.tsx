@@ -711,7 +711,10 @@ export const AdminOrders = () => {
                               {pay.pretty} · {pay.status}
                             </p>
                             {String(order.payment_method || '').includes('bkash') &&
-                            (order.bkash_trx_id || order.bkash_msisdn || order.bkash_gateway_amount != null) ? (
+                            (order.bkash_trx_id ||
+                              order.bkash_msisdn ||
+                              order.bkash_payment_id ||
+                              order.bkash_refund_trx_id) ? (
                               <div className="mt-1.5 space-y-0.5 text-[10px] text-gray-600 dark:text-gray-400 font-mono leading-snug">
                                 {order.bkash_msisdn ? <p title="Wallet used for bKash">bKash: {order.bkash_msisdn}</p> : null}
                                 {order.bkash_trx_id ? <p title="bKash transaction id">Trx: {order.bkash_trx_id}</p> : null}
@@ -719,9 +722,6 @@ export const AdminOrders = () => {
                                   <p className="truncate max-w-[200px]" title="bKash payment id">
                                     PayID: {order.bkash_payment_id}
                                   </p>
-                                ) : null}
-                                {order.bkash_gateway_amount != null && Number.isFinite(Number(order.bkash_gateway_amount)) ? (
-                                  <p>Gateway ৳{Number(order.bkash_gateway_amount).toFixed(2)}</p>
                                 ) : null}
                                 {order.bkash_refund_trx_id ? (
                                   <p className="text-emerald-700 dark:text-emerald-400">Refund trx: {order.bkash_refund_trx_id}</p>
