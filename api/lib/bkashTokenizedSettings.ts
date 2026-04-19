@@ -64,6 +64,15 @@ export function defaultTokenizedApiRoot(env: BkashTokenizedEnvironment): string 
   return env === 'live' ? BKASH_TOKENIZED_URL_LIVE : BKASH_TOKENIZED_URL_SANDBOX;
 }
 
+/** When credentials come from .env but `BKASH_TOKENIZED_API_ROOT` is unset, use this to pick sandbox vs live URL (must match the portal where the keys were issued). */
+export function parseBkashEnvTierFromProcessEnv(): BkashTokenizedEnvironment | null {
+  const raw = process.env.BKASH_TOKENIZED_ENVIRONMENT || process.env.BKASH_ENVIRONMENT || '';
+  const s = raw.trim().toLowerCase();
+  if (s === 'live' || s === 'production' || s === 'prod') return 'live';
+  if (s === 'sandbox' || s === 'test' || s === 'dev') return 'sandbox';
+  return null;
+}
+
 export function inferBkashEnvironment(stored: BkashTokenizedStoredValue): BkashTokenizedEnvironment {
   if (stored.environment === 'live' || stored.environment === 'sandbox') {
     return stored.environment;
@@ -113,7 +122,14 @@ export function resolveBkashTokenizedCredentials(
   const dbUser = typeof stored.username === 'string' ? normalizeBkashCredentialPart(stored.username) : '';
   const dbPass = typeof stored.password === 'string' ? normalizeBkashCredentialPart(stored.password) : '';
 
-  const apiRoot = envRoot || dbRoot;
+  const hasPartialEnvCreds = Boolean(envKey || envSecret || envUser || envPass);
+  const envTier = parseBkashEnvTierFromProcessEnv();
+  // Avoid sandbox URL + live keys (or vice versa) when .env sets keys but not BKASH_TOKENIZED_API_ROOT.
+  const apiRoot = envRoot
+    ? envRoot
+    : hasPartialEnvCreds && envTier
+      ? defaultTokenizedApiRoot(envTier)
+      : dbRoot;
   const appKey = envKey || dbKey;
   const appSecret = envSecret || dbSecret;
   const username = envUser || dbUser;

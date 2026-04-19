@@ -25,9 +25,9 @@ export function appendBkashGrantTroubleshooting(
   }
   const root = creds.apiRoot.toLowerCase();
   const looksSandbox = root.includes('sandbox');
-  const envWord = looksSandbox ? 'sandbox' : 'live/production';
+  const envWord = looksSandbox ? 'sandbox' : 'live or production';
   return (
-    `${message} — Use App key, App secret, username, and password from the bKash **${envWord}** merchant portal, with an API root URL for the **same** environment (your root is ${looksSandbox ? 'sandbox' : 'live'}). If the server sets BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_USERNAME, BKASH_PASSWORD, or BKASH_TOKENIZED_API_ROOT in .env, those override the admin panel; remove or correct any wrong value.`
+    `${message} — Use app key, app secret, username, and password from the bKash ${envWord} merchant portal, with the API base URL for the same environment (this server is using the ${looksSandbox ? 'sandbox' : 'live'} URL). If you set keys in .env without BKASH_TOKENIZED_API_ROOT, also set BKASH_TOKENIZED_ENVIRONMENT=sandbox or live to match those keys. Any of BKASH_APP_KEY, BKASH_APP_SECRET, BKASH_USERNAME, BKASH_PASSWORD, or BKASH_TOKENIZED_API_ROOT in .env overrides the admin panel; remove or fix wrong values.`
   );
 }
 
