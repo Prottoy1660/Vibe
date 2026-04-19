@@ -56,7 +56,7 @@ export const Checkout = () => {
     };
   } | null>(null);
   const [linkingBkash, setLinkingBkash] = useState(false);
-  /** Shown once after returning from BKash agreement redirect. */
+  /** Shown once after returning from Bkash agreement redirect. */
   const [bkashWelcome, setBkashWelcome] = useState(false);
   const [phone, setPhone] = useState('');
   const [requirePhone, setRequirePhone] = useState(false);
@@ -301,7 +301,7 @@ export const Checkout = () => {
       !checkoutGateways.bkash_tokenized.has_agreement
     ) {
       setPaymentError(
-        'Link your BKash wallet first: tap “Link BKash wallet (OTP on BKash page)”, complete OTP on BKash, then return here and pay (PIN only after that).',
+        'Link your Bkash wallet first: tap “Link Bkash wallet (OTP on Bkash page)”, complete OTP on Bkash, then return here and pay (PIN only after that).',
       );
       return;
     }
@@ -364,7 +364,7 @@ export const Checkout = () => {
         }
         setPaymentError(
           (data.message as string) ||
-            'Use “Link BKash wallet” below, complete OTP on BKash, then press Pay again (PIN only next time).',
+            'Use “Link Bkash wallet” below, complete OTP on Bkash, then press Pay again (PIN only next time).',
         );
         return;
       }
@@ -380,9 +380,9 @@ export const Checkout = () => {
       if (err.apiBody?.needs_bkash_agreement) {
         const msg =
           (typeof err.apiBody.message === 'string' && err.apiBody.message) ||
-          'Link your BKash wallet once (tokenized agreement), then you can pay with PIN only.';
+          'Link your Bkash wallet once (tokenized agreement), then you can pay with PIN only.';
         setPaymentError(
-          `${msg} Use “Link BKash wallet” below, complete OTP on BKash, then press Pay again.`,
+          `${msg} Use “Link Bkash wallet” below, complete OTP on Bkash, then press Pay again.`,
         );
         if (createdOrderId) {
           try {
@@ -476,9 +476,9 @@ export const Checkout = () => {
         window.location.href = data.payment_url as string;
         return;
       }
-      setPaymentError((data.message as string) || 'Could not start BKash linking.');
+      setPaymentError((data.message as string) || 'Could not start Bkash linking.');
     } catch (e: unknown) {
-      const raw = e instanceof Error ? e.message : 'Could not start BKash linking.';
+      const raw = e instanceof Error ? e.message : 'Could not start Bkash linking.';
       setPaymentError(raw.replace(/\s*\[\/api\/[^\]]+\]\s*$/, ''));
     } finally {
       setLinkingBkash(false);
@@ -495,8 +495,8 @@ export const Checkout = () => {
             checkoutGateways.bkash_tokenized.configured &&
             !checkoutGateways.bkash_tokenized.has_agreement
           ? linkingBkash
-            ? 'Opening BKash…'
-            : 'Continue with BKash (one-time OTP)'
+            ? 'Opening Bkash…'
+            : 'Continue with Bkash (one-time OTP)'
           : `Pay ৳${dueNow.toFixed(2)}`;
 
   const runPrimaryCheckout = () => {
@@ -654,7 +654,7 @@ export const Checkout = () => {
                     <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/35 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100 mb-3 max-w-md flex gap-2">
                       <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" aria-hidden />
                       <span>
-                        BKash is linked. Tap Pay below — on the next screen you only enter your wallet PIN to complete this
+                        Bkash is linked. Tap Pay below — on the next screen you only enter your wallet PIN to complete this
                         order.
                       </span>
                     </div>
@@ -691,7 +691,7 @@ export const Checkout = () => {
                       >
                         <p className="font-semibold text-zinc-900 dark:text-zinc-100">Nagad, Rocket</p>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                          Mobile wallets, card & bank — BKash included (UddoktaPay)
+                          Mobile wallets, card & bank — Bkash included (UddoktaPay)
                         </p>
                       </button>
                     ) : null}
@@ -708,9 +708,9 @@ export const Checkout = () => {
                             : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
                         }`}
                       >
-                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">BKash</p>
+                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">Bkash</p>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                          Direct BKash — link once with OTP; later payments with PIN only
+                          Direct Bkash — link once with OTP; later payments with PIN only
                         </p>
                       </button>
                     ) : null}
