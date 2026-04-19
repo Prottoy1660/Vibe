@@ -13,10 +13,18 @@ interface Order {
   created_at: string;
   status: string;
   total_amount: number;
+  /** Set when checkout called /api/payment/create; drives Pay now retry gateway. */
+  payment_method: string | null;
   product: {
     title: string;
     title_bn: string;
   };
+}
+
+function gatewayForPaymentRetry(paymentMethod: string | null | undefined): 'uddoktapay' | 'bkash_tokenized' {
+  const m = (paymentMethod || '').toLowerCase().replace(/_/g, ' ');
+  if (m.includes('bkash tokenized')) return 'bkash_tokenized';
+  return 'uddoktapay';
 }
 
 type StatusFilter = 'all' | 'pending' | 'paid' | 'completed' | 'issue';
@@ -74,6 +82,7 @@ export const Orders = () => {
           created_at,
           status,
           total_amount,
+          payment_method,
           product:product_id (title, title_bn)
         `)
         .eq('user_id', user.id)
@@ -87,6 +96,7 @@ export const Orders = () => {
           created_at: item.created_at,
           status: item.status,
           total_amount: item.total_amount,
+          payment_method: typeof item.payment_method === 'string' ? item.payment_method : null,
           product: {
             title: item.product?.title || 'Unknown Product',
             title_bn: item.product?.title_bn || '',
@@ -245,28 +255,50 @@ export const Orders = () => {
     }
   };
 
-  const handlePayNow = async (orderId: string, amount: number) => {
+  const handlePayNow = async (order: Order) => {
     try {
-      setProcessingId(orderId);
+      setProcessingId(order.id);
+      const gateway = gatewayForPaymentRetry(order.payment_method);
       const data = await postJsonWithFallback(
         '/api/payment/create',
         {
-          order_id: orderId,
-          amount: amount,
+          order_id: order.id,
+          amount: order.total_amount,
           full_name: user?.user_metadata?.full_name || 'Customer',
           email: user?.email,
           frontend_url: window.location.origin,
+          user_id: user?.id,
+          wallet_deduction: 0,
+          gateway,
         },
         { skipErrorPageRedirect: true },
       );
       if (data.success && data.payment_url) {
-        window.location.href = data.payment_url;
+        window.location.href = data.payment_url as string;
       } else {
-        throw new Error(data.message || data.error || 'Failed to initialize payment');
+        throw new Error(
+          (typeof data.message === 'string' && data.message) ||
+            (typeof data.error === 'string' && data.error) ||
+            'Failed to initialize payment',
+        );
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Payment retry error:', error);
-      toast.error('Failed to process payment retry. Please try creating a new order.');
+      const err = error as { message?: string; apiBody?: { message?: string; needs_bkash_agreement?: boolean } };
+      let msg =
+        (typeof err.apiBody?.message === 'string' && err.apiBody.message) ||
+        (error instanceof Error ? error.message : '') ||
+        '';
+      msg = msg.replace(/\s*\[\/api\/[^\]]+\]\s*$/, '').trim();
+      if (err.apiBody?.needs_bkash_agreement) {
+        msg =
+          msg ||
+          'Link your Bkash wallet from checkout first (one-time OTP), then pay from your orders or checkout.';
+      }
+      toast.error(
+        msg ||
+          'Failed to process payment retry. Please try again from the store checkout or create a new order.',
+      );
     } finally {
       setProcessingId(null);
     }
@@ -451,7 +483,7 @@ export const Orders = () => {
                           {effectiveStatus === 'pending' ? (
                             <button
                               type="button"
-                              onClick={() => handlePayNow(order.id, order.total_amount)}
+                              onClick={() => void handlePayNow(order)}
                               disabled={processingId === order.id}
                               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 disabled:opacity-50 transition-colors"
                             >
