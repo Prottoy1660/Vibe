@@ -689,9 +689,9 @@ export const Checkout = () => {
                             : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 bg-zinc-50/50 dark:bg-zinc-900/40'
                         }`}
                       >
-                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash, Nagad, Rocket</p>
+                        <p className="font-semibold text-zinc-900 dark:text-zinc-100">Nagad, Rocket</p>
                         <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                          Mobile wallets, card & bank (UddoktaPay)
+                          Mobile wallets, card & bank — bKash included (UddoktaPay)
                         </p>
                       </button>
                     ) : null}
@@ -709,6 +709,9 @@ export const Checkout = () => {
                         }`}
                       >
                         <p className="font-semibold text-zinc-900 dark:text-zinc-100">bKash</p>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
+                          Direct bKash — link once with OTP; later payments with PIN only
+                        </p>
                       </button>
                     ) : null}
                   </div>
