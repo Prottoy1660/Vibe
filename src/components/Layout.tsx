@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -74,6 +74,11 @@ export const Layout = () => {
   /** `public.users.avatar_url` for topbar — matches Dashboard / Profile default image when empty */
   const [headerAvatarUrl, setHeaderAvatarUrl] = useState<string | null>(null);
   const [headerAvatarGender, setHeaderAvatarGender] = useState<AvatarDefaultGender>('auto');
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+
+  const getScrollKey = useCallback(() => {
+    return `vibe_scroll:${location.pathname}${location.search}`;
+  }, [location.pathname, location.search]);
 
   // Ban check + language personalization (only runs once per login, lightweight)
   useEffect(() => {
@@ -266,6 +271,45 @@ export const Layout = () => {
       supabase.removeChannel(channel);
     };
   }, [isAdmin, refreshOpenSupportTicketCount]);
+
+  // Persist in-app scroll position per route so if the browser discards/reloads the tab,
+  // users return close to where they were instead of always starting at top.
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+
+    const key = getScrollKey();
+    const raw = sessionStorage.getItem(key);
+    if (raw) {
+      const y = Number(raw);
+      if (Number.isFinite(y) && y >= 0) {
+        requestAnimationFrame(() => {
+          el.scrollTop = y;
+        });
+      }
+    }
+  }, [getScrollKey]);
+
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+
+    const key = getScrollKey();
+    const save = () => {
+      sessionStorage.setItem(key, String(el.scrollTop));
+    };
+
+    const onScroll = () => save();
+    const onPageHide = () => save();
+
+    el.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('pagehide', onPageHide);
+
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [getScrollKey]);
 
   const topbarAvatarSrc = useMemo(() => {
     if (!user) return null;
@@ -567,6 +611,7 @@ export const Layout = () => {
 
         {/* Page Content — profile uses flex column so short pages don’t leave a huge empty band below */}
         <main
+          ref={mainScrollRef as React.RefObject<HTMLElement>}
           className={cn(
             'flex-1 min-h-0 overflow-y-auto',
             isProfilePage && 'flex flex-col',
