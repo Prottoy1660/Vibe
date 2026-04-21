@@ -95,6 +95,16 @@ function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
   return groups;
 }
 
+function isSaleReady(email: EmailPool): boolean {
+  // Mirrors the practical assignment gates used by backend RPC.
+  if (email.status !== 'available') return false;
+  if (email.product_id === null || email.product_id === undefined) {
+    return (email.current_users || 0) === 0;
+  }
+  if ((email.current_users || 0) <= 0) return false;
+  return true;
+}
+
 type TabId = 'overview' | 'teams' | 'generate' | 'inventory';
 
 export const AdminEmails = () => {
@@ -792,6 +802,7 @@ export const AdminEmails = () => {
     return e.team_id === inventoryTeamFilter;
   });
   const availableCount = activeEmails.filter((e) => e.status === 'available').length;
+  const saleReadyCount = activeEmails.filter((e) => isSaleReady(e)).length;
   const assignedCount = activeEmails.filter((e) => e.status === 'assigned' || e.status === 'shared').length;
   const todayCount = activeEmails.filter((e) => isToday(parseISO(e.created_at))).length;
   const grouped = groupByDate(filteredForInventory);
@@ -1327,6 +1338,9 @@ export const AdminEmails = () => {
               </select>
               <span className="text-xs text-gray-500">
                 Showing {filteredForInventory.length} of {activeEmails.length} (non-burned)
+              </span>
+              <span className="text-xs text-indigo-600 dark:text-indigo-300">
+                Sale-ready now: {saleReadyCount}
               </span>
               <button
                 type="button"

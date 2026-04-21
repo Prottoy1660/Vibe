@@ -23,6 +23,15 @@ export async function assignEmailForOrder(
   code?: string;
   nextEligibleAt?: string;
 }> {
+  const normalizeAssignmentError = (raw: unknown) => {
+    const msg = String(raw || '').trim();
+    if (!msg) return 'Email assignment failed';
+    if (msg === 'No available emails in the pool') {
+      return 'No compatible emails are currently assignable (fresh empty slots or shared slots not found).';
+    }
+    return msg;
+  };
+
   try {
     // All strict shared-slot rules and concurrency protection are enforced inside the DB RPC.
     const { data, error } = await supabase.rpc('assign_email_for_order_strict_24h', {
@@ -31,14 +40,14 @@ export async function assignEmailForOrder(
 
     if (error) {
       console.error('[assignEmailForOrder] RPC error:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: normalizeAssignmentError(error.message) };
     }
 
     const payload = data as any;
     if (!payload?.success) {
       return {
         success: false,
-        error: payload?.error || 'Email assignment failed',
+        error: normalizeAssignmentError(payload?.error),
         code: payload?.code,
         nextEligibleAt: payload?.next_eligible_at,
       };
@@ -47,6 +56,6 @@ export async function assignEmailForOrder(
     return { success: true, emailId: payload?.email_id || payload?.emailId };
   } catch (err: any) {
     console.error('[assignEmailForOrder] Error:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: normalizeAssignmentError(err.message) };
   }
 }
