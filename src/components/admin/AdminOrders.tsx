@@ -643,12 +643,15 @@ export const AdminOrders = () => {
                   return (
                     <tr
                       key={order.id}
-                      className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] align-top"
+                      className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] align-middle"
                     >
                       <td className="py-4 px-4 max-w-[220px]">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Package className="w-4 h-4 text-gray-400 shrink-0" />
-                          <span className="font-semibold text-gray-900 dark:text-gray-100">
+                          <span
+                            className="block max-w-[170px] truncate font-semibold text-gray-900 dark:text-gray-100"
+                            title={order.products?.title || 'Unknown product'}
+                          >
                             {order.products?.title || 'Unknown product'}
                           </span>
                           {order.products?.is_personal && (
@@ -700,14 +703,14 @@ export const AdminOrders = () => {
                           </div>
                         </div>
                       </td>
-                      <td className="py-4 px-4">
+                      <td className="py-4 px-4 min-w-[220px]">
                         <div className="flex items-start gap-2">
                           <CreditCard className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
-                          <div>
+                          <div className="min-w-0">
                             <p className="font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
                               {money(Number(order.total_amount))}
                             </p>
-                            <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                            <p className="mt-0.5 max-w-[190px] truncate text-xs capitalize text-gray-500" title={`${pay.pretty} · ${pay.status}`}>
                               {pay.pretty} · {pay.status}
                             </p>
                             {String(order.payment_method || '').includes('bkash') &&

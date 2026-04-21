@@ -1096,10 +1096,56 @@ router.post('/bkash-tokenized/finish', requireUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid checkout session.' });
     }
 
+    // Idempotency guard: if this order is already settled (paid/completed), treat repeated finish
+    // callback as success instead of trying to execute the same bKash payment again.
+    const { data: existingCheckoutOrder } = await supabase
+      .from('orders')
+      .select('status, payment_status')
+      .eq('id', row.order_id)
+      .maybeSingle();
+    if (
+      existingCheckoutOrder &&
+      existingCheckoutOrder.payment_status === 'paid' &&
+      (existingCheckoutOrder.status === 'paid' || existingCheckoutOrder.status === 'completed')
+    ) {
+      await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+      return res.json({
+        success: true,
+        flow: 'checkout',
+        redirect_path: `/adobe-email?payment=success&order_id=${row.order_id}`,
+      });
+    }
+
     if (String(execJson.transactionStatus || '') !== 'Completed') {
+      const bkashMsg = String(execJson.errorMessage || execJson.statusMessage || 'Payment was not completed.');
+      const duplicateTxn = /duplicate\s+for\s+all\s+transactions/i.test(bkashMsg);
+      if (duplicateTxn) {
+        const { data: duplicateOrder } = await supabase
+          .from('orders')
+          .select('status, payment_status')
+          .eq('id', row.order_id)
+          .maybeSingle();
+        if (
+          duplicateOrder &&
+          duplicateOrder.payment_status === 'paid' &&
+          (duplicateOrder.status === 'paid' || duplicateOrder.status === 'completed')
+        ) {
+          await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+          return res.json({
+            success: true,
+            flow: 'checkout',
+            redirect_path: `/adobe-email?payment=success&order_id=${row.order_id}`,
+          });
+        }
+        await supabase.from('bkash_pending_sessions').delete().eq('payment_id', paymentID);
+        return res.status(409).json({
+          success: false,
+          message: 'This bKash transaction reference was already used. Please start payment again from checkout.',
+        });
+      }
       return res.status(400).json({
         success: false,
-        message: String(execJson.errorMessage || execJson.statusMessage || 'Payment was not completed.'),
+        message: bkashMsg,
       });
     }
 
