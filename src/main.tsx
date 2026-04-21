@@ -9,11 +9,19 @@ import './index.css';
 function isChunkLoadFailure(err: unknown): boolean {
   const msg =
     (err instanceof Error ? err.message : typeof err === 'string' ? err : '')?.toString?.() || '';
+  const lower = msg.toLowerCase();
+  // Avoid false positives from unrelated extension/runtime script errors.
+  const looksLikeAppAssetFailure =
+    lower.includes('/assets/') ||
+    lower.includes('assets/') ||
+    lower.includes('.js') ||
+    lower.includes('.mjs');
   return (
-    /ChunkLoadError/i.test(msg) ||
-    /Loading chunk [\d]+ failed/i.test(msg) ||
-    /Failed to fetch dynamically imported module/i.test(msg) ||
-    /Importing a module script failed/i.test(msg)
+    looksLikeAppAssetFailure &&
+    (/ChunkLoadError/i.test(msg) ||
+      /Loading chunk [\d]+ failed/i.test(msg) ||
+      /Failed to fetch dynamically imported module/i.test(msg) ||
+      /Importing a module script failed/i.test(msg))
   );
 }
 
@@ -71,7 +79,9 @@ const isTauriRuntime =
 if ('serviceWorker' in navigator && !isTauriRuntime && !isAndroidRuntime) {
   import('virtual:pwa-register').then(({ registerSW }) => {
     const updateSW = registerSW({
-      immediate: true,
+      // Do not force immediate activation checks while user is actively browsing;
+      // this helps avoid unexpected refresh behavior after tab switches.
+      immediate: false,
       onNeedRefresh() {
         toast.message('New version available', {
           description: 'Reload to update. Your current page will not auto-reload.',

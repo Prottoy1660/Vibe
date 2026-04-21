@@ -10,12 +10,12 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: any[];
 };
 
-// Activate new SW ASAP to reduce "old HTML + new chunks" mismatches.
-self.addEventListener('install', () => {
-  self.skipWaiting();
-});
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+// Use conservative activation to avoid surprise page reload/restart behavior.
+// New worker waits until user explicitly updates from the in-app prompt.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 cleanupOutdatedCaches();
