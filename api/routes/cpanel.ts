@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import imaps from 'imap-simple';
 import { simpleParser, type ParsedMail } from 'mailparser';
 import { createClient } from '@supabase/supabase-js';
+import { randomInt } from 'node:crypto';
 import { grantAdobeCloudAccess } from '../lib/adobeApi.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
 import { buildInboxSnippetFromBody, extractAdobeVerificationCode } from '../../src/lib/inboxSnippet.ts';
@@ -93,13 +94,46 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
   }
 };
 
-function generateStrongMailboxPassword(length = 14): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*';
-  let out = '';
-  for (let i = 0; i < length; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
+const PASSWORD_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const PASSWORD_LOWER = 'abcdefghijkmnopqrstuvwxyz';
+const PASSWORD_NUMBER = '23456789';
+const PASSWORD_SYMBOL = '!@#$%^&*';
+const PASSWORD_ALL = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_NUMBER}${PASSWORD_SYMBOL}`;
+const COMMON_PASSWORD_FRAGMENTS = ['password', 'adobe', 'qwerty', '123456', 'letmein', 'welcome'];
+
+function randomFromCharset(charset: string): string {
+  return charset.charAt(randomInt(0, charset.length));
+}
+
+function shuffleChars(chars: string[]): string[] {
+  const out = [...chars];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = randomInt(0, i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
   }
   return out;
+}
+
+function generateStrongMailboxPassword(length = 14): string {
+  const safeLength = Math.max(12, length);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const chars: string[] = [
+      randomFromCharset(PASSWORD_UPPER),
+      randomFromCharset(PASSWORD_LOWER),
+      randomFromCharset(PASSWORD_NUMBER),
+      randomFromCharset(PASSWORD_SYMBOL),
+    ];
+    while (chars.length < safeLength) {
+      chars.push(randomFromCharset(PASSWORD_ALL));
+    }
+    const candidate = shuffleChars(chars).join('');
+    const lower = candidate.toLowerCase();
+    if (!COMMON_PASSWORD_FRAGMENTS.some((fragment) => lower.includes(fragment))) {
+      return candidate;
+    }
+  }
+
+  return `${randomFromCharset(PASSWORD_UPPER)}${randomFromCharset(PASSWORD_LOWER)}${randomFromCharset(PASSWORD_NUMBER)}${randomFromCharset(PASSWORD_SYMBOL)}${Array.from({ length: Math.max(8, safeLength - 4) }, () => randomFromCharset(PASSWORD_ALL)).join('')}`;
 }
 
 // Endpoint to create email accounts via cPanel API

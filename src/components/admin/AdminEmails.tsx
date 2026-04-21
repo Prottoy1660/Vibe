@@ -114,6 +114,58 @@ function isSaleReady(email: EmailPool): boolean {
   return true;
 }
 
+const PASSWORD_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const PASSWORD_LOWER = 'abcdefghijkmnopqrstuvwxyz';
+const PASSWORD_NUMBER = '23456789';
+const PASSWORD_SYMBOL = '!@#$%^&*';
+const PASSWORD_ALL = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_NUMBER}${PASSWORD_SYMBOL}`;
+const COMMON_PASSWORD_FRAGMENTS = [
+  'password',
+  'adobe',
+  'qwerty',
+  '123456',
+  'letmein',
+  'welcome',
+];
+
+function randomFromCharset(charset: string): string {
+  const random = new Uint32Array(1);
+  crypto.getRandomValues(random);
+  return charset.charAt(random[0] % charset.length);
+}
+
+function shuffleChars(chars: string[]): string[] {
+  const out = [...chars];
+  for (let i = out.length - 1; i > 0; i--) {
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    const j = random[0] % (i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function generateAdobeCompliantPassword(length = 14): string {
+  const safeLength = Math.max(12, length);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const chars: string[] = [
+      randomFromCharset(PASSWORD_UPPER),
+      randomFromCharset(PASSWORD_LOWER),
+      randomFromCharset(PASSWORD_NUMBER),
+      randomFromCharset(PASSWORD_SYMBOL),
+    ];
+    while (chars.length < safeLength) {
+      chars.push(randomFromCharset(PASSWORD_ALL));
+    }
+    const candidate = shuffleChars(chars).join('');
+    const lower = candidate.toLowerCase();
+    if (!COMMON_PASSWORD_FRAGMENTS.some((fragment) => lower.includes(fragment))) {
+      return candidate;
+    }
+  }
+  return `${randomFromCharset(PASSWORD_UPPER)}${randomFromCharset(PASSWORD_LOWER)}${randomFromCharset(PASSWORD_NUMBER)}${randomFromCharset(PASSWORD_SYMBOL)}${Array.from({ length: Math.max(8, safeLength - 4) }, () => randomFromCharset(PASSWORD_ALL)).join('')}`;
+}
+
 type TabId = 'overview' | 'teams' | 'generate' | 'inventory';
 
 export const AdminEmails = () => {
@@ -506,12 +558,7 @@ export const AdminEmails = () => {
     navigator.clipboard.writeText(text);
   };
 
-  const generateRandomPassword = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
-    let pass = '';
-    for (let i = 0; i < 12; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
-    return pass;
-  };
+  const generateRandomPassword = () => generateAdobeCompliantPassword(14);
 
   const handleBulkAssign = async () => {
     const ok = await confirm({
