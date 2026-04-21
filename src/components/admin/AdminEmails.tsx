@@ -76,6 +76,15 @@ type InboxMessage = {
   code: string | null;
 };
 
+type SlotAssignment = {
+  id: string;
+  user_id: string;
+  order_id: string;
+  created_at: string | null;
+  user: { name: string | null; email: string | null; phone: string | null } | null;
+  order: { status: string | null; payment_status: string | null; created_at: string | null } | null;
+};
+
 /** Strip ILIKE wildcards so user input cannot broaden the pattern. */
 function sanitizeEmailSearchFragment(s: string): string {
   return s.replace(/\\/g, '').replace(/%/g, '').replace(/_/g, '').trim();
@@ -124,6 +133,10 @@ export const AdminEmails = () => {
   const [inboxCredentials, setInboxCredentials] = useState<{ email: string; password?: string } | null>(null);
   const [rotatingSingleId, setRotatingSingleId] = useState<string | null>(null);
   const [rotatingBulk, setRotatingBulk] = useState(false);
+  const [slotModalEmail, setSlotModalEmail] = useState<EmailPool | null>(null);
+  const [slotAssignments, setSlotAssignments] = useState<SlotAssignment[]>([]);
+  const [slotLoading, setSlotLoading] = useState(false);
+  const [slotMutating, setSlotMutating] = useState(false);
 
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
@@ -710,6 +723,78 @@ export const AdminEmails = () => {
   const refreshInbox = async () => {
     if (!inboxCredentials?.email) return;
     await loadInboxMessages(inboxCredentials.email, inboxCredentials.password, { closeOnError: false });
+  };
+
+  const loadSlotAssignments = async (emailRow: EmailPool) => {
+    setSlotModalEmail(emailRow);
+    setSlotLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/emails/${emailRow.id}/assignments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to load slot assignments');
+      setSlotAssignments((data.assignments || []) as SlotAssignment[]);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load slot assignments');
+      setSlotModalEmail(null);
+      setSlotAssignments([]);
+    } finally {
+      setSlotLoading(false);
+    }
+  };
+
+  const closeSlotModal = () => {
+    if (slotMutating) return;
+    setSlotModalEmail(null);
+    setSlotAssignments([]);
+    setSlotLoading(false);
+  };
+
+  const releaseSlotAssignments = async (options: { assignmentId?: string; releaseAll?: boolean }) => {
+    if (!slotModalEmail) return;
+    const releaseAll = options.releaseAll === true;
+    const assignmentId = options.assignmentId;
+    const ok = await confirm({
+      title: releaseAll ? `Remove all users from ${slotModalEmail.email}?` : 'Remove this user from slot?',
+      description: releaseAll
+        ? 'This will clear all active users from this mailbox slot so it can be reused.'
+        : 'This will remove only the selected user from this mailbox slot.',
+      confirmLabel: releaseAll ? 'Remove all' : 'Remove user',
+      variant: 'danger',
+    });
+    if (!ok) return;
+
+    setSlotMutating(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/emails/${slotModalEmail.id}/release-assignment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          release_all: releaseAll,
+          assignment_id: assignmentId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to release slot assignment');
+      toast.success(data?.message || 'Slot assignment updated');
+      await fetchEmails();
+      await fetchUnfulfilledCount();
+      await loadSlotAssignments(slotModalEmail);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to release slot assignment');
+    } finally {
+      setSlotMutating(false);
+    }
   };
 
   const rotatePasswords = async (targets: Array<{ id: string; email: string }>) => {
@@ -1602,6 +1687,15 @@ export const AdminEmails = () => {
                                 <div className="inline-flex items-center gap-1.5">
                                   <button
                                     type="button"
+                                    onClick={() => void loadSlotAssignments(email)}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-violet-200/90 dark:border-violet-500/30 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10"
+                                    title="View slot users and remove assignments"
+                                  >
+                                    <Users className="w-3.5 h-3.5" />
+                                    Slots
+                                  </button>
+                                  <button
+                                    type="button"
                                     onClick={() => void handleOpenInbox(email.email, email.password)}
                                     className="inline-flex items-center gap-1 rounded-lg border border-indigo-200/90 dark:border-indigo-500/30 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
                                     title="Open inbox"
@@ -1784,6 +1878,101 @@ export const AdminEmails = () => {
           )}
         </div>
       )}
+      {slotModalEmail &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div className="fixed inset-0 z-[112] flex min-h-[100dvh] w-full items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-3xl max-h-[86vh] flex flex-col overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-[#1a1a1f]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 leading-tight">Slot users</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-all">{slotModalEmail.email}</p>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                      Current active users: <span className="font-semibold">{slotAssignments.length}</span>
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void loadSlotAssignments(slotModalEmail)}
+                      disabled={slotLoading || slotMutating}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${slotLoading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeSlotModal}
+                      disabled={slotMutating}
+                      className="p-2 text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/10 rounded-lg transition-colors disabled:opacity-50"
+                      aria-label="Close slot modal"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 bg-gray-50/50 dark:bg-[#12121a]/50">
+                {slotLoading ? (
+                  <div className="flex flex-col items-center justify-center py-14 px-4">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mb-4" />
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Loading slot users...</p>
+                  </div>
+                ) : slotAssignments.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-gray-200 dark:border-zinc-700 bg-gray-50/80 dark:bg-zinc-900/40 px-5 py-10 text-center">
+                    <p className="text-base font-semibold text-gray-900 dark:text-gray-100">No active users in this slot</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      This mailbox is ready to be assigned again when a matching order appears.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => void releaseSlotAssignments({ releaseAll: true })}
+                        disabled={slotMutating}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-300/80 dark:border-red-500/30 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Remove all from slot
+                      </button>
+                    </div>
+                    {slotAssignments.map((a) => (
+                      <div
+                        key={a.id}
+                        className="bg-white dark:bg-[#18181f] border border-gray-200 dark:border-[#2e2e38] rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                            {a.user?.name || 'Unknown user'}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{a.user?.email || a.user_id}</p>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                            Order: <span className="font-mono">{a.order_id.slice(0, 8)}</span> ·{' '}
+                            <span className="capitalize">{a.order?.status || 'unknown'}</span>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void releaseSlotAssignments({ assignmentId: a.id })}
+                          disabled={slotMutating}
+                          className="inline-flex items-center gap-1 rounded-lg border border-red-300/80 dark:border-red-500/30 px-2.5 py-1.5 text-[11px] font-semibold text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 disabled:opacity-50 shrink-0"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
       {isInboxOpen &&
         typeof document !== 'undefined' &&
         createPortal(

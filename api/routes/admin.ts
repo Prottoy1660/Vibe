@@ -269,6 +269,177 @@ const verifyAdmin = async (req: express.Request, res: express.Response, next: ex
   }
 };
 
+async function recalculateEmailPoolOccupancy(emailId: string): Promise<void> {
+  const { data: poolRow, error: poolErr } = await supabase
+    .from('emails_pool')
+    .select('id, product_id, is_burned')
+    .eq('id', emailId)
+    .maybeSingle();
+  if (poolErr) throw poolErr;
+  if (!poolRow) throw new Error('Email pool row not found');
+  if ((poolRow as any).is_burned) return;
+
+  const { count: activeCount, error: countErr } = await supabase
+    .from('user_emails')
+    .select('id', { count: 'exact', head: true })
+    .eq('email_id', emailId)
+    .eq('is_active', true);
+  if (countErr) throw countErr;
+
+  const nextCount = Number(activeCount || 0);
+  if (nextCount <= 0) {
+    const { error: resetErr } = await supabase
+      .from('emails_pool')
+      .update({
+        current_users: 0,
+        status: 'available',
+        product_id: null,
+        assigned_at: null,
+      })
+      .eq('id', emailId);
+    if (resetErr) throw resetErr;
+    return;
+  }
+
+  let maxUsers = 1;
+  const productId = (poolRow as any).product_id as string | null;
+  if (productId) {
+    const { data: prod, error: prodErr } = await supabase
+      .from('products')
+      .select('max_users_per_email')
+      .eq('id', productId)
+      .maybeSingle();
+    if (prodErr) throw prodErr;
+    maxUsers = Math.max(1, Number((prod as any)?.max_users_per_email || 1));
+  }
+
+  const { error: updErr } = await supabase
+    .from('emails_pool')
+    .update({
+      current_users: nextCount,
+      status: nextCount >= maxUsers ? 'assigned' : 'available',
+    })
+    .eq('id', emailId);
+  if (updErr) throw updErr;
+}
+
+router.get('/emails/:emailId/assignments', verifyAdmin, async (req, res) => {
+  try {
+    const emailId = String(req.params.emailId || '').trim();
+    if (!emailId) return res.status(400).json({ success: false, error: 'emailId is required' });
+
+    const { data: poolRow, error: poolErr } = await supabase
+      .from('emails_pool')
+      .select('id, email, status, current_users, product_id, assigned_at, is_burned')
+      .eq('id', emailId)
+      .maybeSingle();
+    if (poolErr) throw poolErr;
+    if (!poolRow) return res.status(404).json({ success: false, error: 'Email not found in pool' });
+
+    const { data: assignments, error: assignErr } = await supabase
+      .from('user_emails')
+      .select('id, user_id, order_id, is_active, created_at')
+      .eq('email_id', emailId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true });
+    if (assignErr) throw assignErr;
+
+    const rows = (assignments || []) as Array<{
+      id: string;
+      user_id: string;
+      order_id: string;
+      is_active: boolean;
+      created_at?: string;
+    }>;
+    const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
+    const orderIds = [...new Set(rows.map((r) => r.order_id).filter(Boolean))];
+
+    let usersMap = new Map<string, { name: string | null; email: string | null; phone: string | null }>();
+    if (userIds.length > 0) {
+      const { data: userRows, error: userErr } = await supabase
+        .from('users')
+        .select('id, name, email, phone')
+        .in('id', userIds);
+      if (userErr) throw userErr;
+      usersMap = new Map(
+        ((userRows || []) as Array<{ id: string; name: string | null; email: string | null; phone: string | null }>).map((u) => [
+          u.id,
+          { name: u.name, email: u.email, phone: u.phone },
+        ]),
+      );
+    }
+
+    let ordersMap = new Map<string, { status: string | null; payment_status: string | null; created_at: string | null }>();
+    if (orderIds.length > 0) {
+      const { data: orderRows, error: orderErr } = await supabase
+        .from('orders')
+        .select('id, status, payment_status, created_at')
+        .in('id', orderIds);
+      if (orderErr) throw orderErr;
+      ordersMap = new Map(
+        ((orderRows || []) as Array<{ id: string; status: string | null; payment_status: string | null; created_at: string | null }>).map(
+          (o) => [o.id, { status: o.status, payment_status: o.payment_status, created_at: o.created_at }],
+        ),
+      );
+    }
+
+    return res.json({
+      success: true,
+      email: poolRow,
+      assignments: rows.map((r) => ({
+        id: r.id,
+        user_id: r.user_id,
+        order_id: r.order_id,
+        created_at: r.created_at || null,
+        user: usersMap.get(r.user_id) || null,
+        order: ordersMap.get(r.order_id) || null,
+      })),
+    });
+  } catch (error: any) {
+    console.error('admin email assignments:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load slot assignments' });
+  }
+});
+
+router.post('/emails/:emailId/release-assignment', verifyAdmin, async (req, res) => {
+  try {
+    const emailId = String(req.params.emailId || '').trim();
+    const assignmentId = String(req.body?.assignment_id || '').trim();
+    const releaseAll = req.body?.release_all === true;
+    if (!emailId) return res.status(400).json({ success: false, error: 'emailId is required' });
+    if (!releaseAll && !assignmentId) {
+      return res.status(400).json({ success: false, error: 'assignment_id is required when release_all is false' });
+    }
+
+    let q = supabase
+      .from('user_emails')
+      .select('id')
+      .eq('email_id', emailId)
+      .eq('is_active', true);
+    if (!releaseAll) q = q.eq('id', assignmentId);
+    const { data: targetRows, error: targetErr } = await q;
+    if (targetErr) throw targetErr;
+    if (!targetRows || targetRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'No active assignment found for this request' });
+    }
+
+    const ids = targetRows.map((r: any) => String(r.id));
+    const { error: relErr } = await supabase.from('user_emails').update({ is_active: false }).in('id', ids);
+    if (relErr) throw relErr;
+
+    await recalculateEmailPoolOccupancy(emailId);
+
+    return res.json({
+      success: true,
+      released: ids.length,
+      message: releaseAll ? 'All users removed from this slot' : 'User removed from this slot',
+    });
+  } catch (error: any) {
+    console.error('admin release email assignment:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to release slot assignment' });
+  }
+});
+
 /**
  * List orders with service role (bypasses RLS). Admin UI used to query PostgREST as the logged-in user;
  * if public.users.role is missing/wrong, is_admin() is false and only own rows appear — empty order/finance/analytics.
