@@ -25,21 +25,6 @@ function isChunkLoadFailure(err: unknown): boolean {
   );
 }
 
-function reloadOnceForChunkFailure() {
-  const key = 'reloaded_for_chunk_failure_v1';
-  if (typeof window === 'undefined') return;
-  try {
-    if (sessionStorage.getItem(key) === '1') return;
-    sessionStorage.setItem(key, '1');
-  } catch {
-    // ignore
-  }
-  // Hard reload: bypass SW/HTTP caches as much as possible.
-  const u = new URL(window.location.href);
-  u.searchParams.set('__r', Date.now().toString());
-  window.location.replace(u.toString());
-}
-
 if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID !== 'function') {
   const fallbackRandomUUID = () => {
     const bytes = new Uint8Array(16);
@@ -57,15 +42,24 @@ if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomU
 }
 
 // If a deploy happens while a user is browsing, old cached chunks can mismatch new HTML.
-// Catch the common "chunk failed to load" errors and force a one-time reload.
+// Catch chunk mismatch errors and notify user to manually refresh.
+// We intentionally avoid automatic hard reload to prevent surprise page resets.
 if (typeof window !== 'undefined') {
   window.addEventListener('error', (e) => {
     const anyE = e as any;
-    if (isChunkLoadFailure(anyE?.error || anyE?.message)) reloadOnceForChunkFailure();
+    if (isChunkLoadFailure(anyE?.error || anyE?.message)) {
+      toast.warning('Update needed', {
+        description: 'A file failed to load. Please refresh this page once.',
+      });
+    }
   });
   window.addEventListener('unhandledrejection', (e) => {
     const anyE = e as any;
-    if (isChunkLoadFailure(anyE?.reason)) reloadOnceForChunkFailure();
+    if (isChunkLoadFailure(anyE?.reason)) {
+      toast.warning('Update needed', {
+        description: 'A file failed to load. Please refresh this page once.',
+      });
+    }
   });
 }
 
