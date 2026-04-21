@@ -338,10 +338,10 @@ router.get('/emails/:emailId/assignments', verifyAdmin, async (req, res) => {
 
     const { data: assignments, error: assignErr } = await supabase
       .from('user_emails')
-      .select('id, user_id, order_id, is_active, created_at')
+      .select('id, user_id, order_id, is_active')
       .eq('email_id', emailId)
       .eq('is_active', true)
-      .order('created_at', { ascending: true });
+      .order('id', { ascending: true });
     if (assignErr) throw assignErr;
 
     const rows = (assignments || []) as Array<{
@@ -349,7 +349,6 @@ router.get('/emails/:emailId/assignments', verifyAdmin, async (req, res) => {
       user_id: string;
       order_id: string;
       is_active: boolean;
-      created_at?: string;
     }>;
     const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
     const orderIds = [...new Set(rows.map((r) => r.order_id).filter(Boolean))];
@@ -390,7 +389,7 @@ router.get('/emails/:emailId/assignments', verifyAdmin, async (req, res) => {
         id: r.id,
         user_id: r.user_id,
         order_id: r.order_id,
-        created_at: r.created_at || null,
+        created_at: null,
         user: usersMap.get(r.user_id) || null,
         order: ordersMap.get(r.order_id) || null,
       })),

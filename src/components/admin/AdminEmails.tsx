@@ -1665,14 +1665,14 @@ export const AdminEmails = () => {
                                   </div>
                                 ) : email.products?.max_users_per_email && email.products.max_users_per_email > 1 ? (
                                   <div
-                                    className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full border max-w-max ${
+                                    className={`flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold px-2 py-0.5 rounded-full border max-w-max ${
                                       (email.current_users || 0) >= email.products.max_users_per_email
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300'
                                         : 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300'
                                     }`}
                                   >
                                     <Users className="w-3 h-3" />
-                                    {email.current_users || 0} / {email.products.max_users_per_email}
+                                    {email.current_users || 0}/{email.products.max_users_per_email}
                                   </div>
                                 ) : (
                                   <div className="flex items-center gap-1.5 text-gray-400 text-xs font-medium">
@@ -1688,7 +1688,7 @@ export const AdminEmails = () => {
                                   <button
                                     type="button"
                                     onClick={() => void loadSlotAssignments(email)}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-violet-200/90 dark:border-violet-500/30 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10"
+                                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-violet-200/90 dark:border-violet-500/30 px-2 py-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-500/10"
                                     title="View slot users and remove assignments"
                                   >
                                     <Users className="w-3.5 h-3.5" />
@@ -1697,7 +1697,7 @@ export const AdminEmails = () => {
                                   <button
                                     type="button"
                                     onClick={() => void handleOpenInbox(email.email, email.password)}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-indigo-200/90 dark:border-indigo-500/30 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
+                                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-indigo-200/90 dark:border-indigo-500/30 px-2 py-1 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10"
                                     title="Open inbox"
                                   >
                                     <Inbox className="w-3.5 h-3.5" />
@@ -1707,7 +1707,7 @@ export const AdminEmails = () => {
                                     type="button"
                                     onClick={() => void handleRotateSinglePassword(email)}
                                     disabled={rotatingSingleId === email.id}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200/90 dark:border-emerald-500/30 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-50"
+                                    className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-emerald-200/90 dark:border-emerald-500/30 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-50"
                                     title="Generate new password"
                                   >
                                     {rotatingSingleId === email.id ? (
