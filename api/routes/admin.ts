@@ -232,6 +232,73 @@ async function releaseOrderEmailsAndMarkRefunded(orderId: string): Promise<void>
   if (ordErr) throw ordErr;
 }
 
+/**
+ * Release pool emails linked to an order without changing order status.
+ * Used before hard-deleting orders so email slot counters stay consistent.
+ */
+async function releaseOrderEmailsOnly(orderId: string): Promise<void> {
+  const { data: userEmails } = await supabase.from('user_emails').select('email_id').eq('order_id', orderId);
+  if (!userEmails || userEmails.length === 0) return;
+
+  const emailIds = userEmails.map((ue: { email_id: string }) => ue.email_id);
+  const { data: poolRows, error: poolErr } = await supabase
+    .from('emails_pool')
+    .select('id,current_users,product_id,is_burned')
+    .in('id', emailIds);
+  if (poolErr) throw poolErr;
+
+  const productIds = Array.from(new Set((poolRows || []).map((r: { product_id: string | null }) => r.product_id).filter(Boolean)));
+  let productsRows: { id: string; max_users_per_email: number | null }[] = [];
+  if (productIds.length > 0) {
+    const { data: pr, error: prodErr } = await supabase
+      .from('products')
+      .select('id,max_users_per_email')
+      .in('id', productIds as string[]);
+    if (prodErr) throw prodErr;
+    productsRows = (pr || []) as { id: string; max_users_per_email: number | null }[];
+  }
+
+  const maxMap = new Map(productsRows.map((p) => [p.id, p.max_users_per_email]));
+
+  for (const row of poolRows || []) {
+    const r = row as {
+      id: string;
+      current_users: number | null;
+      product_id: string | null;
+      is_burned: boolean | null;
+    };
+    if (r.is_burned) continue;
+    const current = Number(r.current_users || 0);
+    const nextCount = Math.max(0, current - 1);
+    const maxUsers = Number(maxMap.get(r.product_id as string) || 1);
+
+    if (nextCount === 0) {
+      const { error: uErr } = await supabase
+        .from('emails_pool')
+        .update({
+          status: 'available',
+          assigned_at: null,
+          product_id: null,
+          current_users: 0,
+        })
+        .eq('id', r.id);
+      if (uErr) throw uErr;
+    } else {
+      const { error: uErr } = await supabase
+        .from('emails_pool')
+        .update({
+          current_users: nextCount,
+          status: nextCount >= maxUsers ? 'assigned' : 'available',
+        })
+        .eq('id', r.id);
+      if (uErr) throw uErr;
+    }
+  }
+
+  const { error: delUe } = await supabase.from('user_emails').delete().eq('order_id', orderId);
+  if (delUe) throw delUe;
+}
+
 // Middleware to verify admin
 const verifyAdmin = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
   try {
@@ -601,6 +668,48 @@ router.post('/orders/:orderId/refund', verifyAdmin, async (req, res) => {
   } catch (e: any) {
     console.error('admin orders/refund:', e);
     return res.status(500).json({ success: false, error: e?.message || 'Refund failed' });
+  }
+});
+
+router.delete('/orders/:orderId', verifyAdmin, async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    if (!orderId) return res.status(400).json({ success: false, error: 'Order ID is required.' });
+
+    await releaseOrderEmailsOnly(orderId);
+    const { error } = await supabase.from('orders').delete().eq('id', orderId);
+    if (error) throw error;
+
+    return res.json({ success: true, message: 'Order deleted and slot counters synced.' });
+  } catch (error: any) {
+    console.error('delete order with sync:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to delete order.' });
+  }
+});
+
+router.post('/orders/delete-pending', verifyAdmin, async (_req, res) => {
+  try {
+    const { data: rows, error: qErr } = await supabase
+      .from('orders')
+      .select('id')
+      .eq('status', 'pending')
+      .neq('payment_method', 'redeem_code')
+      .limit(5000);
+    if (qErr) throw qErr;
+
+    const ids = (rows || []).map((r: any) => String(r.id));
+    for (const id of ids) {
+      await releaseOrderEmailsOnly(id);
+    }
+    if (ids.length > 0) {
+      const { error: delErr } = await supabase.from('orders').delete().in('id', ids);
+      if (delErr) throw delErr;
+    }
+
+    return res.json({ success: true, deleted: ids.length });
+  } catch (error: any) {
+    console.error('delete pending orders with sync:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to delete pending orders.' });
   }
 });
 

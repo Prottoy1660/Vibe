@@ -435,13 +435,17 @@ export const AdminOrders = () => {
 
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from('orders')
-        .delete()
-        .eq('status', 'pending')
-        .neq('payment_method', 'redeem_code');
-
-      if (error) throw error;
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/orders/delete-pending`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to delete pending orders');
+      }
 
       toast.success('All pending orders removed.');
       fetchOrders();
@@ -461,9 +465,15 @@ export const AdminOrders = () => {
     if (!ok) return;
 
     try {
-      const { error } = await supabase.from('orders').delete().eq('id', orderId);
-
-      if (error) throw error;
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to delete order');
 
       fetchOrders();
     } catch (error) {
