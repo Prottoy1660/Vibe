@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound } from 'lucide-react';
+import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound, LogIn } from 'lucide-react';
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 
@@ -179,6 +180,29 @@ export const AdminUsers = () => {
 
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Failed to delete user');
+  };
+
+  const loginAsUser = async (target: User) => {
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Not authenticated');
+
+      const API_URL = getApiBaseUrl();
+      const response = await fetch(`${API_URL}/api/admin/users/${target.id}/impersonate`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to start impersonation');
+      const actionLink = String(result.action_link || '');
+      if (!actionLink) throw new Error('Missing action link from server');
+      window.location.assign(actionLink);
+    } catch (error: any) {
+      console.error('impersonation failed:', error);
+      toast.error(error?.message || 'Could not login as user');
+    }
   };
 
   if (loading) {
@@ -510,7 +534,7 @@ export const AdminUsers = () => {
                 </td>
 
                 <td className="py-3 px-4 text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-2 flex-wrap">
                     <button
                       onClick={() => setSelectedUserId(u.id)}
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
@@ -545,6 +569,16 @@ export const AdminUsers = () => {
                       type="button"
                     >
                       {u.role === 'admin' ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                    </button>
+
+                    <button
+                      onClick={() => loginAsUser(u)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-colors"
+                      title="Login as this user"
+                      type="button"
+                    >
+                      <LogIn className="w-4 h-4" />
+                      Login as
                     </button>
 
                     <button

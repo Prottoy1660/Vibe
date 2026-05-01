@@ -6,6 +6,7 @@ import {
   Search,
   Filter,
   RefreshCw,
+  Save,
   Server,
   Database,
   ChevronDown,
@@ -19,6 +20,8 @@ import {
   rowMatchesSearch,
 } from '../../lib/adminActivityLogLabels';
 import { toast } from '../../lib/toast';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 interface LogRow {
   id: string;
@@ -47,6 +50,10 @@ export const AdminActivityLog = () => {
   const [dateFrom, setDateFrom] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'));
   const [dateTo, setDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [purging, setPurging] = useState(false);
+  const [loggingEnabled, setLoggingEnabled] = useState(true);
+  const [logReads, setLogReads] = useState(false);
+  const [savingLogging, setSavingLogging] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -94,6 +101,25 @@ export const AdminActivityLog = () => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const loadLoggingSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'admin_activity_logging')
+          .maybeSingle();
+        if (error) throw error;
+        const value = (data?.value || {}) as { enabled?: boolean; log_reads?: boolean };
+        setLoggingEnabled(value.enabled !== false);
+        setLogReads(value.log_reads === true);
+      } catch {
+        // Keep defaults if settings row unavailable.
+      }
+    };
+    void loadLoggingSettings();
+  }, []);
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
@@ -101,6 +127,65 @@ export const AdminActivityLog = () => {
   }, [rows, q]);
 
   const toggleRow = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+
+  const purgeAllLogs = useCallback(async () => {
+    const yes = window.confirm('Delete all accumulated admin activity logs up to now? This cannot be undone.');
+    if (!yes) return;
+
+    setPurging(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Not authenticated');
+
+      const base = getApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/ops/activity-logs/purge`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; deleted?: number };
+      if (!res.ok) throw new Error(data.error || 'Failed to purge activity logs');
+      toast.success(`Deleted ${Number(data.deleted || 0).toLocaleString()} activity logs.`);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to purge activity logs');
+    } finally {
+      setPurging(false);
+    }
+  }, [load]);
+
+  const saveLoggingSettings = useCallback(async () => {
+    setSavingLogging(true);
+    try {
+      const value = {
+        enabled: loggingEnabled,
+        log_reads: logReads,
+      };
+      const { data, error } = await supabase
+        .from('system_settings')
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq('key', 'admin_activity_logging')
+        .select('key');
+      if (error) throw error;
+      if (!data?.length) {
+        throw new Error('Activity logging settings row missing. Run migration 080_admin_activity_logging_controls.sql');
+      }
+      toast.success(
+        loggingEnabled
+          ? logReads
+            ? 'Activity logging ON (with read requests).'
+            : 'Activity logging ON (write-only).'
+          : 'Activity logging OFF.',
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not save activity logging settings');
+    } finally {
+      setSavingLogging(false);
+    }
+  }, [loggingEnabled, logReads]);
 
   return (
     <div className="space-y-6 pb-12">
@@ -124,6 +209,40 @@ export const AdminActivityLog = () => {
       </div>
 
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-4 md:p-5 shadow-sm space-y-4">
+        <div className="rounded-xl border border-rose-200/80 dark:border-rose-500/30 bg-rose-50/50 dark:bg-rose-500/10 p-3">
+          <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">Activity collection control</p>
+          <div className="mt-2 space-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+              <input
+                type="checkbox"
+                checked={loggingEnabled}
+                onChange={(e) => setLoggingEnabled(e.target.checked)}
+                className="rounded border-rose-300 text-rose-600 focus:ring-rose-500"
+              />
+              Enable activity logging
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+              <input
+                type="checkbox"
+                checked={logReads}
+                disabled={!loggingEnabled}
+                onChange={(e) => setLogReads(e.target.checked)}
+                className="rounded border-rose-300 text-rose-600 focus:ring-rose-500 disabled:opacity-60"
+              />
+              Include read requests (GET/HEAD/OPTIONS)
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={() => void saveLoggingSettings()}
+            disabled={savingLogging}
+            className="mt-3 inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-rose-600 text-white hover:bg-rose-500 disabled:opacity-50"
+          >
+            {savingLogging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save logging mode
+          </button>
+        </div>
+
         <div className="flex flex-col xl:flex-row xl:items-end gap-3 flex-wrap">
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600 dark:text-gray-400 min-w-[140px]">
             From
@@ -177,6 +296,15 @@ export const AdminActivityLog = () => {
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => void purgeAllLogs()}
+            disabled={purging}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-500 disabled:opacity-50 shrink-0"
+          >
+            {purging ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Delete all logs
           </button>
         </div>
 

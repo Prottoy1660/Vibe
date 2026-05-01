@@ -63,6 +63,7 @@ const API_EXACT: Record<string, string> = {
   'GET /api/admin/ops/support-chat/training': 'Opened support chat training data',
   'DELETE /api/admin/ops/support-chat/training': 'Cleared support chat training data',
   'POST /api/admin/ops/activity-logs/purge': 'Purged admin activity logs',
+  'POST /api/admin/users/:id/impersonate': 'Logged in as a user from admin panel',
   // Redeem (admin)
   'GET /api/admin/orders/query': 'Listed orders (admin query)',
   'GET /api/admin/finance/operational-expenses': 'Listed operational expenses',
@@ -93,6 +94,7 @@ const API_PATTERN: Array<{ re: RegExp; label: string }> = [
   { re: /^POST \/api\/admin\/redeem\/restore\/[^/]+$/, label: 'Restored a seized redeem order (new payment window)' },
   { re: /^POST \/api\/admin\/redeem\/mark-paid\/[^/]+$/, label: 'Marked a redeem order as paid' },
   { re: /^POST \/api\/admin\/orders\/[^/]+\/renew$/, label: 'Triggered order renewal' },
+  { re: /^POST \/api\/admin\/users\/[^/]+\/impersonate$/, label: 'Logged in as a user from admin panel' },
 ];
 
 function stripQuery(p: string): string {

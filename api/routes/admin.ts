@@ -977,6 +977,71 @@ router.delete('/users/:id', verifyAdmin, async (req, res) => {
   }
 });
 
+router.post('/users/:id/impersonate', verifyAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    if (!userId) return res.status(400).json({ error: 'User ID is required' });
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: authUserData, error: authUserErr } = await supabase.auth.getUser(token);
+    if (authUserErr || !authUserData?.user?.id) return res.status(401).json({ error: 'Unauthorized' });
+
+    const actorId = authUserData.user.id;
+    const { data: actorRow, error: actorErr } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', actorId)
+      .single();
+    if (actorErr || !actorRow || (actorRow.role !== 'admin' && actorRow.role !== 'super_admin')) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { data: targetRow, error: targetErr } = await supabase
+      .from('users')
+      .select('id, email, is_banned')
+      .eq('id', userId)
+      .single();
+    if (targetErr || !targetRow?.email) {
+      return res.status(404).json({ error: 'Target user not found' });
+    }
+    if (targetRow.is_banned === true) {
+      return res.status(400).json({ error: 'Cannot impersonate a banned user' });
+    }
+
+    const redirectTo = process.env.FRONTEND_URL || undefined;
+    const { data: linkData, error: linkErr } = await (supabase.auth.admin as any).generateLink({
+      type: 'magiclink',
+      email: targetRow.email,
+      options: redirectTo ? { redirectTo } : undefined,
+    });
+    if (linkErr) {
+      console.error('impersonate generate link error:', linkErr);
+      return res.status(500).json({ error: linkErr.message || 'Failed to generate login link' });
+    }
+
+    const actionLink =
+      linkData?.properties?.action_link ||
+      linkData?.action_link ||
+      null;
+    if (!actionLink) {
+      return res.status(500).json({ error: 'Magic link not returned by auth provider' });
+    }
+
+    return res.json({
+      success: true,
+      action_link: actionLink,
+      target_user_id: targetRow.id,
+      target_email: targetRow.email,
+    });
+  } catch (error: any) {
+    console.error('impersonate user error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.delete('/ops/support-tickets/:id', verifyAdmin, async (req, res) => {
   try {
     const ticketId = req.params.id;
