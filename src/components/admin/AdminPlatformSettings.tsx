@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase';
 import { Loader2, Save, Settings, Info, Mail, UserCircle, ChevronRight } from 'lucide-react';
 import { DEFAULT_PLATFORM_STATUS, parsePlatformStatus, type PlatformLevel, type PlatformStatusValue } from '../../lib/platformStatus';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 function HelpDetails({ summary, children }: { summary: string; children: React.ReactNode }) {
   return (
@@ -224,22 +225,23 @@ export const AdminPlatformSettings: React.FC = () => {
     setActivitySaving(true);
     setActivityMessage(null);
     try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('You are not signed in. Please log in again.');
       const value: AdminActivityLoggingValue = {
         enabled: activityForm.enabled !== false,
         log_reads: activityForm.log_reads === true,
       };
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert(
-          {
-            key: 'admin_activity_logging',
-            value,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'key' },
-        )
-        .select('key');
-      if (error) throw error;
+      const base = getApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/ops/activity-logging/settings`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(value),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || 'Save failed');
       setActivityMessage({
         type: 'ok',
         text:

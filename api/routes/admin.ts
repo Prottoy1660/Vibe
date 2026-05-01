@@ -1106,6 +1106,55 @@ router.get('/ops/app-downloads', verifyAdmin, async (_req, res) => {
   }
 });
 
+router.get('/ops/activity-logging/settings', verifyAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'admin_activity_logging')
+      .maybeSingle();
+    if (error) throw error;
+    const value = (data?.value || {}) as { enabled?: boolean; log_reads?: boolean };
+    return res.json({
+      success: true,
+      settings: {
+        enabled: value.enabled !== false,
+        log_reads: value.log_reads === true,
+      },
+    });
+  } catch (error: any) {
+    console.error('activity logging settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/activity-logging/settings', verifyAdmin, async (req, res) => {
+  try {
+    const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
+    const value = {
+      enabled: body.enabled !== false,
+      log_reads: body.log_reads === true,
+    };
+
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert(
+        {
+          key: 'admin_activity_logging',
+          value,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' },
+      );
+    if (error) throw error;
+
+    return res.json({ success: true, settings: value });
+  } catch (error: any) {
+    console.error('activity logging settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 router.patch('/ops/app-downloads', verifyAdmin, async (req, res) => {
   try {
     const incoming = (req.body || {}) as Record<string, unknown>;

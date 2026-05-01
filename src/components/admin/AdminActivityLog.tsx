@@ -104,15 +104,19 @@ export const AdminActivityLog = () => {
   useEffect(() => {
     const loadLoggingSettings = async () => {
       try {
-        const { data, error } = await supabase
-          .from('system_settings')
-          .select('value')
-          .eq('key', 'admin_activity_logging')
-          .maybeSingle();
-        if (error) throw error;
-        const value = (data?.value || {}) as { enabled?: boolean; log_reads?: boolean };
-        setLoggingEnabled(value.enabled !== false);
-        setLogReads(value.log_reads === true);
+        const token = await getAccessTokenForApi();
+        if (!token) return;
+        const base = getApiBaseUrl();
+        const res = await fetch(`${base}/api/admin/ops/activity-logging/settings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          settings?: { enabled?: boolean; log_reads?: boolean };
+        };
+        if (!res.ok) throw new Error(data.error || 'Could not load activity logging settings');
+        setLoggingEnabled(data.settings?.enabled !== false);
+        setLogReads(data.settings?.log_reads === true);
       } catch {
         // Keep defaults if settings row unavailable.
       }
@@ -160,22 +164,22 @@ export const AdminActivityLog = () => {
   const saveLoggingSettings = useCallback(async () => {
     setSavingLogging(true);
     try {
-      const value = {
-        enabled: loggingEnabled,
-        log_reads: logReads,
-      };
-      const { data, error } = await supabase
-        .from('system_settings')
-        .upsert(
-          {
-            key: 'admin_activity_logging',
-            value,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'key' },
-        )
-        .select('key');
-      if (error) throw error;
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Not authenticated');
+      const base = getApiBaseUrl();
+      const res = await fetch(`${base}/api/admin/ops/activity-logging/settings`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          enabled: loggingEnabled,
+          log_reads: logReads,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || 'Could not save activity logging settings');
       toast.success(
         loggingEnabled
           ? logReads
