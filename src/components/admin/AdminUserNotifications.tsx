@@ -112,7 +112,7 @@ export const AdminUserNotifications: React.FC = () => {
             user_id: r.id,
             title: t,
             body: b,
-            url: '/',
+            url: '/app',
           });
           if (out?.sent) pushSent += Number(out.sent) || 0;
         } catch {

@@ -64,7 +64,7 @@ export const AdminUsers = () => {
     };
 
     const channel = supabase
-      .channel(`admin_users_rt:${crypto.randomUUID()}`)
+      .channel('admin_users_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => schedule())
       .subscribe();
 

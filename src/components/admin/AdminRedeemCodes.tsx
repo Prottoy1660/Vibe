@@ -463,7 +463,7 @@ export const AdminRedeemCodes = () => {
     };
 
     const channel = supabase
-      .channel(`admin_redeem_rt:${crypto.randomUUID()}`)
+      .channel('admin_redeem_rt')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'redeem_codes' },

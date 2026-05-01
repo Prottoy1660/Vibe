@@ -114,7 +114,7 @@ export const Register = () => {
     };
 
     const channel = supabase
-      .channel(`register_auth_settings_rt:${crypto.randomUUID()}`)
+      .channel('register_auth_settings_rt')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.auth_settings' },
@@ -181,7 +181,7 @@ export const Register = () => {
         sessionStorage.setItem('referral_pending_code', validRef);
       }
 
-      navigate('/');
+      navigate('/app');
     } catch (err: any) {
       setError(err.message || 'An error occurred during registration');
     } finally {

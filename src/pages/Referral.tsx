@@ -127,7 +127,7 @@ export const Referral = () => {
   }
 
   if (!programOn) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   return (
@@ -184,7 +184,7 @@ export const Referral = () => {
               <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-gray-50 dark:bg-white/5 p-4">
                 <p className="text-xs font-medium text-gray-600 dark:text-gray-400">Withdrawable wallet (recharge)</p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-1">৳{withdrawable.toFixed(2)}</p>
-                <Link to="/" className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 inline-flex items-center gap-1 font-medium">
+                <Link to="/app" className="text-xs text-indigo-600 dark:text-indigo-400 mt-2 inline-flex items-center gap-1 font-medium">
                   Recharge from dashboard <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>

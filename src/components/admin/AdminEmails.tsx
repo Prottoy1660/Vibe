@@ -375,14 +375,14 @@ export const AdminEmails = () => {
     const ok = await confirm({
       title: 'Delete this team?',
       description:
-        'Generated emails that used this label will keep the mailbox; only the team tag is removed from those rows.',
+        'This will delete the team AND permanently delete all accounts under this team in your email inventory.',
       confirmLabel: 'Delete team',
       variant: 'danger',
     });
     if (!ok) return;
     setDeletingTeamId(id);
     try {
-      const { error } = await supabase.from('email_teams').delete().eq('id', id);
+      const { error } = await supabase.rpc('admin_delete_email_team_and_accounts', { p_team_id: id });
       if (error) throw error;
       setTeams((prev) => prev.filter((t) => t.id !== id));
       if (genTeamId === id) setGenTeamId('');
@@ -445,7 +445,7 @@ export const AdminEmails = () => {
     };
 
     const channel = supabase
-      .channel(`admin_emails_rt:${crypto.randomUUID()}`)
+      .channel('admin_emails_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emails_pool' }, () => schedule())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'email_teams' }, () => schedule())

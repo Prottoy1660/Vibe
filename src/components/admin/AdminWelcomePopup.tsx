@@ -69,7 +69,7 @@ export const AdminWelcomePopup = () => {
     };
 
     const channel = supabase
-      .channel(`admin_welcome_popup_rt:${crypto.randomUUID()}`)
+      .channel('admin_welcome_popup_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'welcome_popups' }, () => schedule())
       .subscribe();
 

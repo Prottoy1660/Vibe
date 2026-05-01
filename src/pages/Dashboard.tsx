@@ -142,6 +142,7 @@ export const Dashboard = () => {
     avatar_default_gender: AvatarDefaultGender;
     name: string | null;
   } | null>(null);
+  const fetchDashboardDataRef = useRef<(() => Promise<void>) | null>(null);
 
   // Instant admin redirect using cached role from AuthContext (no extra query)
   useEffect(() => {
@@ -223,6 +224,10 @@ export const Dashboard = () => {
   }, [user, isAdmin]);
 
   useEffect(() => {
+    fetchDashboardDataRef.current = fetchDashboardData;
+  }, [fetchDashboardData]);
+
+  useEffect(() => {
     // Check for successful recharge redirect
     const searchParams = new URLSearchParams(window.location.search);
     const rechargeStatus = searchParams.get('recharge');
@@ -231,19 +236,19 @@ export const Dashboard = () => {
       toast.success('Wallet recharge successful! Your balance has been updated.');
     }
 
-    if (user) {
-      void fetchDashboardData();
+    if (user && fetchDashboardDataRef.current) {
+      void fetchDashboardDataRef.current();
     }
-  }, [user, isAdmin, fetchDashboardData]);
+  }, [user, isAdmin]);
 
   // Recompute order counts when pending checkouts pass the 30m visibility window (no DB row change until cleanup).
   useEffect(() => {
     if (!user || isAdmin) return;
     const id = window.setInterval(() => {
-      void fetchDashboardData();
+      if (fetchDashboardDataRef.current) void fetchDashboardDataRef.current();
     }, 30 * 1000);
     return () => window.clearInterval(id);
-  }, [user, isAdmin, fetchDashboardData]);
+  }, [user?.id, isAdmin]);
 
   // Set up Supabase Realtime Subscriptions
   const dashboardRtTimerRef = useRef<number | null>(null);
@@ -253,12 +258,12 @@ export const Dashboard = () => {
     const scheduleRefresh = () => {
       if (dashboardRtTimerRef.current) window.clearTimeout(dashboardRtTimerRef.current);
       dashboardRtTimerRef.current = window.setTimeout(() => {
-        void fetchDashboardData();
+        if (fetchDashboardDataRef.current) void fetchDashboardDataRef.current();
       }, 700);
     };
 
     // Listen to user-impacting changes and refresh without manual reload.
-    const channel = supabase.channel(`dashboard_realtime:${user.id}:${crypto.randomUUID()}`)
+    const channel = supabase.channel(`dashboard_realtime:${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
         scheduleRefresh();
       })
@@ -274,7 +279,7 @@ export const Dashboard = () => {
       if (dashboardRtTimerRef.current) window.clearTimeout(dashboardRtTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user, isAdmin, fetchDashboardData]);
+  }, [user?.id, isAdmin]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const nameForDefaultAvatar = avatarRow?.name || userName;

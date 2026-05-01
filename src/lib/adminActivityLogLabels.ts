@@ -62,6 +62,7 @@ const API_EXACT: Record<string, string> = {
   'PATCH /api/admin/ops/support-chat/settings': 'Updated AI support chat settings',
   'GET /api/admin/ops/support-chat/training': 'Opened support chat training data',
   'DELETE /api/admin/ops/support-chat/training': 'Cleared support chat training data',
+  'POST /api/admin/ops/activity-logs/purge': 'Purged admin activity logs',
   // Redeem (admin)
   'GET /api/admin/orders/query': 'Listed orders (admin query)',
   'GET /api/admin/finance/operational-expenses': 'Listed operational expenses',

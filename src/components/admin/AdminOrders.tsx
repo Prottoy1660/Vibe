@@ -200,7 +200,7 @@ export const AdminOrders = () => {
     };
 
     const channel = supabase
-      .channel(`admin_orders_rt:${crypto.randomUUID()}`)
+      .channel('admin_orders_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => schedule())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())
       .subscribe();

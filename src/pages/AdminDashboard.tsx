@@ -238,7 +238,7 @@ export const AdminDashboard = () => {
     };
 
     const channel = supabase
-      .channel(`admin_overview_rt:${crypto.randomUUID()}`)
+      .channel('admin_overview_rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => schedule())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'emails_pool' }, () => schedule())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'user_emails' }, () => schedule())

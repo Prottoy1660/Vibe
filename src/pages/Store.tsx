@@ -29,6 +29,20 @@ function formatBdt(n: number) {
   return Number.isInteger(x) ? x.toLocaleString() : x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+function shouldLogClientEvent(key: string, ttlMs: number): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const now = Date.now();
+    const raw = window.localStorage.getItem(key);
+    const previous = raw ? Number(raw) : 0;
+    if (Number.isFinite(previous) && previous > 0 && now - previous < ttlMs) return false;
+    window.localStorage.setItem(key, String(now));
+    return true;
+  } catch {
+    return true;
+  }
+}
+
 export const Store = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +86,8 @@ export const Store = () => {
   useEffect(() => {
     const logStoreView = async () => {
       if (!user) return;
+      const oncePerDayKey = `funnel:store_view:${user.id}:${new Date().toISOString().slice(0, 10)}`;
+      if (!shouldLogClientEvent(oncePerDayKey, 24 * 60 * 60 * 1000)) return;
       try {
         await supabase.from('funnel_events').insert({
           user_id: user.id,
@@ -113,6 +129,8 @@ export const Store = () => {
       if (error) throw error;
       setWaitlistedIds((prev) => new Set(prev).add(productId));
       try {
+        const waitlistKey = `funnel:waitlist_join:${user.id}:${productId}`;
+        if (!shouldLogClientEvent(waitlistKey, 30 * 24 * 60 * 60 * 1000)) return;
         await supabase.from('funnel_events').insert({
           user_id: user.id,
           event_type: 'waitlist_join',
@@ -149,6 +167,8 @@ export const Store = () => {
     if (user) {
       (async () => {
         try {
+          const checkoutKey = `funnel:checkout_start:${user.id}:${productId}`;
+          if (!shouldLogClientEvent(checkoutKey, 10 * 60 * 1000)) return;
           await supabase.from('funnel_events').insert({
             user_id: user.id,
             event_type: 'checkout_start',

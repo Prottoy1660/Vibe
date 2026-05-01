@@ -34,6 +34,7 @@ export function sanitizeBodyForLog(body: unknown, depth = 0): unknown {
 }
 
 let _client: SupabaseClient | null = null;
+let _settingsCache: { enabled: boolean; logReads: boolean; expiresAt: number } | null = null;
 
 function serviceClient(): SupabaseClient | null {
   if (_client) return _client;
@@ -42,6 +43,33 @@ function serviceClient(): SupabaseClient | null {
   if (!url || !key) return null;
   _client = createClient(url, key);
   return _client;
+}
+
+async function getActivityLogRuntimeSettings(client: SupabaseClient): Promise<{ enabled: boolean; logReads: boolean }> {
+  const now = Date.now();
+  if (_settingsCache && _settingsCache.expiresAt > now) {
+    return { enabled: _settingsCache.enabled, logReads: _settingsCache.logReads };
+  }
+
+  const fallback = { enabled: true, logReads: false };
+  try {
+    const { data, error } = await client
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'admin_activity_logging')
+      .maybeSingle();
+    if (error) throw error;
+    const value = (data?.value || {}) as { enabled?: boolean; log_reads?: boolean };
+    const resolved = {
+      enabled: value.enabled !== false,
+      logReads: value.log_reads === true,
+    };
+    _settingsCache = { ...resolved, expiresAt: now + 30_000 };
+    return resolved;
+  } catch {
+    _settingsCache = { ...fallback, expiresAt: now + 10_000 };
+    return fallback;
+  }
 }
 
 export function attachAdminActivityLogging(req: Request, res: Response, actorId: string): void {
@@ -57,30 +85,34 @@ export function attachAdminActivityLogging(req: Request, res: Response, actorId:
       console.warn('admin_activity_logs: missing Supabase service client');
       return;
     }
-    const body = sanitizeBodyForLog(req.body);
-    const query =
-      req.query && typeof req.query === 'object' && Object.keys(req.query).length
-        ? sanitizeBodyForLog(req.query as unknown)
-        : null;
+    void (async () => {
+      const settings = await getActivityLogRuntimeSettings(client);
+      const method = (req.method || '').toUpperCase();
+      const isReadOnlyMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+      if (!settings.enabled) return;
+      if (isReadOnlyMethod && !settings.logReads) return;
 
-    void client
-      .from('admin_activity_logs')
-      .insert({
+      const body = sanitizeBodyForLog(req.body);
+      const query =
+        req.query && typeof req.query === 'object' && Object.keys(req.query).length
+          ? sanitizeBodyForLog(req.query as unknown)
+          : null;
+
+      const { error } = await client.from('admin_activity_logs').insert({
         actor_id: actorId,
-        action: `api.${req.method} ${path}`,
-        summary: `${req.method} ${path} → ${res.statusCode}`,
+        action: `api.${method} ${path}`,
+        summary: `${method} ${path} → ${res.statusCode}`,
         details: { body, query },
         source: 'api',
-        http_method: req.method,
+        http_method: method,
         path,
         status_code: res.statusCode,
         duration_ms: Math.min(3_600_000, Date.now() - started),
         ip_address: req.ip || req.socket?.remoteAddress || null,
         user_agent: truncate(req.get('user-agent') || '', 500) || null,
-      })
-      .then(({ error }) => {
-        if (error) console.error('admin_activity_logs insert:', error.message);
       });
+      if (error) console.error('admin_activity_logs insert:', error.message);
+    })();
   };
 
   res.on('finish', flush);

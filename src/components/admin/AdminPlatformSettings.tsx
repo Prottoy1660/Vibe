@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Save, Settings, Info, Mail, UserCircle, ChevronRight } from 'lucide-react';
 import { DEFAULT_PLATFORM_STATUS, parsePlatformStatus, type PlatformLevel, type PlatformStatusValue } from '../../lib/platformStatus';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 function HelpDetails({ summary, children }: { summary: string; children: React.ReactNode }) {
   return (
@@ -26,6 +27,11 @@ type AuthSettingsValue = {
   microsoft_login_under_maintenance?: boolean;
 };
 
+type AdminActivityLoggingValue = {
+  enabled?: boolean;
+  log_reads?: boolean;
+};
+
 export const AdminPlatformSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,15 +53,24 @@ export const AdminPlatformSettings: React.FC = () => {
   });
   const [authSaving, setAuthSaving] = useState(false);
   const [authMessage, setAuthMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [activityForm, setActivityForm] = useState<AdminActivityLoggingValue>({
+    enabled: true,
+    log_reads: false,
+  });
+  const [activitySaving, setActivitySaving] = useState(false);
+  const [activityMessage, setActivityMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [purgingActivityLogs, setPurgingActivityLogs] = useState(false);
+  const [purgeMessage, setPurgeMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [ps, adobe, personal, auth] = await Promise.all([
+        const [ps, adobe, personal, auth, activity] = await Promise.all([
           supabase.from('system_settings').select('value').eq('key', 'platform_status').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'adobe_email_slots').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
           supabase.from('system_settings').select('value').eq('key', 'auth_settings').maybeSingle(),
+          supabase.from('system_settings').select('value').eq('key', 'admin_activity_logging').maybeSingle(),
         ]);
         if (ps.error) throw ps.error;
         setForm(parsePlatformStatus(ps.data?.value));
@@ -72,6 +87,11 @@ export const AdminPlatformSettings: React.FC = () => {
           google_login_under_maintenance: av.google_login_under_maintenance === true,
           facebook_login_under_maintenance: av.facebook_login_under_maintenance === true,
           microsoft_login_under_maintenance: av.microsoft_login_under_maintenance === true,
+        });
+        const aiv = (activity.data?.value || {}) as AdminActivityLoggingValue;
+        setActivityForm({
+          enabled: aiv.enabled !== false,
+          log_reads: aiv.log_reads === true,
         });
       } catch (e) {
         console.error(e);
@@ -197,6 +217,74 @@ export const AdminPlatformSettings: React.FC = () => {
       setAuthMessage({ type: 'err', text: msg });
     } finally {
       setAuthSaving(false);
+    }
+  };
+
+  const saveActivityLogging = async () => {
+    setActivitySaving(true);
+    setActivityMessage(null);
+    try {
+      const value: AdminActivityLoggingValue = {
+        enabled: activityForm.enabled !== false,
+        log_reads: activityForm.log_reads === true,
+      };
+      const { data, error } = await supabase
+        .from('system_settings')
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq('key', 'admin_activity_logging')
+        .select('key');
+      if (error) throw error;
+      if (!data?.length) {
+        throw new Error(
+          'Setting row missing: system_settings.key = admin_activity_logging. Run migration 080_admin_activity_logging_controls.sql, then try again.',
+        );
+      }
+      setActivityMessage({
+        type: 'ok',
+        text:
+          value.enabled === false
+            ? 'Activity logging is now OFF. API and database audit inserts are paused.'
+            : value.log_reads
+              ? 'Activity logging is ON (including read-only API requests).'
+              : 'Activity logging is ON (write actions only, read-only API requests excluded).',
+      });
+    } catch (e: unknown) {
+      setActivityMessage({ type: 'err', text: e instanceof Error ? e.message : 'Save failed' });
+    } finally {
+      setActivitySaving(false);
+    }
+  };
+
+  const purgeActivityLogs = async () => {
+    const yes = window.confirm(
+      'Delete all admin activity logs up to now? This action removes existing rows and cannot be undone.',
+    );
+    if (!yes) return;
+
+    setPurgingActivityLogs(true);
+    setPurgeMessage(null);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('You are not signed in. Please log in again.');
+
+      const res = await fetch('/api/admin/ops/activity-logs/purge', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; deleted?: number };
+      if (!res.ok) throw new Error(data.error || 'Failed to purge logs');
+      setPurgeMessage({
+        type: 'ok',
+        text: `Deleted ${Number(data.deleted || 0).toLocaleString()} activity log rows.`,
+      });
+    } catch (e: unknown) {
+      setPurgeMessage({ type: 'err', text: e instanceof Error ? e.message : 'Purge failed' });
+    } finally {
+      setPurgingActivityLogs(false);
     }
   };
 
@@ -476,6 +564,84 @@ export const AdminPlatformSettings: React.FC = () => {
           {authSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           Save login maintenance
         </button>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">
+        <div className="flex items-center gap-2 mb-3">
+          <Info className="w-5 h-5 text-rose-500 shrink-0" />
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Admin activity logging</h2>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0 mb-4">
+          Use this to reduce audit write pressure. Turning this off pauses both API and database activity log inserts.
+        </p>
+
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={activityForm.enabled !== false}
+              onChange={(e) => setActivityForm((f) => ({ ...f, enabled: e.target.checked }))}
+              className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Enable admin activity logs
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={activityForm.log_reads === true}
+              disabled={activityForm.enabled === false}
+              onChange={(e) => setActivityForm((f) => ({ ...f, log_reads: e.target.checked }))}
+              className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-500 shrink-0 disabled:opacity-60"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Also log read-only API requests (GET/HEAD/OPTIONS)
+            </span>
+          </label>
+        </div>
+
+        {activityMessage && (
+          <p
+            className={`text-sm mt-4 ${activityMessage.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+          >
+            {activityMessage.text}
+          </p>
+        )}
+
+        <button
+          type="button"
+          onClick={() => void saveActivityLogging()}
+          disabled={activitySaving}
+          className="mt-4 inline-flex items-center gap-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
+        >
+          {activitySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Save activity logging
+        </button>
+
+        <div className="mt-5 rounded-xl border border-red-200/80 dark:border-red-500/30 bg-red-50/60 dark:bg-red-500/10 p-4">
+          <p className="text-sm font-semibold text-red-700 dark:text-red-300">Danger zone: clear stored activity logs</p>
+          <p className="text-xs mt-1 text-red-700/90 dark:text-red-200/90">
+            This deletes all accumulated admin activity logs up to now in one click.
+          </p>
+          {purgeMessage && (
+            <p
+              className={`text-sm mt-3 ${purgeMessage.type === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}
+            >
+              {purgeMessage.text}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void purgeActivityLogs()}
+            disabled={purgingActivityLogs}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
+          >
+            {purgingActivityLogs ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Delete all accumulated logs
+          </button>
+        </div>
       </div>
       </div>
     </div>

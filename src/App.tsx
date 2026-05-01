@@ -26,6 +26,7 @@ const Support = React.lazy(() => import('./pages/Support').then(module => ({ def
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
 const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
 const Downloads = React.lazy(() => import('./pages/Downloads').then(module => ({ default: module.Downloads })));
+const Landing = React.lazy(() => import('./pages/Landing.tsx').then(module => ({ default: module.Landing })));
 const DesktopOauthCallback = React.lazy(() =>
   import('./pages/DesktopOauthCallback').then((module) => ({ default: module.DesktopOauthCallback })),
 );
@@ -85,8 +86,9 @@ function AppRoutes() {
     <React.Suspense fallback={<PageLoader />}>
       <HttpErrorNavBridge />
       <Routes>
-        <Route path="/login" element={!user ? <Login /> : <Navigate to="/" replace />} />
-        <Route path="/register" element={!user ? <Register /> : <Navigate to="/" replace />} />
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/app" replace />} />
+        <Route path="/register" element={!user ? <Register /> : <Navigate to="/app" replace />} />
         <Route path="/oauth/desktop-callback" element={<DesktopOauthCallback />} />
         <Route path="/status" element={<Status />} />
         <Route path="/error/:code" element={<HttpErrorPage />} />
@@ -102,7 +104,7 @@ function AppRoutes() {
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route
-            path="/"
+            path="/app"
             element={
               loading || !roleResolved
                 ? <PageLoader />

@@ -129,7 +129,7 @@ export const Login = () => {
     };
 
     const channel = supabase
-      .channel(`login_auth_settings_rt:${crypto.randomUUID()}`)
+      .channel('login_auth_settings_rt')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.auth_settings' },
@@ -172,7 +172,7 @@ export const Login = () => {
       if (authError) throw authError;
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Session could not be established. Try again.');
-      navigate('/', { replace: true });
+      navigate('/app', { replace: true });
     } catch (err: any) {
       setError(err.message || 'Invalid login credentials');
     } finally {

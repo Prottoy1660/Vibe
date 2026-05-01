@@ -215,7 +215,7 @@ export const Layout = () => {
   useEffect(() => {
     if (!user?.id || isAdmin) return;
     const channel = supabase
-      .channel(`customer_welcome_popup_rt:${crypto.randomUUID()}`)
+      .channel(`customer_welcome_popup_rt:${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'welcome_popups' }, () => {
         void refreshCustomerModalNotice();
       })
@@ -262,7 +262,7 @@ export const Layout = () => {
   useEffect(() => {
     if (!isAdmin) return;
     const channel = supabase
-      .channel(`admin_support_ticket_count:${crypto.randomUUID()}`)
+      .channel('admin_support_ticket_count')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
         void refreshOpenSupportTicketCount();
       })
@@ -389,7 +389,7 @@ export const Layout = () => {
      })
   })).filter(section => section.items && section.items.length > 0)
         : [
-            { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+            { name: 'Dashboard', href: '/app', icon: LayoutDashboard },
             {
               name: 'Purchases',
               items: [
@@ -438,7 +438,7 @@ export const Layout = () => {
         className="md:hidden flex items-center justify-between bg-white dark:bg-[#111113] p-4 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
       >
-        <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
+        <Link to="/app" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
           <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
             Vibe
           </span>
@@ -464,7 +464,7 @@ export const Layout = () => {
         sidebarOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="hidden md:flex h-16 items-center px-6 border-b border-gray-200 dark:border-[#26262d] transition-colors duration-300">
-          <Link to="/" className="flex flex-col hover:opacity-80 transition-opacity">
+          <Link to="/app" className="flex flex-col hover:opacity-80 transition-opacity">
             <span className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
               Vibe
             </span>

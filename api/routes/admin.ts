@@ -2513,6 +2513,29 @@ router.delete('/ops/support-chat/training', verifyAdmin, async (_req, res) => {
   }
 });
 
+router.post('/ops/activity-logs/purge', verifyAdmin, async (req, res) => {
+  try {
+    const body = (req.body && typeof req.body === 'object') ? (req.body as Record<string, unknown>) : {};
+    const cutoff =
+      typeof body.cutoff === 'string' && body.cutoff.trim().length
+        ? new Date(body.cutoff).toISOString()
+        : new Date().toISOString();
+
+    const { data, error } = await supabase.rpc('admin_purge_activity_logs', {
+      p_cutoff: cutoff,
+    });
+    if (error) throw error;
+    return res.json({
+      success: true,
+      deleted: Number(data || 0),
+      cutoff,
+    });
+  } catch (error: any) {
+    console.error('activity-log purge:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
 async function enrichRedeemOrderRows(supabase: any, orders: any[]) {
   if (!orders?.length) return orders;
   const ids = orders.map((o: any) => o.id).filter(Boolean);

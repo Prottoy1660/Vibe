@@ -172,7 +172,7 @@ export const Downloads = () => {
     void fetchConfig();
 
     const channel = supabase
-      .channel(`customer_downloads:${crypto.randomUUID()}`)
+      .channel('customer_downloads')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'system_settings', filter: 'key=eq.customer_app_downloads' },

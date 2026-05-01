@@ -128,7 +128,7 @@ export const Orders = () => {
     };
 
     const channel = supabase
-      .channel(`orders_rt:${user.id}:${crypto.randomUUID()}`)
+      .channel(`orders_rt:${user.id}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` },

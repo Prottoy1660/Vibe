@@ -43,7 +43,7 @@ export const Status: React.FC = () => {
       <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-[#111113]/90 backdrop-blur px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
           <Link
-            to="/"
+            to="/app"
             className="inline-flex items-center gap-2 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline"
           >
             <ArrowLeft className="w-4 h-4" />

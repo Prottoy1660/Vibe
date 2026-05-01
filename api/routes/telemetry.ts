@@ -1,14 +1,69 @@
 import express, { type Request, type Response } from 'express'
 import rateLimit from 'express-rate-limit'
+import { isIP } from 'node:net'
 
 const router = express.Router()
 
+function normalizeCandidateIp(raw: string): string {
+  let v = (raw || '').trim().replace(/^for=/i, '').replace(/^"|"$/g, '')
+  if (!v) return ''
+  // Remove optional :port suffix from IPv4 "1.2.3.4:1234"
+  const ipv4Port = v.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)
+  if (ipv4Port?.[1]) v = ipv4Port[1]
+  // Strip IPv6 mapped prefix.
+  v = v.replace(/^::ffff:/i, '')
+  // Strip zone suffix from IPv6, e.g. fe80::1%lo0
+  v = v.replace(/%.+$/, '')
+  return v
+}
+
+function isPrivateOrLocalIp(ip: string): boolean {
+  if (!ip) return true
+  const v = ip.toLowerCase()
+  if (v === '::1' || v === '127.0.0.1' || v === '0.0.0.0') return true
+  // IPv4 private/link-local ranges
+  if (/^10\./.test(v)) return true
+  if (/^192\.168\./.test(v)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(v)) return true
+  if (/^169\.254\./.test(v)) return true
+  // IPv6 local/link-local/ULA
+  if (/^fc/i.test(v) || /^fd/i.test(v) || /^fe80:/i.test(v)) return true
+  return false
+}
+
+function firstValidIpFromHeader(value: string | string[] | undefined): string {
+  if (!value) return ''
+  const raw = Array.isArray(value) ? value.join(',') : value
+  const parts = raw.split(',')
+  for (const p of parts) {
+    const candidate = normalizeCandidateIp(p)
+    if (!candidate) continue
+    if (isIP(candidate)) return candidate
+  }
+  return ''
+}
+
 function clientIp(req: Request): string {
-  const xf = req.headers['x-forwarded-for']
-  if (typeof xf === 'string') return xf.split(',')[0].trim().slice(0, 128)
-  if (Array.isArray(xf) && xf[0]) return xf[0].split(',')[0].trim().slice(0, 128)
-  const raw = req.socket?.remoteAddress || '0.0.0.0'
-  return raw.replace(/^::ffff:/, '').slice(0, 128)
+  // Highest confidence first (set by trusted CDN/proxy when available).
+  const preferredHeaders: Array<keyof Request['headers']> = [
+    'cf-connecting-ip',
+    'true-client-ip',
+    'x-real-ip',
+    'x-forwarded-for',
+  ]
+  for (const key of preferredHeaders) {
+    const ip = firstValidIpFromHeader(req.headers[key])
+    if (ip && !isPrivateOrLocalIp(ip)) return ip.slice(0, 128)
+    if (ip) return ip.slice(0, 128)
+  }
+
+  const reqIp = normalizeCandidateIp(String(req.ip || ''))
+  if (reqIp && isIP(reqIp)) return reqIp.slice(0, 128)
+
+  const socketIp = normalizeCandidateIp(String(req.socket?.remoteAddress || ''))
+  if (socketIp && isIP(socketIp)) return socketIp.slice(0, 128)
+
+  return '0.0.0.0'
 }
 
 const geoLimiter = rateLimit({
@@ -53,9 +108,10 @@ async function geoContextHandler(req: Request, res: Response) {
     })
   } catch {
     // Return safe fallbacks; client can still persist telemetry without geo fields.
+    const ip = clientIp(req)
     return res.json({
       success: true,
-      ip_address: req.socket?.remoteAddress ? String(req.socket.remoteAddress).replace(/^::ffff:/, '') : '',
+      ip_address: ip === '0.0.0.0' ? '' : ip,
       country: '',
       city: '',
       region: '',

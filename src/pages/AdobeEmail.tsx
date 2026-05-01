@@ -506,7 +506,7 @@ export const AdobeEmail = () => {
       }, 850);
     };
 
-    const channel = supabase.channel(`adobe_email_realtime:${user.id}:${crypto.randomUUID()}`)
+    const channel = supabase.channel(`adobe_email_realtime:${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, () => {
         scheduleRefresh();
       })
@@ -528,7 +528,7 @@ export const AdobeEmail = () => {
       if (adobeRtTimerRef.current) window.clearTimeout(adobeRtTimerRef.current);
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [user?.id]);
 
   // Personal tab safety net: keep subscriptions fresh even if a realtime event is missed.
   useEffect(() => {
@@ -537,7 +537,7 @@ export const AdobeEmail = () => {
       void fetchEmailDataRef.current();
     }, 20_000);
     return () => window.clearInterval(id);
-  }, [user, activeTab]);
+  }, [user?.id, activeTab]);
 
   const handleGenerateEmail = async (specificOrderId?: string) => {
     // Determine which order to link to

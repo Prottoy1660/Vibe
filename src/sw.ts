@@ -59,7 +59,7 @@ self.addEventListener('push', (event) => {
 
   const title = data.title || 'Vibe';
   const body = data.body || '';
-  const url = data.url || '/';
+  const url = data.url || '/app';
 
   event.waitUntil(
     self.registration.showNotification(title, {
@@ -73,7 +73,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification as any)?.data?.url || '/';
+  const url = (event.notification as any)?.data?.url || '/app';
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of allClients) {
