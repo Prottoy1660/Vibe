@@ -230,15 +230,16 @@ export const AdminPlatformSettings: React.FC = () => {
       };
       const { data, error } = await supabase
         .from('system_settings')
-        .update({ value, updated_at: new Date().toISOString() })
-        .eq('key', 'admin_activity_logging')
+        .upsert(
+          {
+            key: 'admin_activity_logging',
+            value,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' },
+        )
         .select('key');
       if (error) throw error;
-      if (!data?.length) {
-        throw new Error(
-          'Setting row missing: system_settings.key = admin_activity_logging. Run migration 080_admin_activity_logging_controls.sql, then try again.',
-        );
-      }
       setActivityMessage({
         type: 'ok',
         text:
