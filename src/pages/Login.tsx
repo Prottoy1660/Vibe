@@ -36,6 +36,16 @@ const getPublicSiteOrigin = (): string => {
   const env = (import.meta as any)?.env as Record<string, any> | undefined;
   const fromEnv = (env?.VITE_PUBLIC_SITE_URL || env?.VITE_FRONTEND_URL || '').toString().trim();
   if (fromEnv.startsWith('http://') || fromEnv.startsWith('https://')) return fromEnv.replace(/\/$/, '');
+  if (typeof window !== 'undefined') {
+    const origin = (window.location.origin || '').trim();
+    const protocol = (window.location.protocol || '').toLowerCase();
+    const host = (window.location.hostname || '').toLowerCase();
+    const isHttpOrigin = protocol === 'https:' || protocol === 'http:';
+    const isLocalHost = host === 'localhost' || host === '127.0.0.1';
+    // In browser/webview deployments, prefer the current HTTPS/HTTP site origin so OAuth callback
+    // lands on the same host that initiated login (prevents cross-origin session loss).
+    if (isHttpOrigin && origin && !isLocalHost) return origin.replace(/\/$/, '');
+  }
   return 'https://vibeaccessbd.com';
 };
 
