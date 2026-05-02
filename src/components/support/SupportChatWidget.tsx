@@ -41,7 +41,7 @@ type ReplyPayload = {
 
 /** Apple-style memoji for help chat (transparent PNG). */
 const CHAT_MEMOJI_URL =
-  'https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/chat.png';
+  'https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/chat.png';
 
 const SUGGESTED_PROMPTS: { label: string; text: string }[] = [
   { label: 'Payment & Orders', text: 'I need help with a payment or an order.' },

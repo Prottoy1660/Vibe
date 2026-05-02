@@ -366,7 +366,7 @@ export const Login = () => {
                 >
                   <div className="w-full h-full rounded-full overflow-hidden bg-black">
                     <img
-                      src="https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png"
+                      src="https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/favicon.png"
                       alt="Vibe Access logo"
                       className="w-full h-full object-cover"
                     />

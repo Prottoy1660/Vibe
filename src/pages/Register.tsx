@@ -258,7 +258,7 @@ export const Register = () => {
       </div>
 
       <div className={`hidden lg:flex lg:w-1/2 h-full overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden relative items-center justify-center transition-colors duration-300 ${isDark ? 'border-r border-white/5 bg-[#050505]' : 'border-r border-slate-200 bg-white/70'}`}>
-        <div className={`absolute inset-0 bg-[url('https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/bg.webp')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
+        <div className={`absolute inset-0 bg-[url('https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/bg.webp')] bg-cover bg-center ${isDark ? 'opacity-20 mix-blend-luminosity' : 'opacity-10 mix-blend-multiply'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-b from-[#050505] via-transparent to-[#050505]' : 'bg-gradient-to-b from-white via-white/60 to-slate-100'}`}></div>
         <div className={`absolute inset-0 ${isDark ? 'bg-gradient-to-r from-[#0A0A0A] to-transparent' : 'bg-gradient-to-r from-slate-50 via-slate-50/85 to-transparent'}`}></div>
         
@@ -304,7 +304,7 @@ export const Register = () => {
                 >
                   <div className="w-full h-full rounded-full overflow-hidden bg-black">
                     <img
-                      src="https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png"
+                      src="https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/favicon.png"
                       alt="Vibe Access logo"
                       className="w-full h-full object-cover"
                     />

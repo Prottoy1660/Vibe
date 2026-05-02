@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 
 const BRAND_LOGO_URL =
-  "https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png";
+  "https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/favicon.png";
 
 const links = [
   { label: "Apps", href: "#apps" },

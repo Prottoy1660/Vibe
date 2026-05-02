@@ -1,9 +1,9 @@
 /** Default profile pictures (hosted on Supabase). First = male, second = female. */
 export const DEFAULT_AVATAR_MALE_URL =
-  'https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/male.png';
+  'https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/male.png';
 
 export const DEFAULT_AVATAR_FEMALE_URL =
-  'https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/female.png';
+  'https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/female.png';
 
 const DEFAULT_AVATAR_URLS = [DEFAULT_AVATAR_MALE_URL, DEFAULT_AVATAR_FEMALE_URL] as const;
 

@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 const BRAND_LOGO_URL =
-  "https://exavfdgevoflictkdfak.supabase.co/storage/v1/object/public/product-images/products/favicon.png";
+  "https://supabase.vibeaccessbd.com/storage/v1/object/public/product-images/products/favicon.png";
 
 type FooterItem =
   | { label: string; kind: "route"; to: string }
