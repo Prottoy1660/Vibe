@@ -162,14 +162,14 @@ export const InvoicePage = () => {
         <div className="flex flex-wrap gap-2">
           <Link
             to="/invoices"
-            className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#303038] dark:text-gray-200 dark:hover:bg-white/5 sm:text-sm"
+            className="inline-flex items-center whitespace-nowrap rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-[#303038] dark:text-gray-200 dark:hover:bg-white/5 sm:text-sm"
           >
             All invoices
           </Link>
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 sm:text-sm"
+            className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 sm:text-sm"
           >
             <Printer className="h-4 w-4" />
             Download / Print PDF

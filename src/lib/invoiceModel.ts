@@ -51,7 +51,7 @@ export function formatPaymentMethodLabel(method: string | null | undefined, paym
     m === 'uddoktapay' || m === 'gateway'
       ? 'Card / wallet (gateway)'
       : m === 'bkash tokenized' || m === 'bkash_tokenized'
-        ? 'bKash (tokenized)'
+        ? 'bKash'
         : m === 'wallet+bkash tokenized' || m === 'wallet+bkash_tokenized' || m === 'wallet + bkash tokenized'
           ? 'Wallet + bKash'
           : m === 'wallet+gateway' || m === 'wallet + gateway'
