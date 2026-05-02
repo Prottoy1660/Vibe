@@ -105,6 +105,30 @@ npm install
 - **Email** — Supabase Auth templates can be copied from `supabase/email-templates/`.  
 - **Web push** — VAPID keys and related vars in `.env.example`.  
 
+### Self-hosted Supabase Auth templates
+
+If you run Supabase Auth (GoTrue) on your own server and dashboard template editing is limited, this repo now exposes template URLs from your API:
+
+- `GET /api/auth/email-templates/confirmation`
+- `GET /api/auth/email-templates/invite`
+- `GET /api/auth/email-templates/magic_link`
+- `GET /api/auth/email-templates/recovery`
+- `GET /api/auth/email-templates/email_change`
+- `GET /api/auth/email-templates/reauthentication`
+
+Point your GoTrue mailer template environment variables to these URLs. Example:
+
+```env
+GOTRUE_MAILER_TEMPLATES_CONFIRMATION=https://your-domain.com/api/auth/email-templates/confirmation
+GOTRUE_MAILER_TEMPLATES_INVITE=https://your-domain.com/api/auth/email-templates/invite
+GOTRUE_MAILER_TEMPLATES_MAGIC_LINK=https://your-domain.com/api/auth/email-templates/magic_link
+GOTRUE_MAILER_TEMPLATES_RECOVERY=https://your-domain.com/api/auth/email-templates/recovery
+GOTRUE_MAILER_TEMPLATES_EMAIL_CHANGE=https://your-domain.com/api/auth/email-templates/email_change
+GOTRUE_MAILER_TEMPLATES_REAUTHENTICATION=https://your-domain.com/api/auth/email-templates/reauthentication
+```
+
+Then restart your GoTrue container/service.
+
 ---
 
 ## License

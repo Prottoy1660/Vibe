@@ -4,6 +4,8 @@
 import { Router, type Request, type Response } from 'express'
 import { createClient } from '@supabase/supabase-js'
 import rateLimit from 'express-rate-limit'
+import { promises as fs } from 'fs'
+import path from 'path'
 
 const router = Router()
 
@@ -25,6 +27,21 @@ const signupIntentLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: 'Too many signup checks from this IP. Please wait and try again.' },
 })
+
+const authTemplateFileByKey: Record<string, string> = {
+  confirmation: 'confirm-signup.html',
+  invite: 'invite-user.html',
+  magic_link: 'magic-link.html',
+  recovery: 'reset-password.html',
+  email_change: 'confirm-email-change.html',
+  reauthentication: 'confirm-reauthentication.html',
+}
+
+function resolveAuthTemplatePath(templateKey: string): string | null {
+  const fileName = authTemplateFileByKey[templateKey]
+  if (!fileName) return null
+  return path.resolve(process.cwd(), 'supabase', 'email-templates', fileName)
+}
 
 function clientIp(req: Request): string {
   const xf = req.headers['x-forwarded-for']
@@ -81,6 +98,41 @@ router.post('/signup-intent', signupIntentLimiter, async (req: Request, res: Res
   } catch (e) {
     console.error('[signup-intent]', e)
     res.status(500).json({ success: false, error: 'Signup check failed.' })
+  }
+})
+
+/**
+ * GET /api/auth/email-templates/:templateKey
+ * Serves local Supabase Auth email templates over HTTPS for self-hosted GoTrue.
+ *
+ * Supported keys:
+ * - confirmation
+ * - invite
+ * - magic_link
+ * - recovery
+ * - email_change
+ * - reauthentication
+ */
+router.get('/email-templates/:templateKey', async (req: Request, res: Response): Promise<void> => {
+  const key = (req.params.templateKey || '').trim().toLowerCase()
+  const filePath = resolveAuthTemplatePath(key)
+  if (!filePath) {
+    res.status(404).json({ success: false, error: 'Unknown template key' })
+    return
+  }
+
+  try {
+    const html = await fs.readFile(filePath, 'utf8')
+    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    res.setHeader('Cache-Control', 'public, max-age=300')
+    res.status(200).send(html)
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') {
+      res.status(404).json({ success: false, error: 'Template file not found' })
+      return
+    }
+    console.error('[auth-email-template] read error', err)
+    res.status(500).json({ success: false, error: 'Could not load template' })
   }
 })
 
