@@ -34,6 +34,7 @@ import {
   Loader2,
   PanelTop,
   CreditCard,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
@@ -395,6 +396,7 @@ export const Layout = () => {
               items: [
                 { name: 'Store', href: '/store', icon: ShoppingBag },
                 { name: 'Orders', href: '/orders', icon: ShoppingBasket },
+                { name: 'Invoices', href: '/invoices', icon: FileText },
               ],
             },
             {

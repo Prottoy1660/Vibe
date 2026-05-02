@@ -17,6 +17,8 @@ const Store = React.lazy(() => import('./pages/Store').then(module => ({ default
 const Checkout = React.lazy(() => import('./pages/Checkout').then(module => ({ default: module.Checkout })));
 const AdobeEmail = React.lazy(() => import('./pages/AdobeEmail').then(module => ({ default: module.AdobeEmail })));
 const Orders = React.lazy(() => import('./pages/Orders').then(module => ({ default: module.Orders })));
+const Invoices = React.lazy(() => import('./pages/Invoices').then((m) => ({ default: m.Invoices })));
+const InvoicePage = React.lazy(() => import('./pages/InvoicePage').then((m) => ({ default: m.InvoicePage })));
 const RedeemCoupon = React.lazy(() => import('./pages/RedeemCoupon').then(module => ({ default: module.RedeemCoupon })));
 const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 const AdminEmailTeamDetail = React.lazy(() => import('./pages/AdminEmailTeamDetail'));
@@ -117,6 +119,8 @@ function AppRoutes() {
           <Route path="/checkout/:id" element={<Checkout />} />
           <Route path="/bkash-return" element={<BkashReturn />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/invoices" element={<Invoices />} />
+          <Route path="/invoices/:orderId" element={<InvoicePage />} />
           <Route path="/redeem" element={<RedeemCoupon />} />
           <Route path="/adobe-email" element={<AdobeEmail />} />
           <Route path="/tutorial-help" element={<TutorialHelp />} />

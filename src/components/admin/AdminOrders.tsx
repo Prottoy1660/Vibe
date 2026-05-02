@@ -16,12 +16,14 @@ import {
   CreditCard,
   Package,
   Search,
+  FileText,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { invoiceEligible } from '../../lib/invoiceModel';
 
 interface Order {
   id: string;
@@ -810,6 +812,17 @@ export const AdminOrders = () => {
                             </div>
                           )}
                           <div className="flex flex-wrap justify-end gap-1">
+                            {invoiceEligible(order) && (
+                              <button
+                                type="button"
+                                onClick={() => window.open(`/invoices/${order.id}`, '_blank', 'noopener,noreferrer')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 border border-slate-200/80 dark:border-white/10"
+                                title="Open invoice (print / Save as PDF)"
+                              >
+                                <FileText className="w-3.5 h-3.5" />
+                                Invoice
+                              </button>
+                            )}
                             {order.status === 'paid' && !order.products?.is_personal && (
                               <button
                                 type="button"

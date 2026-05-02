@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink } from 'lucide-react';
+import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink, FileText } from 'lucide-react';
+import { invoiceEligible } from '../lib/invoiceModel';
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
 import { isStalePendingOrder, PENDING_CHECKOUT_VISIBLE_MS } from '../lib/orderHistoryVisibility';
@@ -12,6 +13,7 @@ interface Order {
   id: string;
   created_at: string;
   status: string;
+  payment_status: string;
   total_amount: number;
   /** Set when checkout called /api/payment/create; drives Pay now retry gateway. */
   payment_method: string | null;
@@ -81,6 +83,7 @@ export const Orders = () => {
           id,
           created_at,
           status,
+          payment_status,
           total_amount,
           payment_method,
           product:product_id (title, title_bn)
@@ -95,6 +98,7 @@ export const Orders = () => {
           id: item.id,
           created_at: item.created_at,
           status: item.status,
+          payment_status: typeof item.payment_status === 'string' ? item.payment_status : '',
           total_amount: item.total_amount,
           payment_method: typeof item.payment_method === 'string' ? item.payment_method : null,
           product: {
@@ -503,6 +507,15 @@ export const Orders = () => {
                               <Package className="h-3.5 w-3.5 shrink-0" />
                               Adobe email
                               <ExternalLink className="h-3 w-3 shrink-0 opacity-70" />
+                            </Link>
+                          )}
+                          {invoiceEligible(order) && (
+                            <Link
+                              to={`/invoices/${order.id}`}
+                              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-100 dark:hover:bg-white/10 transition-colors"
+                            >
+                              <FileText className="h-3.5 w-3.5 shrink-0" />
+                              Invoice
                             </Link>
                           )}
                           <button
