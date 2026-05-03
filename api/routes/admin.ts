@@ -115,6 +115,58 @@ const APP_DOWNLOADS_DEFAULT: AppDownloadsConfig = {
   },
 };
 
+const EMAIL_TEAM_LIFECYCLE_SETTINGS_KEY = 'email_team_lifecycle';
+const EMAIL_TEAM_LIFECYCLE_DEFAULT = {
+  expiry_days: 14,
+  remind_before_days: 2,
+} as const;
+
+function clampInt(v: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+function sanitizeEmailTeamLifecycleSettings(value: unknown) {
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const expiry_days = clampInt(obj.expiry_days, 1, 365, EMAIL_TEAM_LIFECYCLE_DEFAULT.expiry_days);
+  const remind_before_days = clampInt(obj.remind_before_days, 0, 120, EMAIL_TEAM_LIFECYCLE_DEFAULT.remind_before_days);
+  return {
+    expiry_days,
+    remind_before_days: Math.min(remind_before_days, Math.max(0, expiry_days - 1)),
+  };
+}
+
+function fallbackTeamNameSuggestions(): string[] {
+  return ['Pixel Loom', 'Nova Grid', 'Luma Craft', 'Vivid Lab', 'Frame Nest', 'Arc Studio', 'Glyph Works', 'Hue Foundry'];
+}
+
+function parseNameSuggestions(raw: string, count: number): string[] {
+  const cleaned = String(raw || '')
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    const parsed = JSON.parse(cleaned) as { names?: unknown[] };
+    const arr = Array.isArray(parsed.names) ? parsed.names : [];
+    const names = arr
+      .filter((n) => typeof n === 'string')
+      .map((n) => String(n).trim().slice(0, 40))
+      .filter((n) => n.length >= 2)
+      .filter((n) => /^[a-z0-9 .&+\-]+$/i.test(n));
+    return [...new Set(names)].slice(0, count);
+  } catch {
+    const lines = cleaned
+      .split('\n')
+      .map((l) => l.replace(/^[\s\-*0-9.)]+/, '').trim())
+      .filter((l) => l.length >= 2)
+      .map((l) => l.slice(0, 40))
+      .filter((n) => /^[a-z0-9 .&+\-]+$/i.test(n));
+    return [...new Set(lines)].slice(0, count);
+  }
+}
+
 function clampStr(v: unknown, maxLen: number) {
   const s = typeof v === 'string' ? v : v == null ? '' : String(v);
   return s.length > maxLen ? s.slice(0, maxLen) : s;
@@ -1085,6 +1137,95 @@ router.post('/ops/sidebar-config', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('sidebar config error:', error);
     res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/email-team-lifecycle', verifyAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', EMAIL_TEAM_LIFECYCLE_SETTINGS_KEY)
+      .maybeSingle();
+    if (error) throw error;
+    const settings = sanitizeEmailTeamLifecycleSettings(data?.value || {});
+    return res.json({ success: true, settings });
+  } catch (error: any) {
+    console.error('email team lifecycle settings get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/email-team-lifecycle', verifyAdmin, async (req, res) => {
+  try {
+    const patch = req.body || {};
+    const settings = sanitizeEmailTeamLifecycleSettings({
+      expiry_days: patch.expiry_days,
+      remind_before_days: patch.remind_before_days,
+    });
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({ key: EMAIL_TEAM_LIFECYCLE_SETTINGS_KEY, value: settings });
+    if (error) throw error;
+    return res.json({ success: true, settings });
+  } catch (error: any) {
+    console.error('email team lifecycle settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/email-team-name-suggestions', verifyAdmin, async (req, res) => {
+  try {
+    const count = clampInt(req.body?.count, 3, 12, 8);
+    const context = typeof req.body?.context === 'string' ? req.body.context.trim().slice(0, 200) : '';
+    const stored = await loadSupportChatStored(supabase);
+    const runtime = resolveSupportChatRuntime(stored);
+    const geminiKey = runtime.geminiKey;
+    const geminiModel = runtime.geminiModel || 'gemini-2.0-flash';
+
+    if (!geminiKey) {
+      return res.status(400).json({ error: 'Gemini API key is not configured in server/support AI settings.' });
+    }
+
+    const prompt = [
+      'Generate short creative team names for Adobe/design email pools.',
+      'Output strict JSON only: {"names":["Name 1","Name 2", ...]}',
+      `Return exactly ${count} unique names.`,
+      'Constraints: 2-3 words max, professional, brand-like, easy to type, English only.',
+      'Avoid trademarked exact major brand names.',
+      context ? `Context: ${context}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+    const aiRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.8,
+          maxOutputTokens: 500,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+    const aiJson = (await aiRes.json()) as any;
+    if (!aiRes.ok) {
+      const msg = aiJson?.error?.message || `Gemini HTTP ${aiRes.status}`;
+      throw new Error(msg);
+    }
+
+    const text = aiJson?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let names = parseNameSuggestions(text, count);
+    if (names.length < 3) {
+      names = fallbackTeamNameSuggestions().slice(0, count);
+    }
+    return res.json({ success: true, names });
+  } catch (error: any) {
+    console.error('email team name suggestions error:', error);
+    return res.status(500).json({ error: error?.message || 'Failed to generate suggestions' });
   }
 });
 

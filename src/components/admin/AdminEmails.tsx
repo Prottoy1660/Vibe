@@ -49,6 +49,11 @@ interface EmailTeam {
   created_at?: string;
 }
 
+type TeamLifecycleSettings = {
+  expiry_days: number;
+  remind_before_days: number;
+};
+
 interface EmailPool {
   id: string;
   email: string;
@@ -89,6 +94,12 @@ type SlotAssignment = {
 /** Strip ILIKE wildcards so user input cannot broaden the pattern. */
 function sanitizeEmailSearchFragment(s: string): string {
   return s.replace(/\\/g, '').replace(/%/g, '').replace(/_/g, '').trim();
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
 function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
@@ -209,6 +220,11 @@ export const AdminEmails = () => {
   const [teamsListSearchQuery, setTeamsListSearchQuery] = useState('');
   const [teamsEmailSearchTeamIds, setTeamsEmailSearchTeamIds] = useState<string[]>([]);
   const [teamsEmailSearchLoading, setTeamsEmailSearchLoading] = useState(false);
+  const [lifecycle, setLifecycle] = useState<TeamLifecycleSettings>({ expiry_days: 14, remind_before_days: 2 });
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
+  const [lifecycleSaving, setLifecycleSaving] = useState(false);
+  const [teamNameSuggestions, setTeamNameSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const teamsEmailSearchReqId = useRef(0);
 
   const navigate = useNavigate();
@@ -218,6 +234,90 @@ export const AdminEmails = () => {
     fetchEmails();
     fetchUnfulfilledCount();
     fetchTeams();
+    void fetchLifecycleSettings();
+  }, []);
+
+  const fetchLifecycleSettings = useCallback(async () => {
+    setLifecycleLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) return;
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/ops/email-team-lifecycle`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
+      setLifecycle({
+        expiry_days: clampInt(data?.settings?.expiry_days, 1, 365, 14),
+        remind_before_days: clampInt(data?.settings?.remind_before_days, 0, 120, 2),
+      });
+    } catch (err) {
+      console.error('email team lifecycle settings:', err);
+    } finally {
+      setLifecycleLoading(false);
+    }
+  }, []);
+
+  const saveLifecycleSettings = async () => {
+    setLifecycleSaving(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        toast.error('Session expired. Please sign in again.');
+        return;
+      }
+      const API_URL = getApiBaseUrl();
+      const payload = {
+        expiry_days: clampInt(lifecycle.expiry_days, 1, 365, 14),
+        remind_before_days: clampInt(lifecycle.remind_before_days, 0, 120, 2),
+      };
+      const res = await fetch(`${API_URL}/api/admin/ops/email-team-lifecycle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
+      setLifecycle({
+        expiry_days: clampInt(data?.settings?.expiry_days, 1, 365, payload.expiry_days),
+        remind_before_days: clampInt(data?.settings?.remind_before_days, 0, 120, payload.remind_before_days),
+      });
+      toast.success('Team reminder settings saved.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save team reminder settings.');
+    } finally {
+      setLifecycleSaving(false);
+    }
+  };
+
+  const fetchTeamNameSuggestions = useCallback(async (seedName?: string) => {
+    setSuggestionsLoading(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) {
+        toast.error('Session expired. Please sign in again.');
+        return;
+      }
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/ops/email-team-name-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          count: 8,
+          context: seedName ? `Team expiring soon: ${seedName}` : 'Creative cloud replacement team names',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Failed (${res.status})`);
+      const names = Array.isArray(data?.names) ? data.names.filter((n: unknown) => typeof n === 'string') : [];
+      setTeamNameSuggestions(names.slice(0, 8));
+      if (!names.length) toast.warning('No name suggestions returned right now.');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to load team name suggestions.');
+    } finally {
+      setSuggestionsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -341,6 +441,47 @@ export const AdminEmails = () => {
     const nameMatch = (t: EmailTeam) => t.name.toLowerCase().includes(q);
     return teams.filter((t) => nameMatch(t) || teamsEmailSearchIdSet.has(t.id));
   }, [teams, teamsListSearchQuery, teamsEmailSearchIdSet]);
+
+  const teamLifecycleRows = useMemo(() => {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const now = new Date();
+    return teams
+      .map((t) => {
+        const created = t.created_at ? parseISO(t.created_at) : null;
+        if (!created || Number.isNaN(created.getTime())) {
+          return { ...t, expiresAt: null as Date | null, daysLeft: null as number | null, remindNow: false, expired: false };
+        }
+        const expiresAt = new Date(created.getTime() + lifecycle.expiry_days * dayMs);
+        const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / dayMs);
+        const expired = daysLeft <= 0;
+        const remindNow = !expired && daysLeft <= Math.max(0, lifecycle.remind_before_days);
+        return { ...t, expiresAt, daysLeft, remindNow, expired };
+      })
+      .sort((a, b) => {
+        const av = a.daysLeft ?? Number.MAX_SAFE_INTEGER;
+        const bv = b.daysLeft ?? Number.MAX_SAFE_INTEGER;
+        return av - bv;
+      });
+  }, [teams, lifecycle.expiry_days, lifecycle.remind_before_days]);
+
+  const teamLifecycleById = useMemo(() => {
+    const map = new Map<string, (typeof teamLifecycleRows)[number]>();
+    for (const row of teamLifecycleRows) map.set(row.id, row);
+    return map;
+  }, [teamLifecycleRows]);
+
+  const expiringSoonTeams = useMemo(
+    () => teamLifecycleRows.filter((t) => t.remindNow),
+    [teamLifecycleRows],
+  );
+
+  useEffect(() => {
+    if (activeTab !== 'teams') return;
+    if (expiringSoonTeams.length === 0) return;
+    if (teamNameSuggestions.length > 0) return;
+    if (suggestionsLoading) return;
+    void fetchTeamNameSuggestions(expiringSoonTeams[0]?.name);
+  }, [activeTab, expiringSoonTeams, teamNameSuggestions.length, suggestionsLoading, fetchTeamNameSuggestions]);
 
   const fetchTeams = async () => {
     try {
@@ -1025,6 +1166,113 @@ export const AdminEmails = () => {
             </div>
           </div>
 
+          <div className="mb-5 rounded-2xl border border-gray-200/90 dark:border-white/[0.08] bg-gray-50/80 dark:bg-black/25 p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Team expiry reminder
+              </p>
+              {lifecycleLoading ? <Loader2 className="w-4 h-4 animate-spin text-violet-500" /> : null}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <label className="block">
+                <span className="text-xs text-gray-600 dark:text-gray-400">Expire team after (days)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={lifecycle.expiry_days}
+                  onChange={(e) =>
+                    setLifecycle((prev) => ({ ...prev, expiry_days: clampInt(e.target.value, 1, 365, prev.expiry_days) }))
+                  }
+                  className="mt-1 w-full min-h-[42px] px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/40"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-gray-600 dark:text-gray-400">Remind before expiry (days)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={lifecycle.remind_before_days}
+                  onChange={(e) =>
+                    setLifecycle((prev) => ({
+                      ...prev,
+                      remind_before_days: clampInt(e.target.value, 0, 120, prev.remind_before_days),
+                    }))
+                  }
+                  className="mt-1 w-full min-h-[42px] px-3 py-2 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/40"
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void saveLifecycleSettings()}
+                  disabled={lifecycleSaving}
+                  className="w-full min-h-[42px] rounded-xl text-sm font-semibold bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-50 inline-flex items-center justify-center gap-2 shadow-sm shadow-violet-900/20 transition-colors"
+                >
+                  {lifecycleSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Save reminder settings
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+              Each team expires after the configured days from its created date. You will get highlighted reminders before expiry.
+            </p>
+          </div>
+
+          {expiringSoonTeams.length > 0 ? (
+            <div className="mb-5 rounded-2xl border border-amber-300/80 dark:border-amber-500/30 bg-amber-50/80 dark:bg-amber-500/10 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                  {expiringSoonTeams.length} team(s) expiring soon
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void fetchTeamNameSuggestions(expiringSoonTeams[0]?.name)}
+                  disabled={suggestionsLoading}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/80 dark:border-amber-500/35 bg-white/80 dark:bg-white/5 px-3 py-1.5 text-xs font-semibold text-amber-900 dark:text-amber-100 hover:bg-white dark:hover:bg-white/10"
+                >
+                  {suggestionsLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  Suggest new team names
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {expiringSoonTeams.slice(0, 6).map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-2.5 py-1 text-xs font-medium text-amber-900 dark:text-amber-100"
+                  >
+                    {t.name} · {t.daysLeft} day{t.daysLeft === 1 ? '' : 's'} left
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {teamNameSuggestions.length > 0 ? (
+            <div className="mb-5 rounded-2xl border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/80 dark:bg-indigo-500/10 p-4 sm:p-5">
+              <p className="text-sm font-semibold text-indigo-900 dark:text-indigo-100 mb-2">
+                AI suggested replacement team names
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {teamNameSuggestions.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => setTeamsTabName(name)}
+                    className="inline-flex items-center rounded-full border border-indigo-200 dark:border-indigo-500/30 bg-white dark:bg-white/5 px-3 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100/70 dark:hover:bg-indigo-500/20"
+                    title="Click to use this name in Add team"
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-indigo-700/90 dark:text-indigo-200/90">
+                Tip: click any suggestion to auto-fill the Add team field.
+              </p>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-gray-200/90 dark:border-white/[0.08] bg-gray-50/80 dark:bg-black/25 overflow-hidden">
             <div className="p-4 sm:p-5 border-b border-gray-200/80 dark:border-white/[0.06]">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">
@@ -1111,6 +1359,12 @@ export const AdminEmails = () => {
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap hidden sm:table-cell">
                     Added
                   </th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap hidden md:table-cell">
+                    Expires
+                  </th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider whitespace-nowrap">
+                    Status
+                  </th>
                   <th
                     scope="col"
                     className="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right w-[1%] whitespace-nowrap"
@@ -1122,20 +1376,21 @@ export const AdminEmails = () => {
               <tbody className="divide-y divide-gray-100 dark:divide-white/[0.05]">
                 {teams.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-14 px-4 text-center">
+                    <td colSpan={7} className="py-14 px-4 text-center">
                       <p className="text-gray-600 dark:text-gray-400 text-sm">No teams yet.</p>
                       <p className="text-gray-500 dark:text-gray-500 text-xs mt-1">Add a name above to create your first team.</p>
                     </td>
                   </tr>
                 ) : filteredTeamsForTable.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-14 px-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+                    <td colSpan={7} className="py-14 px-4 text-center text-gray-500 dark:text-gray-400 text-sm">
                       No teams match “{teamsListSearchQuery.trim()}”. Try another name or email fragment.
                     </td>
                   </tr>
                 ) : (
                   filteredTeamsForTable.map((t) => {
                     const st = teamStats[t.id];
+                    const life = teamLifecycleById.get(t.id);
                     return (
                       <tr
                         key={t.id}
@@ -1157,6 +1412,24 @@ export const AdminEmails = () => {
                         </td>
                         <td className="py-3.5 px-4 text-xs text-gray-500 whitespace-nowrap hidden sm:table-cell">
                           {t.created_at ? format(parseISO(t.created_at), 'MMM d, yyyy HH:mm') : '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-xs text-gray-500 whitespace-nowrap hidden md:table-cell">
+                          {life?.expiresAt ? format(life.expiresAt, 'MMM d, yyyy') : '—'}
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {life?.expired ? (
+                            <span className="inline-flex items-center rounded-full bg-red-100 dark:bg-red-500/20 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-300">
+                              Expired
+                            </span>
+                          ) : life?.remindNow ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                              {life.daysLeft} day{life.daysLeft === 1 ? '' : 's'} left
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-500/20 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                              Healthy
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-2 sm:px-4">
                           <div className="flex flex-wrap items-center justify-end gap-2">

@@ -46,7 +46,7 @@ interface SlotDemandDay {
 interface UserEmailRow {
   id: string;
   order_id: string;
-  created_at: string;
+  assigned_at?: string | null;
   emails_pool?: {
     email?: string | null;
   } | null;
@@ -155,20 +155,20 @@ export const AdminSlotDemand = () => {
             `
             id,
             order_id,
-            created_at,
+            assigned_at,
             emails_pool:email_id (email)
           `,
           )
           .in('order_id', orderIds)
-          .order('created_at', { ascending: true });
+          .order('assigned_at', { ascending: true });
         let userEmails: UserEmailRow[] = [];
         if (userEmailsWithPool.error) {
           // Fallback when relation alias resolution fails.
           const userEmailsFallback = await supabase
             .from('user_emails')
-            .select('id, order_id, created_at')
+            .select('id, order_id, assigned_at')
             .in('order_id', orderIds)
-            .order('created_at', { ascending: true });
+            .order('assigned_at', { ascending: true });
           if (userEmailsFallback.error) throw userEmailsFallback.error;
           userEmails = (userEmailsFallback.data || []) as UserEmailRow[];
         } else {
@@ -252,7 +252,7 @@ export const AdminSlotDemand = () => {
             unlockAtIso: unlockAt.toISOString(),
             previousAssignedEmail: String(previousAssigned?.emails_pool?.email || '—'),
             currentAssignedEmail: String(lastAssigned?.emails_pool?.email || 'Not assigned yet'),
-            currentAssignedAt: String(lastAssigned?.created_at || ''),
+            currentAssignedAt: String(lastAssigned?.assigned_at || ''),
           });
         }
       }
