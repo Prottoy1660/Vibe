@@ -102,6 +102,14 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+function toSafePrefixToken(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '')
+    .replace(/^\d+/, '')
+    .slice(0, 16);
+}
+
 function groupByDate(emails: EmailPool[]): Record<string, EmailPool[]> {
   const groups: Record<string, EmailPool[]> = {};
   for (const email of emails) {
@@ -205,7 +213,9 @@ export const AdminEmails = () => {
   const [generating, setGenerating] = useState(false);
   const [genCount, setGenCount] = useState(5);
   const [genDomain, setGenDomain] = useState('vibeaccess.space');
-  const [genPrefix, setGenPrefix] = useState('adobe');
+  const [genPrefix, setGenPrefix] = useState('');
+  const [prefixesLoading, setPrefixesLoading] = useState(false);
+  const [prefixPreview, setPrefixPreview] = useState<string[]>([]);
   const [genCloudAccess, setGenCloudAccess] = useState<'none' | 'api'>('none');
   const [genDurationValue, setGenDurationValue] = useState(1);
   const [genDurationUnit, setGenDurationUnit] = useState<'months' | 'years'>('months');
@@ -740,27 +750,74 @@ export const AdminEmails = () => {
   };
 
   const handleAutoGenerate = async () => {
-    if (!genPrefix || !genDomain) {
-      toast.warning('Prefix and domain are required.');
+    if (!genDomain) {
+      toast.warning('Domain is required.');
       return;
     }
     if (genCount < 1 || genCount > 50) {
       toast.warning('Generate between 1 and 50 emails.');
       return;
     }
+    const manualPrefix = toSafePrefixToken(genPrefix.trim());
     const teamLabel = teams.find((t) => t.id === genTeamId)?.name || '(no team)';
     const slotLabel = genSlotIntent === 'exclusive' ? 'Exclusive (1 user)' : 'Shared (2 users)';
+    const formatLabel = manualPrefix
+      ? `${manualPrefix}.xxxx@${genDomain}`
+      : `aiPrefix.xxxx@${genDomain} (Gemini auto-diverse)`;
     const okGen = await confirm({
       title: `Generate ${genCount} addresses?`,
-      description: `Format: ${genPrefix}.xxxx@${genDomain}\nSlot: ${slotLabel}\nTeam: ${teamLabel}`,
+      description: `Format: ${formatLabel}\nSlot: ${slotLabel}\nTeam: ${teamLabel}`,
       confirmLabel: 'Generate',
     });
     if (!okGen) return;
 
     setGenerating(true);
     try {
-      const newAccounts = Array.from({ length: genCount }, () => ({
-        email: `${genPrefix}.${Math.random().toString(36).substring(2, 6)}@${genDomain}`,
+      let prefixBatch: string[] = [];
+      if (manualPrefix) {
+        prefixBatch = Array.from({ length: genCount }, () => manualPrefix);
+      } else {
+        setPrefixesLoading(true);
+        const token = await getAccessTokenForApi();
+        if (!token) {
+          toast.error('Session expired. Please sign in again.');
+          return;
+        }
+        const API_URL = getApiBaseUrl();
+        let aiNames: string[] = [];
+        try {
+          const res = await fetch(`${API_URL}/api/admin/ops/email-team-name-suggestions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              count: Math.min(12, Math.max(8, genCount)),
+              context:
+                'Return globally diverse short names inspired by movies/series and people names from many countries. Keep names unique.',
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && Array.isArray(data?.names)) {
+            aiNames = data.names.filter((x: unknown) => typeof x === 'string') as string[];
+          }
+        } catch {
+          // fallback list is used below
+        }
+        const fallbackNames = [
+          'leon', 'monica', 'arda', 'sofia', 'elio', 'zara', 'nolan', 'ayla',
+          'kai', 'mira', 'tariq', 'selin', 'luna', 'reyan', 'hana', 'orion',
+        ];
+        const tokens = [...new Set((aiNames.length ? aiNames : fallbackNames).map(toSafePrefixToken).filter(Boolean))];
+        const pool = tokens.length ? tokens : fallbackNames;
+        prefixBatch = Array.from({ length: genCount }, (_, idx) => {
+          const base = pool[idx % pool.length];
+          const cycle = Math.floor(idx / pool.length);
+          return cycle > 0 ? `${base}${cycle + 1}` : base;
+        });
+      }
+
+      setPrefixPreview(prefixBatch.slice(0, 12));
+      const newAccounts = Array.from({ length: genCount }, (_, idx) => ({
+        email: `${prefixBatch[idx]}.${Math.random().toString(36).substring(2, 6)}@${genDomain}`,
         password: generateRandomPassword(),
         status: 'available',
         cloud_access_type: genCloudAccess,
@@ -846,6 +903,7 @@ export const AdminEmails = () => {
     } catch (error: any) {
       toast.error(`Failed: ${error.message}`);
     } finally {
+      setPrefixesLoading(false);
       setGenerating(false);
     }
   };
@@ -1624,20 +1682,20 @@ export const AdminEmails = () => {
               </h3>
               <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">
                 Creates mailbox-style addresses via your API, then inserts them into the pool as{' '}
-                <span className="font-medium">available</span>. Confirm the prefix and domain match your cPanel setup.
+                <span className="font-medium">available</span>. If prefix is empty, Gemini suggests diverse random prefixes automatically.
               </p>
             </div>
           </div>
 
           <div className="rounded-xl border border-indigo-100 dark:border-indigo-500/20 bg-indigo-50/40 dark:bg-[#111113] p-5 space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Field label="Prefix" hint="Local part before the random segment">
+              <Field label="Prefix (optional)" hint="Leave blank to auto-use Gemini diverse random prefixes">
                 <input
                   type="text"
                   value={genPrefix}
                   onChange={(e) => setGenPrefix(e.target.value)}
                   className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl text-sm bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100"
-                  placeholder="adobe"
+                  placeholder="custom prefix (optional)"
                 />
               </Field>
               <Field label="Domain" hint="Full domain for new mailboxes">
@@ -1729,16 +1787,34 @@ export const AdminEmails = () => {
               </Field>
             </div>
 
+            {prefixPreview.length > 0 ? (
+              <div className="rounded-xl border border-gray-200/80 dark:border-[#303038] bg-white/80 dark:bg-[#1c1c21]/80 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">
+                  Prefix preview (latest batch)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {prefixPreview.map((p, idx) => (
+                    <span
+                      key={`${p}-${idx}`}
+                      className="inline-flex items-center rounded-full bg-indigo-100 dark:bg-indigo-500/20 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 dark:text-indigo-200"
+                    >
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={handleAutoGenerate}
-              disabled={generating}
+              disabled={generating || prefixesLoading}
               className="w-full sm:w-auto px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              {generating ? (
+              {generating || prefixesLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating…
+                  {prefixesLoading ? 'Preparing AI prefixes…' : 'Generating…'}
                 </>
               ) : (
                 <>
