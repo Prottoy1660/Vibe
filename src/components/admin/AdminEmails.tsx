@@ -1189,6 +1189,17 @@ export const AdminEmails = () => {
     });
   };
 
+  const setDateGroupSelected = (rows: EmailPool[], selected: boolean) => {
+    setSelectedInventoryIds((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        if (selected) next[row.id] = true;
+        else delete next[row.id];
+      }
+      return next;
+    });
+  };
+
   const clearInventorySelection = () => setSelectedInventoryIds({});
 
   useEffect(() => {
@@ -2083,6 +2094,8 @@ export const AdminEmails = () => {
             Object.entries(grouped).map(([dateLabel, group]) => {
               const isCollapsed = collapsedDates[dateLabel];
               const isGroupToday = dateLabel.startsWith('Today');
+              const groupSelectedCount = group.filter((email) => Boolean(selectedInventoryIds[email.id])).length;
+              const allGroupSelected = group.length > 0 && groupSelectedCount === group.length;
               return (
                 <div
                   key={dateLabel}
@@ -2164,11 +2177,11 @@ export const AdminEmails = () => {
                             <th className="py-3 px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[34px]">
                               <input
                                 type="checkbox"
-                                checked={allShownSelected}
-                                onChange={(e) => setAllShownSelected(e.target.checked)}
+                                checked={allGroupSelected}
+                                onChange={(e) => setDateGroupSelected(group, e.target.checked)}
                                 onClick={(e) => e.stopPropagation()}
                                 className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
-                                aria-label="Select all shown emails"
+                                aria-label={`Select all emails in ${dateLabel}`}
                               />
                             </th>
                             <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">#</th>
@@ -2310,14 +2323,17 @@ export const AdminEmails = () => {
                                   {(email.cloud_access_type === 'manual' ? 'api' : email.cloud_access_type) || 'none'}
                                 </button>
                               </td>
-                              <td className="py-2.5 px-4">
+                              <td className="py-2.5 px-4 min-w-[110px]">
                                 {email.status === 'available' && !email.product_id ? (
                                   <div className="flex items-center gap-1.5 text-gray-400 text-xs font-medium">
                                     <CircleDashed className="w-3.5 h-3.5" /> Empty
                                   </div>
                                 ) : email.products?.max_users_per_email === 1 ? (
-                                  <div className="flex items-center gap-1.5 whitespace-nowrap text-amber-600 dark:text-amber-500 text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-500/20 max-w-max">
-                                    <Lock className="w-3 h-3" /> Private (1/1)
+                                  <div
+                                    className="inline-flex items-center gap-1.5 whitespace-nowrap text-amber-600 dark:text-amber-500 text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-100 dark:border-amber-500/20"
+                                    title="Private (1/1)"
+                                  >
+                                    <Lock className="w-3 h-3 shrink-0" /> Private
                                   </div>
                                 ) : email.products?.max_users_per_email && email.products.max_users_per_email > 1 ? (
                                   <div
