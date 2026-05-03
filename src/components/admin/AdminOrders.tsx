@@ -145,40 +145,10 @@ export const AdminOrders = () => {
   const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
   const [renewingOrderId, setRenewingOrderId] = useState<string | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
-  const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
-  const [savingOrderNoteId, setSavingOrderNoteId] = useState<string | null>(null);
-  const dirtyOrderNotesRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchOrders();
   }, []);
-
-  const loadOrderNotes = async (orderIds: string[]) => {
-    if (!orderIds.length) {
-      setOrderNotes({});
-      return;
-    }
-    const { data, error } = await supabase
-      .from('admin_quick_notes')
-      .select('entity_id, note')
-      .eq('entity_type', 'order')
-      .in('entity_id', orderIds);
-    if (error) {
-      console.error('Error loading order notes:', error);
-      return;
-    }
-    const mapped: Record<string, string> = {};
-    for (const row of (data || []) as Array<{ entity_id: string; note: string }>) {
-      mapped[row.entity_id] = row.note || '';
-    }
-    setOrderNotes((prev) => {
-      const merged: Record<string, string> = {};
-      for (const id of orderIds) {
-        merged[id] = dirtyOrderNotesRef.current[id] ? prev[id] || '' : mapped[id] || '';
-      }
-      return merged;
-    });
-  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -193,7 +163,6 @@ export const AdminOrders = () => {
         if (res.ok && json.success && Array.isArray(json.orders)) {
           const rows = json.orders as Order[];
           setRawOrders(rows);
-          await loadOrderNotes(rows.map((o) => o.id));
           return;
         }
         if (!res.ok) {
@@ -217,72 +186,11 @@ export const AdminOrders = () => {
       if (error) throw error;
       const rows = (data as unknown as Order[]) || [];
       setRawOrders(rows);
-      await loadOrderNotes(rows.map((o) => o.id));
     } catch (error) {
       console.error('Error fetching orders:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to load orders. Check API URL, login, and server logs.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const saveOrderNote = async (orderId: string, rawText: string) => {
-    const text = rawText.trim();
-    setSavingOrderNoteId(orderId);
-    try {
-      if (!text) {
-        await supabase
-          .from('admin_quick_notes')
-          .delete()
-          .eq('entity_type', 'order')
-          .eq('entity_id', orderId);
-        dirtyOrderNotesRef.current[orderId] = false;
-        setOrderNotes((prev) => ({ ...prev, [orderId]: '' }));
-        return;
-      }
-      const { data: existingRow, error: lookupError } = await supabase
-        .from('admin_quick_notes')
-        .select('id')
-        .eq('entity_type', 'order')
-        .eq('entity_id', orderId)
-        .maybeSingle();
-      if (lookupError) throw lookupError;
-
-      if (existingRow?.id) {
-        const { error: updateError } = await supabase
-          .from('admin_quick_notes')
-          .update({ note: text })
-          .eq('id', existingRow.id);
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase.from('admin_quick_notes').insert({
-          entity_type: 'order',
-          entity_id: orderId,
-          note: text,
-        });
-        if (insertError && insertError.code === '23505') {
-          // Another client inserted first; retry as update.
-          const { error: raceUpdateError } = await supabase
-            .from('admin_quick_notes')
-            .update({ note: text })
-            .eq('entity_type', 'order')
-            .eq('entity_id', orderId);
-          if (raceUpdateError) throw raceUpdateError;
-        } else if (insertError) {
-          throw insertError;
-        }
-      }
-      dirtyOrderNotesRef.current[orderId] = false;
-      setOrderNotes((prev) => ({ ...prev, [orderId]: text }));
-    } catch (error: any) {
-      console.error('Error saving order note:', error);
-      if (error?.code === '42P01') {
-        toast.error('Quick notes table is missing. Run migration 083_admin_quick_notes.sql.');
-      } else {
-        toast.error(error?.message ? `Failed to save order note: ${error.message}` : 'Failed to save order note');
-      }
-    } finally {
-      setSavingOrderNoteId(null);
     }
   };
 
@@ -727,7 +635,7 @@ export const AdminOrders = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[840px]">
+            <table className="w-full text-left border-collapse min-w-[760px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/[0.03]">
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Order</th>
@@ -735,7 +643,6 @@ export const AdminOrders = () => {
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Payment</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Renew</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[160px]">Quick note</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right sticky right-0 z-20 bg-gray-50/95 dark:bg-[#1a1a1f]/95">
                     Actions
                   </th>
@@ -882,24 +789,6 @@ export const AdminOrders = () => {
                           ) : null}
                         </div>
                       </td>
-                      <td className="py-4 px-4 w-[160px] align-top">
-                        <div className="space-y-1.5">
-                          <textarea
-                            value={orderNotes[order.id] || ''}
-                            onChange={(e) => {
-                              dirtyOrderNotesRef.current[order.id] = true;
-                              setOrderNotes((prev) => ({ ...prev, [order.id]: e.target.value }));
-                            }}
-                            onBlur={(e) => void saveOrderNote(order.id, e.target.value)}
-                            rows={1}
-                            placeholder="Internal note for this order..."
-                            className="w-full h-9 resize-none rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
-                          />
-                          {savingOrderNoteId === order.id ? (
-                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
-                          ) : null}
-                        </div>
-                      </td>
                       <td className="py-4 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
                         <div className="flex flex-col items-end gap-1.5">
                           {order.status === 'pending' && (
@@ -995,7 +884,7 @@ export const AdminOrders = () => {
                 })}
                 {orders.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={7} className="py-16 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
                       <ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                       <p className="font-medium text-gray-700 dark:text-gray-300">
                         {filter === 'all'
