@@ -226,6 +226,9 @@ export const AdminEmails = () => {
   const [savingTeam, setSavingTeam] = useState(false);
   const [deletingTeamId, setDeletingTeamId] = useState<string | null>(null);
   const [inventoryTeamFilter, setInventoryTeamFilter] = useState<string>('');
+  const [selectedInventoryIds, setSelectedInventoryIds] = useState<Record<string, boolean>>({});
+  const [deletingSelected, setDeletingSelected] = useState(false);
+  const [deletingShown, setDeletingShown] = useState(false);
   const [teamStats, setTeamStats] = useState<Record<string, { emailCount: number; userCount: number }>>({});
   const [teamsListSearchQuery, setTeamsListSearchQuery] = useState('');
   const [teamsEmailSearchTeamIds, setTeamsEmailSearchTeamIds] = useState<string[]>([]);
@@ -623,6 +626,22 @@ export const AdminEmails = () => {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
+  const deleteRowWithToken = async (row: EmailPool, token: string): Promise<void> => {
+    const API_URL = getApiBaseUrl();
+    const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ email: row.email }),
+    });
+    const out = await res.json();
+    if (!res.ok || !out?.success) {
+      throw new Error(out?.error || 'Failed to delete mailbox');
+    }
+  };
+
   const handleDelete = async (id: string, status: string) => {
     if (status !== 'available') {
       const ok = await confirm({
@@ -645,20 +664,14 @@ export const AdminEmails = () => {
       if (!row?.email) throw new Error('Email row not found');
       const token = await getAccessTokenForApi();
       if (!token) throw new Error('Session expired. Please sign in again.');
-      const API_URL = getApiBaseUrl();
-      const res = await fetch(`${API_URL}/api/cpanel/delete-email`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ email: row.email }),
-      });
-      const out = await res.json();
-      if (!res.ok || !out?.success) {
-        throw new Error(out?.error || 'Failed to delete mailbox');
-      }
+      await deleteRowWithToken(row, token);
       setEmails((prev) => prev.filter((e) => e.id !== id));
+      setSelectedInventoryIds((prev) => {
+        if (!prev[id]) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
       toast.success('Mailbox deleted from cPanel and inventory.');
     } catch {
       toast.error('Failed to delete from cPanel/inventory');
@@ -707,8 +720,27 @@ export const AdminEmails = () => {
     URL.revokeObjectURL(url);
   };
 
-  const handleCopyDateGroup = (group: EmailPool[]) => {
-    const text = group.map((e) => `${e.email} | ${e.password} | ${e.status}`).join('\n');
+  const handleExportAdobeCSV = (rows: EmailPool[], dateTag?: string) => {
+    if (!rows.length) {
+      toast.warning('No emails found to export.');
+      return;
+    }
+    const lines = rows.map((e) => [e.email, 'Jane', 'Doe', '', '', 'Creative Cloud Pro'].join(','));
+    const csv = ['Email,First Name,Last Name,Admin Roles,User Groups,Team Products', ...lines].join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `adobe_csv_${dateTag || format(new Date(), 'yyyy-MM-dd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleCopyDateGroup = (group: EmailPool[], mode: 'email_only' | 'with_password' = 'with_password') => {
+    const text =
+      mode === 'email_only'
+        ? group.map((e) => e.email).join('\n')
+        : group.map((e) => `${e.email} | ${e.password} | ${e.status}`).join('\n');
     navigator.clipboard.writeText(text);
   };
 
@@ -786,25 +818,25 @@ export const AdminEmails = () => {
         const API_URL = getApiBaseUrl();
         let aiNames: string[] = [];
         try {
-          const res = await fetch(`${API_URL}/api/admin/ops/email-team-name-suggestions`, {
+          const res = await fetch(`${API_URL}/api/admin/ops/email-prefix-suggestions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
               count: Math.min(12, Math.max(8, genCount)),
-              context:
-                'Return globally diverse short names inspired by movies/series and people names from many countries. Keep names unique.',
             }),
           });
           const data = await res.json().catch(() => ({}));
-          if (res.ok && Array.isArray(data?.names)) {
-            aiNames = data.names.filter((x: unknown) => typeof x === 'string') as string[];
+          if (res.ok && Array.isArray(data?.prefixes)) {
+            aiNames = data.prefixes.filter((x: unknown) => typeof x === 'string') as string[];
           }
         } catch {
           // fallback list is used below
         }
         const fallbackNames = [
-          'leon', 'monica', 'arda', 'sofia', 'elio', 'zara', 'nolan', 'ayla',
-          'kai', 'mira', 'tariq', 'selin', 'luna', 'reyan', 'hana', 'orion',
+          'srk', 'aamir', 'salman', 'hrithik', 'ranbir', 'deepika', 'alia', 'katrina',
+          'prabhas', 'mahesh', 'allu', 'ntr', 'nayan', 'samantha', 'vijay', 'ajith',
+          'engin', 'can', 'hande', 'demet', 'hazal', 'burak', 'beren', 'kerem',
+          'brad', 'leo', 'scarlett', 'emma', 'jennifer', 'margot', 'chris', 'tom',
         ];
         const tokens = [...new Set((aiNames.length ? aiNames : fallbackNames).map(toSafePrefixToken).filter(Boolean))];
         const pool = tokens.length ? tokens : fallbackNames;
@@ -1135,6 +1167,125 @@ export const AdminEmails = () => {
     if (inventoryTeamFilter === '__none__') return !e.team_id;
     return e.team_id === inventoryTeamFilter;
   });
+  const shownInventoryIds = useMemo(() => filteredForInventory.map((e) => e.id), [filteredForInventory]);
+  const selectedShownCount = useMemo(
+    () => shownInventoryIds.filter((id) => selectedInventoryIds[id]).length,
+    [shownInventoryIds, selectedInventoryIds],
+  );
+  const allShownSelected = shownInventoryIds.length > 0 && selectedShownCount === shownInventoryIds.length;
+
+  const toggleOneInventorySelection = (id: string) => {
+    setSelectedInventoryIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const setAllShownSelected = (selected: boolean) => {
+    setSelectedInventoryIds((prev) => {
+      const next = { ...prev };
+      for (const id of shownInventoryIds) {
+        if (selected) next[id] = true;
+        else delete next[id];
+      }
+      return next;
+    });
+  };
+
+  const clearInventorySelection = () => setSelectedInventoryIds({});
+
+  useEffect(() => {
+    if (activeTab !== 'inventory') return;
+    setSelectedInventoryIds((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const id of shownInventoryIds) {
+        if (prev[id]) next[id] = true;
+      }
+      return next;
+    });
+  }, [activeTab, shownInventoryIds]);
+
+  const deleteRowsBatch = async (rows: EmailPool[]) => {
+    if (!rows.length) return;
+    const token = await getAccessTokenForApi();
+    if (!token) throw new Error('Session expired. Please sign in again.');
+    const failed: Array<{ email: string; reason: string }> = [];
+    const deletedIds: string[] = [];
+    for (const row of rows) {
+      try {
+        await deleteRowWithToken(row, token);
+        deletedIds.push(row.id);
+      } catch (err: any) {
+        failed.push({ email: row.email, reason: err?.message || 'failed' });
+      }
+    }
+    if (deletedIds.length > 0) {
+      setEmails((prev) => prev.filter((e) => !deletedIds.includes(e.id)));
+      setSelectedInventoryIds((prev) => {
+        const next = { ...prev };
+        for (const id of deletedIds) delete next[id];
+        return next;
+      });
+    }
+    if (failed.length) {
+      toast.warning(`Deleted ${deletedIds.length}, failed ${failed.length}`, {
+        description: failed.slice(0, 5).map((f) => `${f.email}: ${f.reason}`).join('\n'),
+        duration: 10000,
+      });
+    } else {
+      toast.success(`Deleted ${deletedIds.length} mailbox(es).`);
+    }
+  };
+
+  const handleDeleteSelectedInventory = async () => {
+    const selectedRows = filteredForInventory.filter((e) => selectedInventoryIds[e.id]);
+    if (!selectedRows.length) {
+      toast.warning('Select at least one email first.');
+      return;
+    }
+    const riskyCount = selectedRows.filter((e) => e.status !== 'available').length;
+    const ok = await confirm({
+      title: `Delete ${selectedRows.length} selected email(s)?`,
+      description:
+        riskyCount > 0
+          ? `${riskyCount} selected row(s) are not available and may impact active users.`
+          : 'This will remove selected mailboxes from cPanel and inventory.',
+      confirmLabel: 'Delete selected',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setDeletingSelected(true);
+    try {
+      await deleteRowsBatch(selectedRows);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete selected emails.');
+    } finally {
+      setDeletingSelected(false);
+    }
+  };
+
+  const handleDeleteAllShownInventory = async () => {
+    if (!filteredForInventory.length) {
+      toast.warning('No shown emails to delete.');
+      return;
+    }
+    const riskyCount = filteredForInventory.filter((e) => e.status !== 'available').length;
+    const ok = await confirm({
+      title: `Delete all ${filteredForInventory.length} shown email(s)?`,
+      description:
+        riskyCount > 0
+          ? `${riskyCount} shown row(s) are not available and may impact active users.`
+          : 'This will remove all currently shown rows from cPanel and inventory.',
+      confirmLabel: 'Delete shown',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    setDeletingShown(true);
+    try {
+      await deleteRowsBatch(filteredForInventory);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to delete shown emails.');
+    } finally {
+      setDeletingShown(false);
+    }
+  };
   const availableCount = activeEmails.filter((e) => e.status === 'available').length;
   const saleReadyCount = activeEmails.filter((e) => isSaleReady(e)).length;
   const assignedCount = activeEmails.filter((e) => e.status === 'assigned' || e.status === 'shared').length;
@@ -1854,6 +2005,43 @@ export const AdminEmails = () => {
               <span className="text-xs text-indigo-600 dark:text-indigo-300">
                 Sale-ready now: {saleReadyCount}
               </span>
+              <span className="text-xs text-violet-600 dark:text-violet-300">
+                Selected: {selectedShownCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setAllShownSelected(!allShownSelected)}
+                disabled={filteredForInventory.length === 0}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-[#303038] px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50"
+              >
+                {allShownSelected ? 'Unselect shown' : 'Select shown'}
+              </button>
+              <button
+                type="button"
+                onClick={clearInventorySelection}
+                disabled={selectedShownCount === 0}
+                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-[#303038] px-2.5 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-white/5 disabled:opacity-50"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteSelectedInventory()}
+                disabled={deletingSelected || selectedShownCount === 0}
+                className="inline-flex items-center gap-1 rounded-lg bg-red-600 hover:bg-red-700 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {deletingSelected ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Delete selected
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteAllShownInventory()}
+                disabled={deletingShown || filteredForInventory.length === 0}
+                className="inline-flex items-center gap-1 rounded-lg bg-rose-700 hover:bg-rose-800 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {deletingShown ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Delete shown all
+              </button>
               <button
                 type="button"
                 onClick={() => void handleRotateBulkPasswords()}
@@ -1932,11 +2120,33 @@ export const AdminEmails = () => {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleCopyDateGroup(group);
+                          handleCopyDateGroup(group, 'email_only');
                         }}
                         className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg"
                       >
-                        <Copy className="w-3 h-3" /> Copy all
+                        <Copy className="w-3 h-3" /> Copy emails
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyDateGroup(group, 'with_password');
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg"
+                      >
+                        <Copy className="w-3 h-3" /> Copy + pass
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const exportDate = group[0]?.created_at ? format(parseISO(group[0].created_at), 'yyyy-MM-dd') : undefined;
+                          handleExportAdobeCSV(group, exportDate);
+                        }}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 rounded-lg"
+                        title="Download this date group as Adobe CSV"
+                      >
+                        <Download className="w-3 h-3" /> Adobe CSV
                       </button>
                       {isCollapsed ? (
                         <ChevronRight className="w-4 h-4 text-gray-400" />
@@ -1947,10 +2157,20 @@ export const AdminEmails = () => {
                   </div>
 
                   {!isCollapsed && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-[#2b2b33]">
                       <table className="w-full text-left border-collapse">
                         <thead>
                           <tr className="border-b border-gray-100 dark:border-[#26262d] bg-gray-50/80 dark:bg-white/5">
+                            <th className="py-3 px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[34px]">
+                              <input
+                                type="checkbox"
+                                checked={allShownSelected}
+                                onChange={(e) => setAllShownSelected(e.target.checked)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
+                                aria-label="Select all shown emails"
+                              />
+                            </th>
                             <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">#</th>
                             <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
                               Email
@@ -1976,7 +2196,7 @@ export const AdminEmails = () => {
                             <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
                               Time
                             </th>
-                            <th className="py-3 px-4 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                            <th className="sticky right-0 z-20 py-3 px-4 text-right text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50/95 dark:bg-[#17171b]">
                               Actions
                             </th>
                           </tr>
@@ -1987,10 +2207,19 @@ export const AdminEmails = () => {
                               key={email.id}
                               className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50/60 dark:hover:bg-white/[0.02]"
                             >
+                              <td className="py-2.5 px-3 text-xs">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedInventoryIds[email.id])}
+                                  onChange={() => toggleOneInventorySelection(email.id)}
+                                  className="h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
+                                  aria-label={`Select ${email.email}`}
+                                />
+                              </td>
                               <td className="py-2.5 px-4 text-xs text-gray-400">{idx + 1}</td>
                               <td className="py-2.5 px-4">
-                                <div className="flex items-center gap-2 min-w-[12rem]">
-                                  <span className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                <div className="flex items-center gap-2 min-w-[10rem] max-w-[13.5rem]">
+                                  <span className="font-mono text-sm font-semibold text-gray-900 dark:text-gray-100 truncate" title={email.email}>
                                     {email.email}
                                   </span>
                                   <button
@@ -2087,7 +2316,7 @@ export const AdminEmails = () => {
                                     <CircleDashed className="w-3.5 h-3.5" /> Empty
                                   </div>
                                 ) : email.products?.max_users_per_email === 1 ? (
-                                  <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-500 text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-500/20 max-w-max">
+                                  <div className="flex items-center gap-1.5 whitespace-nowrap text-amber-600 dark:text-amber-500 text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-500/20 max-w-max">
                                     <Lock className="w-3 h-3" /> Private (1/1)
                                   </div>
                                 ) : email.products?.max_users_per_email && email.products.max_users_per_email > 1 ? (
@@ -2110,8 +2339,8 @@ export const AdminEmails = () => {
                               <td className="py-2.5 px-4 text-xs text-gray-400">
                                 {format(parseISO(email.created_at), 'HH:mm')}
                               </td>
-                              <td className="py-2.5 px-4 text-right">
-                                <div className="inline-flex items-center gap-1.5">
+                              <td className="sticky right-0 z-10 py-2.5 px-3 text-right bg-white/95 dark:bg-[#151518]/95 backdrop-blur-[1px]">
+                                <div className="inline-flex items-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() => void loadSlotAssignments(email)}
@@ -2119,7 +2348,7 @@ export const AdminEmails = () => {
                                     title="View slot users and remove assignments"
                                   >
                                     <Users className="w-3.5 h-3.5" />
-                                    Slots
+                                    <span className="hidden xl:inline">Slots</span>
                                   </button>
                                   <button
                                     type="button"
@@ -2128,7 +2357,7 @@ export const AdminEmails = () => {
                                     title="Open inbox"
                                   >
                                     <Inbox className="w-3.5 h-3.5" />
-                                    Inbox
+                                    <span className="hidden xl:inline">Inbox</span>
                                   </button>
                                   <button
                                     type="button"
@@ -2142,7 +2371,7 @@ export const AdminEmails = () => {
                                     ) : (
                                       <KeyRound className="w-3.5 h-3.5" />
                                     )}
-                                    New pass
+                                    <span className="hidden 2xl:inline">New pass</span>
                                   </button>
                                   <button
                                     type="button"
