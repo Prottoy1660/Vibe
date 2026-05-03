@@ -17,6 +17,7 @@ import {
 import { format } from 'date-fns';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface WelcomePopupRow {
   id: string;
@@ -62,8 +63,10 @@ export const AdminWelcomePopup = () => {
   const rtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
       rtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchRows();
       }, 650);
     };

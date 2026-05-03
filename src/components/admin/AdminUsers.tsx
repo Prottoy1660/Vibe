@@ -8,6 +8,7 @@ import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface User {
   id: string;
@@ -30,6 +31,36 @@ export const AdminUsers = () => {
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
   const [signupFilter, setSignupFilter] = useState<'all' | 'email' | 'google' | 'facebook' | 'azure'>('all');
+  const [userNotes, setUserNotes] = useState<Record<string, string>>({});
+  const [savingUserNoteId, setSavingUserNoteId] = useState<string | null>(null);
+  const dirtyUserNotesRef = useRef<Record<string, boolean>>({});
+
+  const loadUserNotes = async (userIds: string[]) => {
+    if (!userIds.length) {
+      setUserNotes({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from('admin_quick_notes')
+      .select('entity_id, note')
+      .eq('entity_type', 'user')
+      .in('entity_id', userIds);
+    if (error) {
+      console.error('Error loading user notes:', error);
+      return;
+    }
+    const mapped: Record<string, string> = {};
+    for (const row of (data || []) as Array<{ entity_id: string; note: string }>) {
+      mapped[row.entity_id] = row.note || '';
+    }
+    setUserNotes((prev) => {
+      const merged: Record<string, string> = {};
+      for (const id of userIds) {
+        merged[id] = dirtyUserNotesRef.current[id] ? prev[id] || '' : mapped[id] || '';
+      }
+      return merged;
+    });
+  };
 
   const fetchUsers = async () => {
     try {
@@ -40,11 +71,48 @@ export const AdminUsers = () => {
         .limit(200);
 
       if (error) throw error;
-      setUsers(data || []);
+      const rows = (data || []) as User[];
+      setUsers(rows);
+      await loadUserNotes(rows.map((u) => u.id));
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveUserNote = async (userId: string, rawText: string) => {
+    const text = rawText.trim();
+    setSavingUserNoteId(userId);
+    try {
+      if (!text) {
+        await supabase
+          .from('admin_quick_notes')
+          .delete()
+          .eq('entity_type', 'user')
+          .eq('entity_id', userId);
+        dirtyUserNotesRef.current[userId] = false;
+        setUserNotes((prev) => ({ ...prev, [userId]: '' }));
+        return;
+      }
+      const { error } = await supabase
+        .from('admin_quick_notes')
+        .upsert(
+          {
+            entity_type: 'user',
+            entity_id: userId,
+            note: text,
+          },
+          { onConflict: 'entity_type,entity_id' },
+        );
+      if (error) throw error;
+      dirtyUserNotesRef.current[userId] = false;
+      setUserNotes((prev) => ({ ...prev, [userId]: text }));
+    } catch (error) {
+      console.error('Error saving user note:', error);
+      toast.error('Failed to save user note');
+    } finally {
+      setSavingUserNoteId(null);
     }
   };
 
@@ -58,8 +126,10 @@ export const AdminUsers = () => {
     if (selectedUserId) return;
 
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (usersRtTimerRef.current) window.clearTimeout(usersRtTimerRef.current);
       usersRtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchUsers();
       }, 850);
     };
@@ -478,6 +548,9 @@ export const AdminUsers = () => {
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Joined
               </th>
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Quick note
+              </th>
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
                 Actions
               </th>
@@ -531,6 +604,25 @@ export const AdminUsers = () => {
 
                 <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
                   {format(new Date(u.created_at), 'MMM dd, yyyy')}
+                </td>
+
+                <td className="py-3 px-4 min-w-[200px]">
+                  <div className="space-y-1">
+                    <textarea
+                      value={userNotes[u.id] || ''}
+                      onChange={(e) => {
+                        dirtyUserNotesRef.current[u.id] = true;
+                        setUserNotes((prev) => ({ ...prev, [u.id]: e.target.value }));
+                      }}
+                      onBlur={(e) => void saveUserNote(u.id, e.target.value)}
+                      rows={2}
+                      placeholder="Internal user note..."
+                      className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                    />
+                    {savingUserNoteId === u.id ? (
+                      <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
+                    ) : null}
+                  </div>
                 </td>
 
                 <td className="py-3 px-4 text-right">
@@ -599,7 +691,7 @@ export const AdminUsers = () => {
 
             {filteredUsers.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-14 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={8} className="py-14 text-center text-gray-500 dark:text-gray-400">
                   No users match your filters.
                 </td>
               </tr>

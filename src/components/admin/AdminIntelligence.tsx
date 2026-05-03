@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface Session {
   id: string;
@@ -286,7 +287,10 @@ export const AdminIntelligence = () => {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(fetchSessions, 30000);
+    const interval = setInterval(() => {
+      if (shouldPauseAdminLiveRefresh()) return;
+      void fetchSessions();
+    }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchSessions]);
 

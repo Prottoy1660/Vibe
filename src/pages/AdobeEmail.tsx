@@ -33,6 +33,7 @@ import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
 import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
 import { toast } from '../lib/toast';
 import { buildInboxSnippetFromBody } from '../lib/inboxSnippet';
+import { fireMiniConfetti } from '../lib/premiumEffects';
 
 function getNextAdobeSlotUnlockAt(
   orderCreatedAt: string | undefined,
@@ -154,10 +155,9 @@ export const AdobeEmail = () => {
     if (paymentStatus === 'success' && orderId) {
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
-      
-      // We assume the webhook handles email assignment, but in development 
-      // without webhooks, we could trigger a check or show a success toast here.
-      toast.success('Payment successful! Your order is being processed.');
+
+      fireMiniConfetti();
+      toast.success('Payment successful. Premium access is being prepared for your account.');
     }
   }, []);
 
@@ -947,6 +947,16 @@ export const AdobeEmail = () => {
                       ? `${emailsGenerated} of ${slotLimit} Adobe addresses used for this plan.`
                       : 'One address is assigned automatically for this plan.'}
                   </p>
+                  {canGenerate && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        slotLimit - emailsGenerated <= 1 ? 'ui-badge-warning' : 'ui-badge-success'
+                      }`}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {slotLimit - emailsGenerated} slot{slotLimit - emailsGenerated === 1 ? '' : 's'} remaining
+                    </span>
+                  )}
                   {canGenerate &&
                     intervalDays > 0 &&
                     emailsGenerated > 0 &&
@@ -1171,7 +1181,7 @@ export const AdobeEmail = () => {
         })}
 
         {!loading && filteredEmails.length === 0 && (
-          <div className="bg-white dark:bg-[#151518] rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] p-12 text-center flex flex-col items-center justify-center">
+          <div className="ui-empty-state bg-white dark:bg-[#151518] shadow-soft dark:shadow-none p-12 text-center flex flex-col items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center mb-4 border border-gray-100 dark:border-[#26262d]">
               <XCircle className="w-8 h-8 text-gray-300" />
             </div>
@@ -1409,7 +1419,7 @@ export const AdobeEmail = () => {
             aria-modal="true"
             aria-labelledby="personal-sub-modal-title"
             aria-describedby="personal-sub-modal-desc"
-            className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
+            className="ui-modal-surface rounded-2xl shadow-2xl shadow-black/20 w-full max-w-lg max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-200"
           >
             <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-[#26262d] bg-gray-50/90 dark:bg-[#1a1a1f]">
               <div className="flex items-start justify-between gap-3">
@@ -1590,7 +1600,7 @@ export const AdobeEmail = () => {
         createPortal(
         <div className="fixed inset-0 z-[110] flex min-h-[100dvh] w-full items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div
-            className="bg-white dark:bg-[#151518] rounded-2xl shadow-2xl shadow-black/20 border border-gray-200/80 dark:border-[#2a2a32] w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="ui-modal-surface rounded-2xl shadow-2xl shadow-black/20 w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             role="dialog"
             aria-labelledby="inbox-modal-title"
             aria-describedby="inbox-modal-desc"

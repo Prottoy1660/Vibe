@@ -11,6 +11,7 @@ import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { REDEEM_RESTORE_WINDOW_MS } from '../../lib/redeemManualPaymentPolicy';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface Product {
   id: string;
@@ -456,8 +457,10 @@ export const AdminRedeemCodes = () => {
   const redeemRtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (redeemRtTimerRef.current) window.clearTimeout(redeemRtTimerRef.current);
       redeemRtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchAll();
       }, 1000);
     };

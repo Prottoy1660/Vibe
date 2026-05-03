@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink, FileText } from 'lucide-react';
+import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink, FileText, Timer } from 'lucide-react';
 import { invoiceEligible } from '../lib/invoiceModel';
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
@@ -67,6 +67,10 @@ export const Orders = () => {
     const created = new Date(createdAt).getTime();
     return PENDING_CHECKOUT_VISIBLE_MS - (nowMs - created);
   };
+  const getPendingRemainingMinutes = (createdAt: string) =>
+    Math.max(0, Math.ceil(getPendingRemainingMs(createdAt) / (60 * 1000)));
+  const getPendingProgress = (createdAt: string) =>
+    Math.max(0, Math.min(100, (getPendingRemainingMs(createdAt) / PENDING_CHECKOUT_VISIBLE_MS) * 100));
 
   const getEffectiveStatus = (order: Order) => {
     if (order.status !== 'pending') return order.status;
@@ -278,6 +282,7 @@ export const Orders = () => {
         { skipErrorPageRedirect: true },
       );
       if (data.success && data.payment_url) {
+        toast.info('Redirecting to secure payment. If it fails, return here and press Pay now again or checkout from Store.');
         window.location.href = data.payment_url as string;
       } else {
         throw new Error(
@@ -301,7 +306,7 @@ export const Orders = () => {
       }
       toast.error(
         msg ||
-          'Failed to process payment retry. Please try again from the store checkout or create a new order.',
+          'Retry failed. Next step: try Pay now once more, or open Store checkout and create a fresh order.',
       );
     } finally {
       setProcessingId(null);
@@ -445,6 +450,8 @@ export const Orders = () => {
                 {filteredOrders.map((order) => {
                   const effectiveStatus = getEffectiveStatus(order);
                   const cap = statusCaption(effectiveStatus);
+                  const pendingMinutes = effectiveStatus === 'pending' ? getPendingRemainingMinutes(order.created_at) : 0;
+                  const pendingProgress = effectiveStatus === 'pending' ? getPendingProgress(order.created_at) : 0;
                   return (
                     <tr key={order.id} className="hover:bg-gray-50/80 dark:hover:bg-white/[0.02] transition-colors align-middle">
                       <td className="px-4 sm:px-5 py-3 align-middle">
@@ -479,6 +486,20 @@ export const Orders = () => {
                             >
                               {cap}
                             </p>
+                          ) : null}
+                          {effectiveStatus === 'pending' ? (
+                            <div className="mt-0.5 min-w-0">
+                              <p className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                                <Timer className="h-3.5 w-3.5" />
+                                {pendingMinutes > 0 ? `${pendingMinutes} min left` : 'Expires soon'}
+                              </p>
+                              <div className="mt-1 h-1.5 w-full max-w-[130px] overflow-hidden rounded-full bg-amber-100 dark:bg-amber-900/40">
+                                <div
+                                  className="h-full rounded-full bg-amber-500 dark:bg-amber-400 transition-all"
+                                  style={{ width: `${pendingProgress}%` }}
+                                />
+                              </div>
+                            </div>
                           ) : null}
                         </div>
                       </td>

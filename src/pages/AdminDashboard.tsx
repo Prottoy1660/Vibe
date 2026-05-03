@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
+import { shouldPauseAdminLiveRefresh } from '../lib/adminRealtimeGuard';
+import { useAdminDraftShield } from '../hooks/useAdminDraftShield';
 
 /** Tab panels load on demand — avoids shipping recharts + heavy admin UI on first /admin paint */
 const AdminProducts = React.lazy(() => import('../components/admin/AdminProducts').then((m) => ({ default: m.AdminProducts })));
@@ -103,6 +105,8 @@ export const AdminDashboard = () => {
     replaced: 0
   });
   const [loading, setLoading] = useState(true);
+  const adminDraftRootRef = useRef<HTMLDivElement | null>(null);
+  useAdminDraftShield(`admin:${activeTab}`, adminDraftRootRef);
 
   // Redirect non-admin users (uses cached role from AuthContext — no extra query)
   useEffect(() => {
@@ -231,8 +235,10 @@ export const AdminDashboard = () => {
     if (!user || !isAdmin || activeTab !== 'overview') return;
 
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (adminOverviewRtTimerRef.current) window.clearTimeout(adminOverviewRtTimerRef.current);
       adminOverviewRtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchAdminStats({ silent: true });
       }, 900);
     };
@@ -264,7 +270,7 @@ export const AdminDashboard = () => {
   }
 
   return (
-    <div className="space-y-6 pb-12">
+    <div ref={adminDraftRootRef} className="space-y-6 pb-12">
       {/* Mobile Menu Button & Title */}
       <div className="flex items-center justify-between md:hidden bg-white dark:bg-[#151518] p-4 rounded-xl shadow-soft dark:shadow-none border border-gray-100 dark:border-[#26262d] mb-4">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">

@@ -171,6 +171,34 @@
     mask-image: linear-gradient(90deg, transparent 0%, #000 12%, #000 88%, transparent 100%);
   }
 
+  /* Shared status language across pages: success / warning tone + icon contrast. */
+  .ui-badge-success {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+    @apply border-emerald-200 bg-emerald-100 text-emerald-900;
+    @apply dark:border-emerald-500/35 dark:bg-emerald-500/15 dark:text-emerald-200;
+  }
+  .ui-badge-warning {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold;
+    @apply border-amber-200 bg-amber-100 text-amber-900;
+    @apply dark:border-amber-500/35 dark:bg-amber-500/15 dark:text-amber-200;
+  }
+  .ui-icon-success {
+    @apply text-emerald-600 dark:text-emerald-400;
+  }
+  .ui-icon-warning {
+    @apply text-amber-600 dark:text-amber-400;
+  }
+
+  /* Dark mode polish for high-value surfaces. */
+  .ui-empty-state {
+    @apply rounded-2xl border border-dashed border-gray-200 bg-gray-50/80;
+    @apply dark:border-zinc-700 dark:bg-zinc-900/35;
+  }
+  .ui-modal-surface {
+    @apply border border-gray-200/80 bg-white;
+    @apply dark:border-zinc-700/70 dark:bg-[#151518];
+  }
+
   /* Invoice: print / Save as PDF — hide app chrome, show only .invoice-print-root */
   @media print {
     @page {

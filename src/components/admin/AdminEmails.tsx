@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { buildInboxSnippetFromBody } from '../../lib/inboxSnippet';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface EmailTeam {
   id: string;
@@ -436,8 +437,10 @@ export const AdminEmails = () => {
 
   useEffect(() => {
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (emailsRtTimerRef.current) window.clearTimeout(emailsRtTimerRef.current);
       emailsRtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchEmails();
         void fetchUnfulfilledCount();
         void loadTeamStatsLatestRef.current();
@@ -937,6 +940,8 @@ export const AdminEmails = () => {
   const saleReadyCount = activeEmails.filter((e) => isSaleReady(e)).length;
   const assignedCount = activeEmails.filter((e) => e.status === 'assigned' || e.status === 'shared').length;
   const todayCount = activeEmails.filter((e) => isToday(parseISO(e.created_at))).length;
+  const lowInventory = saleReadyCount <= 10;
+  const cautionInventory = saleReadyCount > 10 && saleReadyCount <= 25;
   const grouped = groupByDate(filteredForInventory);
 
   const statusStyles: Record<string, string> = {
@@ -1192,6 +1197,25 @@ export const AdminEmails = () => {
       {/* Overview */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {(lowInventory || cautionInventory) && (
+            <div
+              className={`rounded-xl border px-4 py-3 flex items-start gap-2.5 ${
+                lowInventory
+                  ? 'border-amber-300/90 bg-amber-50/90 dark:border-amber-500/35 dark:bg-amber-500/15'
+                  : 'border-indigo-200/90 bg-indigo-50/85 dark:border-indigo-500/30 dark:bg-indigo-500/15'
+              }`}
+            >
+              <AlertCircle className={`w-4 h-4 mt-0.5 shrink-0 ${lowInventory ? 'ui-icon-warning' : 'text-indigo-500 dark:text-indigo-300'}`} />
+              <div>
+                <p className={`text-sm font-semibold ${lowInventory ? 'text-amber-900 dark:text-amber-100' : 'text-indigo-900 dark:text-indigo-100'}`}>
+                  {lowInventory ? 'Low inventory alert' : 'Inventory watch'}
+                </p>
+                <p className={`text-xs mt-0.5 ${lowInventory ? 'text-amber-800/90 dark:text-amber-200/90' : 'text-indigo-800/90 dark:text-indigo-200/90'}`}>
+                  Sale-ready pool এখন <strong>{saleReadyCount}</strong>। অর্ডার spike এ assignment delay এড়াতে নতুন batch generate করা ভালো।
+                </p>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard
               label="Total in pool"
@@ -1296,6 +1320,12 @@ export const AdminEmails = () => {
                   </button>
                 }
               />
+            </div>
+            <div className="mt-4">
+              <span className={lowInventory ? 'ui-badge-warning' : 'ui-badge-success'}>
+                <AlertCircle className="w-3.5 h-3.5" />
+                Sale-ready now: {saleReadyCount}
+              </span>
             </div>
             <p className="flex items-start gap-2 text-xs text-gray-500 mt-4">
               <Info className="w-4 h-4 shrink-0 mt-0.5 text-indigo-500" />

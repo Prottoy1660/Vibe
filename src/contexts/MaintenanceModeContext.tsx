@@ -47,11 +47,8 @@ export const MaintenanceModeProvider: React.FC<{ children: React.ReactNode }> = 
 
   useEffect(() => {
     const t = setInterval(() => void refresh(), 60_000);
-    const onFocus = () => void refresh();
-    window.addEventListener('focus', onFocus);
     return () => {
       clearInterval(t);
-      window.removeEventListener('focus', onFocus);
     };
   }, [refresh]);
 

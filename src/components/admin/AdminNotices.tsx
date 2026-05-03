@@ -4,6 +4,7 @@ import { Loader2, Info, Plus, Edit2, Trash2, Save, AlertCircle, Search, RefreshC
 import { format } from 'date-fns';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface Notice {
   id: string;
@@ -48,8 +49,10 @@ export const AdminNotices = () => {
   const noticesRtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (noticesRtTimerRef.current) window.clearTimeout(noticesRtTimerRef.current);
       noticesRtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchNotices();
       }, 650);
     };

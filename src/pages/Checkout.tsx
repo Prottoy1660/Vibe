@@ -758,6 +758,14 @@ export const Checkout = () => {
             </div>
 
             <div className="p-5 space-y-4">
+              {discount > 0 && !couponError ? (
+                <div className="sticky top-3 z-[2]">
+                  <div className="ui-badge-success w-fit shadow-sm">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Coupon applied successfully (-{discount}%)
+                  </div>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-3 text-sm">
                 <span className="text-zinc-600 dark:text-zinc-400">Plan price</span>
                 <span className="font-medium text-zinc-900 dark:text-zinc-100 tabular-nums">৳{originalPrice.toFixed(2)}</span>
@@ -797,7 +805,7 @@ export const Checkout = () => {
                 </div>
                 {couponError && <p className="text-red-600 dark:text-red-400 text-xs mt-1.5">{couponError}</p>}
                 {discount > 0 && !couponError && (
-                  <p className="text-indigo-700 dark:text-indigo-300 text-xs mt-1.5 font-medium">Coupon applied (−{discount}%)</p>
+                  <p className="text-indigo-700 dark:text-indigo-300 text-xs mt-1.5 font-medium">Applied: −{discount}%</p>
                 )}
               </div>
 

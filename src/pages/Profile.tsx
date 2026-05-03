@@ -376,7 +376,13 @@ export const Profile = () => {
                     <li className="flex gap-2.5">
                       <Phone className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-400" aria-hidden />
                       <span>
-                        <span className="font-medium text-gray-900 dark:text-gray-100">Phone</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100 inline-flex items-center gap-2">
+                          Phone
+                          <span className={phoneOk ? 'ui-badge-success' : 'ui-badge-warning'}>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {phoneOk ? 'Verified' : 'Needs update'}
+                          </span>
+                        </span>
                         <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
                           {phoneOk ? 'Looks good — saved with Save changes' : 'Add at least 11 digits in Account details'}
                         </span>
@@ -385,7 +391,13 @@ export const Profile = () => {
                     <li className="flex gap-2.5">
                       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-400" aria-hidden />
                       <span>
-                        <span className="font-medium text-gray-900 dark:text-gray-100">Sign-in email</span>
+                        <span className="font-medium text-gray-900 dark:text-gray-100 inline-flex items-center gap-2">
+                          Sign-in email
+                          <span className={emailVerified ? 'ui-badge-success' : 'ui-badge-warning'}>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {emailVerified ? 'Verified' : 'Pending'}
+                          </span>
+                        </span>
                         <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
                           {emailVerified ? 'Verified' : 'Confirm from your inbox if you recently changed it'}
                         </span>

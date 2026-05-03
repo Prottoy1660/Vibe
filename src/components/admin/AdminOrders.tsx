@@ -24,6 +24,7 @@ import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { invoiceEligible } from '../../lib/invoiceModel';
+import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 
 interface Order {
   id: string;
@@ -144,10 +145,40 @@ export const AdminOrders = () => {
   const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
   const [renewingOrderId, setRenewingOrderId] = useState<string | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [orderNotes, setOrderNotes] = useState<Record<string, string>>({});
+  const [savingOrderNoteId, setSavingOrderNoteId] = useState<string | null>(null);
+  const dirtyOrderNotesRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchOrders();
   }, []);
+
+  const loadOrderNotes = async (orderIds: string[]) => {
+    if (!orderIds.length) {
+      setOrderNotes({});
+      return;
+    }
+    const { data, error } = await supabase
+      .from('admin_quick_notes')
+      .select('entity_id, note')
+      .eq('entity_type', 'order')
+      .in('entity_id', orderIds);
+    if (error) {
+      console.error('Error loading order notes:', error);
+      return;
+    }
+    const mapped: Record<string, string> = {};
+    for (const row of (data || []) as Array<{ entity_id: string; note: string }>) {
+      mapped[row.entity_id] = row.note || '';
+    }
+    setOrderNotes((prev) => {
+      const merged: Record<string, string> = {};
+      for (const id of orderIds) {
+        merged[id] = dirtyOrderNotesRef.current[id] ? prev[id] || '' : mapped[id] || '';
+      }
+      return merged;
+    });
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -160,7 +191,9 @@ export const AdminOrders = () => {
         });
         const json = await res.json().catch(() => ({}));
         if (res.ok && json.success && Array.isArray(json.orders)) {
-          setRawOrders(json.orders as Order[]);
+          const rows = json.orders as Order[];
+          setRawOrders(rows);
+          await loadOrderNotes(rows.map((o) => o.id));
           return;
         }
         if (!res.ok) {
@@ -182,7 +215,9 @@ export const AdminOrders = () => {
         .limit(200);
 
       if (error) throw error;
-      setRawOrders((data as unknown as Order[]) || []);
+      const rows = (data as unknown as Order[]) || [];
+      setRawOrders(rows);
+      await loadOrderNotes(rows.map((o) => o.id));
     } catch (error) {
       console.error('Error fetching orders:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to load orders. Check API URL, login, and server logs.');
@@ -191,12 +226,49 @@ export const AdminOrders = () => {
     }
   };
 
+  const saveOrderNote = async (orderId: string, rawText: string) => {
+    const text = rawText.trim();
+    setSavingOrderNoteId(orderId);
+    try {
+      if (!text) {
+        await supabase
+          .from('admin_quick_notes')
+          .delete()
+          .eq('entity_type', 'order')
+          .eq('entity_id', orderId);
+        dirtyOrderNotesRef.current[orderId] = false;
+        setOrderNotes((prev) => ({ ...prev, [orderId]: '' }));
+        return;
+      }
+      const { error } = await supabase
+        .from('admin_quick_notes')
+        .upsert(
+          {
+            entity_type: 'order',
+            entity_id: orderId,
+            note: text,
+          },
+          { onConflict: 'entity_type,entity_id' },
+        );
+      if (error) throw error;
+      dirtyOrderNotesRef.current[orderId] = false;
+      setOrderNotes((prev) => ({ ...prev, [orderId]: text }));
+    } catch (error) {
+      console.error('Error saving order note:', error);
+      toast.error('Failed to save order note');
+    } finally {
+      setSavingOrderNoteId(null);
+    }
+  };
+
   // Realtime: auto-refresh orders list without manual refresh.
   const rtTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const schedule = () => {
+      if (shouldPauseAdminLiveRefresh()) return;
       if (rtTimerRef.current) window.clearTimeout(rtTimerRef.current);
       rtTimerRef.current = window.setTimeout(() => {
+        if (shouldPauseAdminLiveRefresh()) return;
         void fetchOrders();
       }, 850);
     };
@@ -638,6 +710,7 @@ export const AdminOrders = () => {
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Payment</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Renew</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Quick note</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">
                     Actions
                   </th>
@@ -784,6 +857,24 @@ export const AdminOrders = () => {
                           ) : null}
                         </div>
                       </td>
+                      <td className="py-4 px-4 min-w-[210px]">
+                        <div className="space-y-1.5">
+                          <textarea
+                            value={orderNotes[order.id] || ''}
+                            onChange={(e) => {
+                              dirtyOrderNotesRef.current[order.id] = true;
+                              setOrderNotes((prev) => ({ ...prev, [order.id]: e.target.value }));
+                            }}
+                            onBlur={(e) => void saveOrderNote(order.id, e.target.value)}
+                            rows={2}
+                            placeholder="Internal note for this order..."
+                            className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                          />
+                          {savingOrderNoteId === order.id ? (
+                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
+                          ) : null}
+                        </div>
+                      </td>
                       <td className="py-4 px-4 text-right">
                         <div className="flex flex-col items-end gap-1.5">
                           {order.status === 'pending' && (
@@ -879,7 +970,7 @@ export const AdminOrders = () => {
                 })}
                 {orders.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="py-16 text-center text-gray-500 dark:text-gray-400">
                       <ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                       <p className="font-medium text-gray-700 dark:text-gray-300">
                         {filter === 'all'
@@ -894,7 +985,7 @@ export const AdminOrders = () => {
                 )}
                 {orders.length > 0 && filteredOrders.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={7} className="py-16 text-center text-gray-500 dark:text-gray-400">
                       <Search className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600 opacity-80" />
                       <p className="font-medium text-gray-700 dark:text-gray-300">No orders match your search.</p>
                       <p className="text-sm mt-1 max-w-md mx-auto">
