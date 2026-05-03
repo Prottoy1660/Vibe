@@ -52,6 +52,7 @@ import {
   seizeRedeemOrderForUnpaid,
   restoreRedeemOrderAfterSeize,
 } from '../lib/redeemSeizeUnpaid.js';
+import { fallbackPopularPersonPrefixes, pickRandomPrefixes } from '../lib/emailPrefixDataset.js';
 
 dotenv.config();
 
@@ -164,6 +165,37 @@ function parseNameSuggestions(raw: string, count: number): string[] {
       .map((l) => l.slice(0, 40))
       .filter((n) => /^[a-z0-9 .&+\-]+$/i.test(n));
     return [...new Set(lines)].slice(0, count);
+  }
+}
+
+function parsePrefixSuggestions(raw: string, count: number): string[] {
+  const cleaned = String(raw || '')
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  const sanitize = (v: string) =>
+    v
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '')
+      .replace(/^\d+/, '')
+      .slice(0, 16);
+
+  try {
+    const parsed = JSON.parse(cleaned) as { prefixes?: unknown[]; names?: unknown[] };
+    const arr = Array.isArray(parsed.prefixes) ? parsed.prefixes : Array.isArray(parsed.names) ? parsed.names : [];
+    const tokens = arr
+      .filter((n) => typeof n === 'string')
+      .map((n) => sanitize(String(n)))
+      .filter((n) => n.length >= 3);
+    return [...new Set(tokens)].slice(0, count);
+  } catch {
+    const tokens = cleaned
+      .split(/[\n,]+/)
+      .map((s) => sanitize(s.replace(/^[\s\-*0-9.)]+/, '').trim()))
+      .filter((n) => n.length >= 3);
+    return [...new Set(tokens)].slice(0, count);
   }
 }
 
@@ -1226,6 +1258,58 @@ router.post('/ops/email-team-name-suggestions', verifyAdmin, async (req, res) =>
   } catch (error: any) {
     console.error('email team name suggestions error:', error);
     return res.status(500).json({ error: error?.message || 'Failed to generate suggestions' });
+  }
+});
+
+router.post('/ops/email-prefix-suggestions', verifyAdmin, async (req, res) => {
+  try {
+    const count = clampInt(req.body?.count, 4, 2000, 12);
+    const stored = await loadSupportChatStored(supabase);
+    const runtime = resolveSupportChatRuntime(stored);
+    const geminiKey = runtime.geminiKey;
+    const geminiModel = runtime.geminiModel || 'gemini-2.0-flash';
+
+    if (!geminiKey) {
+      return res.json({ success: true, prefixes: pickRandomPrefixes(fallbackPopularPersonPrefixes(2000), count) });
+    }
+
+    const prompt = [
+      'Generate globally diverse popular PERSON names only for email prefixes.',
+      'Must be inspired by public/pop-culture people (actors/actresses/performers) from Hollywood, Turkish and Korean industries.',
+      'Do not output company/brand/studio words.',
+      'Output strict JSON only: {"prefixes":["name1","name2",...]}',
+      `Return exactly ${count} unique single-token prefixes.`,
+      'Each prefix rules: lowercase, a-z0-9 only, 3-16 chars, no spaces.',
+    ].join('\n');
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent?key=${encodeURIComponent(geminiKey)}`;
+    const aiRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 500,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+    const aiJson = (await aiRes.json()) as any;
+    if (!aiRes.ok) {
+      const msg = aiJson?.error?.message || `Gemini HTTP ${aiRes.status}`;
+      throw new Error(msg);
+    }
+
+    const text = aiJson?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let prefixes = parsePrefixSuggestions(text, count);
+    if (prefixes.length < 4) {
+      prefixes = pickRandomPrefixes(fallbackPopularPersonPrefixes(2000), count);
+    }
+    return res.json({ success: true, prefixes });
+  } catch (error: any) {
+    console.error('email prefix suggestions error:', error);
+    return res.json({ success: true, prefixes: pickRandomPrefixes(fallbackPopularPersonPrefixes(2000), 12) });
   }
 });
 
