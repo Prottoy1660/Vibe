@@ -91,8 +91,28 @@ export const AdminSlotDemand = () => {
   const fetchForecast = async () => {
     setLoading(true);
     try {
-      const [{ data: ordersData, error: ordersError }, { data: inventoryData, error: inventoryError }] = await Promise.all([
-        supabase
+      let ordersData: ForecastOrderRow[] | null = null;
+      const ordersWithUsers = await supabase
+        .from('orders')
+        .select(
+          `
+          id,
+          created_at,
+          user_id,
+          status,
+          payment_status,
+          users:user_id (name, email, phone),
+          products:product_id (title, is_personal, email_slots, email_slot_interval_days, max_users_per_email)
+        `,
+        )
+        .in('status', ['paid', 'completed'])
+        .eq('payment_status', 'paid')
+        .order('created_at', { ascending: false })
+        .limit(5000);
+
+      if (ordersWithUsers.error) {
+        // Fallback if relational join fails in some environments.
+        const ordersFallback = await supabase
           .from('orders')
           .select(
             `
@@ -101,30 +121,35 @@ export const AdminSlotDemand = () => {
             user_id,
             status,
             payment_status,
-            users:user_id (name, email, phone),
             products:product_id (title, is_personal, email_slots, email_slot_interval_days, max_users_per_email)
           `,
           )
           .in('status', ['paid', 'completed'])
           .eq('payment_status', 'paid')
           .order('created_at', { ascending: false })
-          .limit(5000),
-        supabase.from('emails_pool').select('id').eq('status', 'available'),
-      ]);
+          .limit(5000);
+        if (ordersFallback.error) throw ordersFallback.error;
+        ordersData = (ordersFallback.data || []) as ForecastOrderRow[];
+      } else {
+        ordersData = (ordersWithUsers.data || []) as ForecastOrderRow[];
+      }
 
-      if (ordersError) throw ordersError;
-      if (inventoryError) throw inventoryError;
-
-      const availableMailboxes = (inventoryData || []).length;
+      let availableMailboxes = 0;
+      const inventoryRes = await supabase.from('emails_pool').select('id').eq('status', 'available');
+      if (inventoryRes.error) {
+        console.warn('SlotDemand: inventory query failed, defaulting available inventory to 0.', inventoryRes.error);
+      } else {
+        availableMailboxes = (inventoryRes.data || []).length;
+      }
       setAvailableInventoryMailboxes(availableMailboxes);
 
-      const orderRows = ((ordersData || []) as ForecastOrderRow[]).filter((row) => !row.products?.is_personal);
+      const orderRows = (ordersData || []).filter((row) => !row.products?.is_personal);
       const orderIds = orderRows.map((o) => o.id);
       const generatedMap: Record<string, number> = {};
       const userEmailsByOrder: Record<string, UserEmailRow[]> = {};
 
       if (orderIds.length > 0) {
-        const { data: userEmails, error: ueError } = await supabase
+        const userEmailsWithPool = await supabase
           .from('user_emails')
           .select(
             `
@@ -136,8 +161,20 @@ export const AdminSlotDemand = () => {
           )
           .in('order_id', orderIds)
           .order('created_at', { ascending: true });
-        if (ueError) throw ueError;
-        for (const ue of (userEmails || []) as UserEmailRow[]) {
+        let userEmails: UserEmailRow[] = [];
+        if (userEmailsWithPool.error) {
+          // Fallback when relation alias resolution fails.
+          const userEmailsFallback = await supabase
+            .from('user_emails')
+            .select('id, order_id, created_at')
+            .in('order_id', orderIds)
+            .order('created_at', { ascending: true });
+          if (userEmailsFallback.error) throw userEmailsFallback.error;
+          userEmails = (userEmailsFallback.data || []) as UserEmailRow[];
+        } else {
+          userEmails = (userEmailsWithPool.data || []) as UserEmailRow[];
+        }
+        for (const ue of userEmails) {
           if (!ue.order_id) continue;
           generatedMap[ue.order_id] = (generatedMap[ue.order_id] || 0) + 1;
           if (!userEmailsByOrder[ue.order_id]) userEmailsByOrder[ue.order_id] = [];
@@ -261,9 +298,10 @@ export const AdminSlotDemand = () => {
       setTodayMailboxes(sumMailboxes(todayRows));
       setNext7Mailboxes(sumMailboxes(weekRows));
       setNext30Mailboxes(sumMailboxes(monthRows));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to load slot demand forecast', error);
-      toast.error('Failed to load slot demand forecast');
+      const msg = error?.message ? `Failed to load slot demand forecast: ${error.message}` : 'Failed to load slot demand forecast';
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
