@@ -95,22 +95,46 @@ export const AdminUsers = () => {
         setUserNotes((prev) => ({ ...prev, [userId]: '' }));
         return;
       }
-      const { error } = await supabase
+      const { data: existingRow, error: lookupError } = await supabase
         .from('admin_quick_notes')
-        .upsert(
-          {
-            entity_type: 'user',
-            entity_id: userId,
-            note: text,
-          },
-          { onConflict: 'entity_type,entity_id' },
-        );
-      if (error) throw error;
+        .select('id')
+        .eq('entity_type', 'user')
+        .eq('entity_id', userId)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+
+      if (existingRow?.id) {
+        const { error: updateError } = await supabase
+          .from('admin_quick_notes')
+          .update({ note: text })
+          .eq('id', existingRow.id);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase.from('admin_quick_notes').insert({
+          entity_type: 'user',
+          entity_id: userId,
+          note: text,
+        });
+        if (insertError && insertError.code === '23505') {
+          const { error: raceUpdateError } = await supabase
+            .from('admin_quick_notes')
+            .update({ note: text })
+            .eq('entity_type', 'user')
+            .eq('entity_id', userId);
+          if (raceUpdateError) throw raceUpdateError;
+        } else if (insertError) {
+          throw insertError;
+        }
+      }
       dirtyUserNotesRef.current[userId] = false;
       setUserNotes((prev) => ({ ...prev, [userId]: text }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving user note:', error);
-      toast.error('Failed to save user note');
+      if (error?.code === '42P01') {
+        toast.error('Quick notes table is missing. Run migration 083_admin_quick_notes.sql.');
+      } else {
+        toast.error(error?.message ? `Failed to save user note: ${error.message}` : 'Failed to save user note');
+      }
     } finally {
       setSavingUserNoteId(null);
     }
@@ -527,7 +551,7 @@ export const AdminUsers = () => {
       </div>
 
       <div className="overflow-x-auto bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d]">
-        <table className="w-full text-left border-collapse">
+        <table className="w-full min-w-[980px] text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -548,10 +572,10 @@ export const AdminUsers = () => {
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Joined
               </th>
-              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[170px]">
                 Quick note
               </th>
-              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">
+              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right sticky right-0 z-20 bg-gray-50/95 dark:bg-[#1a1a1f]/95">
                 Actions
               </th>
             </tr>
@@ -606,7 +630,7 @@ export const AdminUsers = () => {
                   {format(new Date(u.created_at), 'MMM dd, yyyy')}
                 </td>
 
-                <td className="py-3 px-4 min-w-[200px]">
+                <td className="py-3 px-4 w-[170px] align-top">
                   <div className="space-y-1">
                     <textarea
                       value={userNotes[u.id] || ''}
@@ -615,9 +639,9 @@ export const AdminUsers = () => {
                         setUserNotes((prev) => ({ ...prev, [u.id]: e.target.value }));
                       }}
                       onBlur={(e) => void saveUserNote(u.id, e.target.value)}
-                      rows={2}
+                      rows={1}
                       placeholder="Internal user note..."
-                      className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                      className="w-full h-9 resize-none rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                     />
                     {savingUserNoteId === u.id ? (
                       <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
@@ -625,7 +649,7 @@ export const AdminUsers = () => {
                   </div>
                 </td>
 
-                <td className="py-3 px-4 text-right">
+                <td className="py-3 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
                   <div className="flex items-center justify-end gap-2 flex-wrap">
                     <button
                       onClick={() => setSelectedUserId(u.id)}

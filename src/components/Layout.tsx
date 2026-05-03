@@ -35,6 +35,7 @@ import {
   PanelTop,
   CreditCard,
   FileText,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
@@ -337,6 +338,7 @@ export const Layout = () => {
       name: 'Store & Users',
       items: [
         { name: 'Product Management', href: '/admin?tab=products', icon: Package },
+        { name: 'Slot Demand Planner', href: '/admin?tab=slot_demand', icon: CalendarDays },
         { name: 'Manage Orders', href: '/admin?tab=orders', icon: ShoppingBasket },
         { name: 'User Management', href: '/admin?tab=users', icon: Users },
         { name: 'Coupon Management', href: '/admin?tab=coupons', icon: Ticket },

@@ -240,22 +240,47 @@ export const AdminOrders = () => {
         setOrderNotes((prev) => ({ ...prev, [orderId]: '' }));
         return;
       }
-      const { error } = await supabase
+      const { data: existingRow, error: lookupError } = await supabase
         .from('admin_quick_notes')
-        .upsert(
-          {
-            entity_type: 'order',
-            entity_id: orderId,
-            note: text,
-          },
-          { onConflict: 'entity_type,entity_id' },
-        );
-      if (error) throw error;
+        .select('id')
+        .eq('entity_type', 'order')
+        .eq('entity_id', orderId)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+
+      if (existingRow?.id) {
+        const { error: updateError } = await supabase
+          .from('admin_quick_notes')
+          .update({ note: text })
+          .eq('id', existingRow.id);
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase.from('admin_quick_notes').insert({
+          entity_type: 'order',
+          entity_id: orderId,
+          note: text,
+        });
+        if (insertError && insertError.code === '23505') {
+          // Another client inserted first; retry as update.
+          const { error: raceUpdateError } = await supabase
+            .from('admin_quick_notes')
+            .update({ note: text })
+            .eq('entity_type', 'order')
+            .eq('entity_id', orderId);
+          if (raceUpdateError) throw raceUpdateError;
+        } else if (insertError) {
+          throw insertError;
+        }
+      }
       dirtyOrderNotesRef.current[orderId] = false;
       setOrderNotes((prev) => ({ ...prev, [orderId]: text }));
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving order note:', error);
-      toast.error('Failed to save order note');
+      if (error?.code === '42P01') {
+        toast.error('Quick notes table is missing. Run migration 083_admin_quick_notes.sql.');
+      } else {
+        toast.error(error?.message ? `Failed to save order note: ${error.message}` : 'Failed to save order note');
+      }
     } finally {
       setSavingOrderNoteId(null);
     }
@@ -702,7 +727,7 @@ export const AdminOrders = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px]">
+            <table className="w-full text-left border-collapse min-w-[840px]">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50/50 dark:bg-white/[0.03]">
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Order</th>
@@ -710,8 +735,8 @@ export const AdminOrders = () => {
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Payment</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Renew</th>
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Quick note</th>
-                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider w-[160px]">Quick note</th>
+                  <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right sticky right-0 z-20 bg-gray-50/95 dark:bg-[#1a1a1f]/95">
                     Actions
                   </th>
                 </tr>
@@ -857,7 +882,7 @@ export const AdminOrders = () => {
                           ) : null}
                         </div>
                       </td>
-                      <td className="py-4 px-4 min-w-[210px]">
+                      <td className="py-4 px-4 w-[160px] align-top">
                         <div className="space-y-1.5">
                           <textarea
                             value={orderNotes[order.id] || ''}
@@ -866,16 +891,16 @@ export const AdminOrders = () => {
                               setOrderNotes((prev) => ({ ...prev, [order.id]: e.target.value }));
                             }}
                             onBlur={(e) => void saveOrderNote(order.id, e.target.value)}
-                            rows={2}
+                            rows={1}
                             placeholder="Internal note for this order..."
-                            className="w-full resize-y rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                            className="w-full h-9 resize-none rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                           />
                           {savingOrderNoteId === order.id ? (
                             <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
                           ) : null}
                         </div>
                       </td>
-                      <td className="py-4 px-4 text-right">
+                      <td className="py-4 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
                         <div className="flex flex-col items-end gap-1.5">
                           {order.status === 'pending' && (
                             <div className="flex flex-wrap justify-end gap-1">

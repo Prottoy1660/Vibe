@@ -1211,7 +1211,8 @@ export const AdminEmails = () => {
                   {lowInventory ? 'Low inventory alert' : 'Inventory watch'}
                 </p>
                 <p className={`text-xs mt-0.5 ${lowInventory ? 'text-amber-800/90 dark:text-amber-200/90' : 'text-indigo-800/90 dark:text-indigo-200/90'}`}>
-                  Sale-ready pool এখন <strong>{saleReadyCount}</strong>। অর্ডার spike এ assignment delay এড়াতে নতুন batch generate করা ভালো।
+                  Sale-ready pool is currently <strong>{saleReadyCount}</strong>. To avoid assignment delays during order
+                  spikes, generate a new batch now.
                 </p>
               </div>
             </div>

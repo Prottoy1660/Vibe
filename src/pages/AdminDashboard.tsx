@@ -22,6 +22,7 @@ import {
   BellRing,
   Download,
   CreditCard,
+  CalendarDays,
 } from 'lucide-react';
 import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
@@ -71,6 +72,9 @@ const AdminSubscriptionReminders = React.lazy(() =>
 );
 const AdminPaymentGateways = React.lazy(() =>
   import('../components/admin/AdminPaymentGateways').then((m) => ({ default: m.AdminPaymentGateways })),
+);
+const AdminSlotDemand = React.lazy(() =>
+  import('../components/admin/AdminSlotDemand').then((m) => ({ default: m.AdminSlotDemand })),
 );
 
 const AdminTabFallback = () => (
@@ -284,6 +288,8 @@ export const AdminDashboard = () => {
                 ? 'Activity log'
                 : activeTab === 'subscription_reminders'
                   ? 'Subscription reminders'
+                : activeTab === 'slot_demand'
+                  ? 'Slot demand planner'
                   : activeTab === 'app_downloads'
                     ? 'App downloads'
                   : 'Admin Panel'}
@@ -306,6 +312,12 @@ export const AdminDashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             {activeTab === 'overview' && 'Admin Dashboard'}
             {activeTab === 'products' && 'Product Management'}
+            {activeTab === 'slot_demand' && (
+              <span className="flex items-center gap-2">
+                <CalendarDays className="w-6 h-6" />
+                Slot Demand Planner
+              </span>
+            )}
             {activeTab === 'orders' && 'Order Management'}
             {activeTab === 'users' && 'User Management'}
             {activeTab === 'coupons' && 'Coupon Management'}
@@ -400,6 +412,7 @@ export const AdminDashboard = () => {
 
       <Suspense fallback={<AdminTabFallback />}>
         {activeTab === 'products' && <AdminProducts />}
+        {activeTab === 'slot_demand' && <AdminSlotDemand />}
         {activeTab === 'orders' && <AdminOrders />}
         {activeTab === 'users' && <AdminUsers />}
         {activeTab === 'coupons' && <AdminCoupons />}

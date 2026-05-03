@@ -10,6 +10,7 @@ const AVAILABLE_TABS = [
   { id: 'analytics', label: 'Financial Analytics' },
   { id: 'activity', label: 'Activity log' },
   { id: 'products', label: 'Product Management' },
+  { id: 'slot_demand', label: 'Slot Demand Planner' },
   { id: 'orders', label: 'Manage Orders' },
   { id: 'users', label: 'User Management' },
   { id: 'coupons', label: 'Coupon Management' },
