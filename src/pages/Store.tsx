@@ -21,6 +21,7 @@ interface Product {
   icons: string[];
   description: string;
   image_url?: string;
+  is_personal?: boolean;
 }
 
 function formatBdt(n: number) {
@@ -148,16 +149,13 @@ export const Store = () => {
   };
 
   const filteredProducts = products.filter(product => {
-    // Hide personal products from the main store
-    if ((product as any).is_personal) return false;
-
     const matchesSearch = product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (product.title_bn && product.title_bn.includes(searchQuery));
 
     // Simplistic category filter - in a real app this would use a category column
     const matchesCategory = category === 'adobe'
-      ? product.title.toLowerCase().includes('adobe')
-      : !product.title.toLowerCase().includes('adobe');
+      ? product.title.toLowerCase().includes('adobe') || product.is_personal === true
+      : !product.title.toLowerCase().includes('adobe') && product.is_personal !== true;
 
     // Currently showing all if search is used, otherwise filter by category
     return matchesSearch && (searchQuery ? true : matchesCategory || category === 'adobe');
@@ -336,9 +334,21 @@ export const Store = () => {
               <div className="p-6 flex-1 flex flex-col">
                 <div className="mb-4 min-h-0 flex-1">
                   <div className="flex justify-between items-start mb-2">
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">
-                      {pickLocalized(product.title, product.title_bn, language)}
-                    </h3>
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 line-clamp-2">
+                        {pickLocalized(product.title, product.title_bn, language)}
+                      </h3>
+                      {product.is_personal ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300">
+                            Personal
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-medium text-sky-700 dark:border-sky-500/25 dark:bg-sky-500/10 dark:text-sky-300">
+                            Uses your own email
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                   {bullets.length > 0 ? (
                     <ul className="space-y-1.5 text-xs text-gray-600 dark:text-gray-300 leading-snug">
