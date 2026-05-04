@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { assignEmailForOrder } from '../lib/emailAssignment.js';
 import { productDurationToMonths } from '../lib/productDuration.js';
 import { tryProcessReferralRewardsForOrder } from '../lib/referralEngine.js';
+import { sendPersonalOrderAdminAlerts } from '../lib/personalOrderAdminAlerts.js';
 import {
   getUddoktaPayCredentialsCached,
   loadUddoktaPayStored,
@@ -207,11 +208,36 @@ async function logPaymentEvent(
   } catch {}
 }
 
+type PersonalSubscriptionsSettings = {
+  enabled: boolean;
+  manual_fulfillment_enabled: boolean;
+  delivery_eta_minutes: number;
+  delivery_eta_label: string;
+};
+
+function sanitizePersonalSubscriptionsSettings(value: unknown): PersonalSubscriptionsSettings {
+  const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const eta = Number(obj.delivery_eta_minutes);
+  return {
+    enabled: obj.enabled !== false,
+    manual_fulfillment_enabled: obj.manual_fulfillment_enabled === true,
+    delivery_eta_minutes: Number.isFinite(eta) ? Math.max(15, Math.min(10080, Math.floor(eta))) : 30,
+    delivery_eta_label:
+      typeof obj.delivery_eta_label === 'string' && obj.delivery_eta_label.trim()
+        ? obj.delivery_eta_label.trim().slice(0, 120)
+        : 'Manual setup usually completes within',
+  };
+}
+
+async function loadPersonalSubscriptionsSettings(): Promise<PersonalSubscriptionsSettings> {
+  const { data } = await supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle();
+  return sanitizePersonalSubscriptionsSettings(data?.value);
+}
+
 /** When false, new personal-plan purchases and wallet auto-renew for personal products are blocked (system_settings.personal_subscriptions). */
 async function isPersonalSubscriptionsEnabled(): Promise<boolean> {
-  const { data } = await supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle();
-  const v = (data?.value || {}) as { enabled?: boolean };
-  return v.enabled !== false;
+  const settings = await loadPersonalSubscriptionsSettings();
+  return settings.enabled;
 }
 
 /** Grant reseller Adobe access for personal orders; logs failures to order_events for admin visibility. */
@@ -310,12 +336,26 @@ async function settleOrderAfterGatewayPayment(params: {
     }
   }
 
-  const { error: updateError } = await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', orderId);
+  const personalSettings = await loadPersonalSubscriptionsSettings();
+  const { data: preOrder } = await supabase.from('orders').select('id, personal_email, products:product_id(is_personal)').eq('id', orderId).single();
+  const manualPersonalFulfillment =
+    !!preOrder?.personal_email &&
+    !!(preOrder as any)?.products?.is_personal &&
+    personalSettings.manual_fulfillment_enabled;
+
+  const { error: updateError } = await supabase
+    .from('orders')
+    .update({ status: manualPersonalFulfillment ? 'pending' : 'paid', payment_status: 'paid' })
+    .eq('id', orderId);
   if (updateError) {
     return { ok: false, statusCode: 500, publicMessage: 'Failed to update order status.' };
   }
 
-  const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', orderId).single();
+  const { data: order } = await supabase
+    .from('orders')
+    .select('*, users:user_id(name, email, phone), products(title, is_personal, duration, price)')
+    .eq('id', orderId)
+    .single();
 
   if (order) {
     await logPaymentEvent(
@@ -329,7 +369,18 @@ async function settleOrderAfterGatewayPayment(params: {
     );
     await logOrderEvent(order.id, order.user_id, 'payment_completed', 'Payment confirmed');
     if (order.products?.is_personal && order.personal_email) {
-      await fulfillPersonalAdobeAccess(order);
+      if (manualPersonalFulfillment) {
+        await logOrderEvent(order.id, order.user_id, 'manual_fulfillment_pending', 'Personal order is waiting for manual setup');
+        try {
+          await sendPersonalOrderAdminAlerts(supabase, order as any);
+          await logOrderEvent(order.id, order.user_id, 'admin_alert_sent', 'Manual setup alert sent to admin channels');
+        } catch (e: any) {
+          console.error('personal admin alert send failed:', e);
+          await logOrderEvent(order.id, order.user_id, 'admin_alert_failed', e?.message || 'Failed to send admin alert');
+        }
+      } else {
+        await fulfillPersonalAdobeAccess(order);
+      }
     } else {
       const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
       if (!assignment.success) {
@@ -341,8 +392,10 @@ async function settleOrderAfterGatewayPayment(params: {
       await logOrderEvent(order.id, order.user_id, 'provisioning_completed', 'Assigned product email successfully');
     }
 
-    await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-    await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
+    if (!manualPersonalFulfillment) {
+      await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
+      await logOrderEvent(order.id, order.user_id, 'order_completed', 'Order moved to completed');
+    }
     await incrementCouponUsedIfPresent(order);
     try {
       await tryProcessReferralRewardsForOrder(supabase, order.id);
@@ -382,8 +435,8 @@ router.post('/create', requireUser, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Order does not belong to user' });
     }
 
-    const personalOk = await isPersonalSubscriptionsEnabled();
-    if ((order as any).products?.is_personal && !personalOk) {
+    const personalSettings = await loadPersonalSubscriptionsSettings();
+    if ((order as any).products?.is_personal && !personalSettings.enabled) {
       await supabase.from('orders').delete().eq('id', order_id);
       return res.status(400).json({
         success: false,
@@ -517,30 +570,15 @@ router.post('/create', requireUser, async (req, res) => {
         }
       }
       
-      const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
-      if (order) {
-        await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        
-        if (order.products?.is_personal && order.personal_email) {
-          await fulfillPersonalAdobeAccess(order);
-        } else {
-          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
-          if (!assignment.success) {
-            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
-            return res.status(500).json({
-              success: false,
-              error: assignment.error || 'Failed to assign an email for this order'
-            });
-          }
-        }
-        
-        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-        await incrementCouponUsedIfPresent(order);
-        try {
-          await tryProcessReferralRewardsForOrder(supabase, order.id);
-        } catch (e) {
-          console.error('referral processing (wallet-only):', e);
-        }
+      const settled = await settleOrderAfterGatewayPayment({
+        orderId: order_id,
+        orderUserId: user.id,
+        walletDeduction,
+        gatewayPaid: 0,
+        gatewayLabel: 'wallet',
+      });
+      if (settled.ok === false) {
+        return res.status(settled.statusCode).json({ success: false, error: settled.publicMessage });
       }
 
       const payload = {
@@ -567,32 +605,15 @@ router.post('/create', requireUser, async (req, res) => {
       const bkashCreds = await getBkashTokenizedCredentialsCached(supabase);
       if (isLocalhost) {
         console.warn('bKash tokenized dev mode: Simulating successful payment on localhost.');
-        const { data: orderSim } = await supabase
-          .from('orders')
-          .select('*, products(is_personal, duration)')
-          .eq('id', order_id)
-          .single();
-        if (orderSim) {
-          await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-          if (orderSim.products?.is_personal && orderSim.personal_email) {
-            await fulfillPersonalAdobeAccess(orderSim);
-          } else {
-            const assignment = await assignEmailForOrder(supabase, orderSim.id, orderSim.user_id, orderSim.product_id);
-            if (!assignment.success) {
-              await supabase.from('orders').update({ status: 'paid' }).eq('id', orderSim.id);
-              return res.status(500).json({
-                success: false,
-                error: assignment.error || 'Failed to assign an email for this order',
-              });
-            }
-          }
-          await supabase.from('orders').update({ status: 'completed' }).eq('id', order_id);
-          await incrementCouponUsedIfPresent(orderSim);
-          try {
-            await tryProcessReferralRewardsForOrder(supabase, orderSim.id);
-          } catch (e) {
-            console.error('referral processing (bkash dev sim):', e);
-          }
+        const settled = await settleOrderAfterGatewayPayment({
+          orderId: order_id,
+          orderUserId: user.id,
+          walletDeduction,
+          gatewayPaid: gatewayAmount,
+          gatewayLabel: 'bkash_tokenized',
+        });
+        if (settled.ok === false) {
+          return res.status(settled.statusCode).json({ success: false, error: settled.publicMessage });
         }
         const payload = {
           success: true,
@@ -706,33 +727,16 @@ router.post('/create', requireUser, async (req, res) => {
     const uddoktaCreds = await getUddoktaPayCredentialsCached(supabase);
     if (!uddoktaCreds.apiKey || !uddoktaCreds.baseUrl || isLocalhost) {
       console.warn("UddoktaPay dev mode: Simulating successful payment flow for dev/localhost.");
-      
-      // Simulate webhook logic for local dev since we can't receive real webhooks easily
-      // In production, remove this block and let the actual webhook handle it
-      const { data: order } = await supabase.from('orders').select('*, products(is_personal, duration)').eq('id', order_id).single();
-      if (order) {
-        await supabase.from('orders').update({ status: 'paid', payment_status: 'paid' }).eq('id', order_id);
-        
-        if (order.products?.is_personal && order.personal_email) {
-          await fulfillPersonalAdobeAccess(order);
-        } else {
-          const assignment = await assignEmailForOrder(supabase, order.id, order.user_id, order.product_id);
-          if (!assignment.success) {
-            await supabase.from('orders').update({ status: 'paid' }).eq('id', order.id);
-            return res.status(500).json({
-              success: false,
-              error: assignment.error || 'Failed to assign an email for this order'
-            });
-          }
-        }
-        
-        await supabase.from('orders').update({ status: 'completed' }).eq('id', order.id);
-        await incrementCouponUsedIfPresent(order);
-        try {
-          await tryProcessReferralRewardsForOrder(supabase, order.id);
-        } catch (e) {
-          console.error('referral processing (dev sim):', e);
-        }
+
+      const settled = await settleOrderAfterGatewayPayment({
+        orderId: order_id,
+        orderUserId: user.id,
+        walletDeduction,
+        gatewayPaid: gatewayAmount,
+        gatewayLabel: 'uddoktapay',
+      });
+      if (settled.ok === false) {
+        return res.status(settled.statusCode).json({ success: false, error: settled.publicMessage });
       }
 
       const payload = {

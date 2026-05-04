@@ -45,6 +45,14 @@ interface Order {
   personal_email?: string;
   renewed_from_order_id?: string | null;
   auto_renew?: boolean;
+  assigned_admin_id?: string | null;
+  internal_admin_note?: string | null;
+  manual_access_checklist?: Record<string, boolean> | null;
+  delivered_at?: string | null;
+  last_manual_alert_at?: string | null;
+  last_manual_urgent_alert_at?: string | null;
+  reopened_at?: string | null;
+  reopened_count?: number | null;
   users?: {
     email: string;
     name: string;
@@ -59,6 +67,26 @@ interface Order {
   user_emails?: { id: string }[];
 }
 
+type AdminRecipient = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  role?: string | null;
+};
+
+type ManualChecklist = {
+  adobe_access_added: boolean;
+  customer_email_checked: boolean;
+  plan_duration_verified: boolean;
+};
+
+const DEFAULT_MANUAL_CHECKLIST: ManualChecklist = {
+  adobe_access_added: false,
+  customer_email_checked: false,
+  plan_duration_verified: false,
+};
+
 function durationToMonths(duration: string | null | undefined) {
   const raw = String(duration || '').toLowerCase();
   if (!raw) return 1;
@@ -70,7 +98,7 @@ function durationToMonths(duration: string | null | undefined) {
   return match ? Math.max(1, Number(match[0])) : 1;
 }
 
-type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled';
+type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled' | 'personal_manual';
 
 /** Redeem: access may be completed while cash is still due (manual collection). */
 function isRedeemAwaitingManualPayment(o: Order): boolean {
@@ -136,6 +164,42 @@ function paymentLabel(method: string, paymentStatus: string) {
   return { pretty, status: ps };
 }
 
+function normalizeChecklist(value: Record<string, boolean> | null | undefined): ManualChecklist {
+  return {
+    adobe_access_added: value?.adobe_access_added === true,
+    customer_email_checked: value?.customer_email_checked === true,
+    plan_duration_verified: value?.plan_duration_verified === true,
+  };
+}
+
+function isPendingManualPersonalOrder(order: Order) {
+  return order.products?.is_personal && order.payment_status === 'paid' && order.status === 'pending';
+}
+
+function formatEtaLabel(totalMinutes: number) {
+  if (totalMinutes % (24 * 60) === 0) {
+    const days = Math.max(1, Math.round(totalMinutes / (24 * 60)));
+    return `Usually within ${days} day${days === 1 ? '' : 's'}`;
+  }
+  if (totalMinutes % 60 === 0) {
+    const hours = Math.max(1, Math.round(totalMinutes / 60));
+    return `Usually within ${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  return `Usually within ${totalMinutes} minutes`;
+}
+
+function getPersonalPriority(order: Order, etaMinutes: number) {
+  if (!isPendingManualPersonalOrder(order)) return null;
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000));
+  if (ageMinutes >= Math.max(60, etaMinutes + 30)) {
+    return { label: 'Urgent', tone: 'urgent', ageMinutes };
+  }
+  if (ageMinutes >= etaMinutes) {
+    return { label: 'Delayed', tone: 'delayed', ageMinutes };
+  }
+  return { label: 'Normal', tone: 'normal', ageMinutes };
+}
+
 export const AdminOrders = () => {
   const { confirm } = useConfirmDialog();
   const [rawOrders, setRawOrders] = useState<Order[]>([]);
@@ -145,10 +209,50 @@ export const AdminOrders = () => {
   const [assigningSingle, setAssigningSingle] = useState<string | null>(null);
   const [renewingOrderId, setRenewingOrderId] = useState<string | null>(null);
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [currentAdminId, setCurrentAdminId] = useState('');
+  const [adminRecipients, setAdminRecipients] = useState<AdminRecipient[]>([]);
+  const [personalEtaMinutes, setPersonalEtaMinutes] = useState(30);
+  const [overdueReminding, setOverdueReminding] = useState(false);
+  const [opsModalOrder, setOpsModalOrder] = useState<Order | null>(null);
+  const [opsModalMode, setOpsModalMode] = useState<'edit' | 'deliver'>('edit');
+  const [opsSaving, setOpsSaving] = useState(false);
+  const [opsAssignedAdminId, setOpsAssignedAdminId] = useState('');
+  const [opsNote, setOpsNote] = useState('');
+  const [opsChecklist, setOpsChecklist] = useState<ManualChecklist>(DEFAULT_MANUAL_CHECKLIST);
 
   useEffect(() => {
     fetchOrders();
+    void loadPersonalOpsMeta();
   }, []);
+
+  const loadPersonalOpsMeta = async () => {
+    try {
+      const [{ data: auth }, { data: settingsRow }, token] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
+        getAccessTokenForApi(),
+      ]);
+      setCurrentAdminId(auth.user?.id || '');
+
+      const eta = Number((settingsRow?.value as any)?.delivery_eta_minutes || 30);
+      if (Number.isFinite(eta)) {
+        setPersonalEtaMinutes(Math.min(7 * 24 * 60, Math.max(15, Math.floor(eta))));
+      }
+
+      const base = getApiBaseUrl();
+      if (token && base) {
+        const res = await fetch(`${base}/api/admin/ops/personal-order-alerts`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok && json?.success && Array.isArray(json.admins)) {
+          setAdminRecipients(json.admins);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load personal order ops meta:', error);
+    }
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -227,6 +331,35 @@ export const AdminOrders = () => {
       completed: o.filter((x) => x.status === 'completed').length,
       refunded: o.filter((x) => x.status === 'refunded').length,
       cancelled: o.filter((x) => x.status === 'cancelled').length,
+      personal_manual: o.filter((x) => isPendingManualPersonalOrder(x)).length,
+    };
+  }, [rawOrders]);
+
+  const adminNameMap = useMemo(() => {
+    return new Map(adminRecipients.map((admin) => [admin.id, admin.name || admin.email || admin.id]));
+  }, [adminRecipients]);
+
+  const personalSummary = useMemo(() => {
+    const personalOrders = rawOrders.filter((order) => order.products?.is_personal);
+    const todayKey = new Date().toDateString();
+    const todayIncoming = personalOrders.filter((order) => new Date(order.created_at).toDateString() === todayKey).length;
+    const deliveredToday = personalOrders.filter(
+      (order) => order.delivered_at && new Date(order.delivered_at).toDateString() === todayKey,
+    ).length;
+    const pendingManual = personalOrders.filter((order) => isPendingManualPersonalOrder(order)).length;
+    const avgSource = personalOrders
+      .filter((order) => order.delivered_at)
+      .map((order) => {
+        const ms = new Date(order.delivered_at as string).getTime() - new Date(order.created_at).getTime();
+        return ms > 0 ? Math.round(ms / 60000) : 0;
+      })
+      .filter((minutes) => minutes > 0);
+    const avgMinutes = avgSource.length ? Math.round(avgSource.reduce((sum, value) => sum + value, 0) / avgSource.length) : 0;
+    return {
+      todayIncoming,
+      deliveredToday,
+      pendingManual,
+      avgMinutes,
     };
   }, [rawOrders]);
 
@@ -243,6 +376,9 @@ export const AdminOrders = () => {
     if (filter === 'pending') {
       return rawOrders.filter((o) => o.status === 'pending' || isRedeemAwaitingManualPayment(o));
     }
+    if (filter === 'personal_manual') {
+      return rawOrders.filter((o) => isPendingManualPersonalOrder(o));
+    }
     if (filter === 'paid') {
       return rawOrders.filter((o) => o.payment_status === 'paid');
     }
@@ -255,6 +391,14 @@ export const AdminOrders = () => {
 
   const updateOrderStatus = async (id: string, newStatus: string, userId?: string, isPersonal?: boolean) => {
     try {
+      if (newStatus === 'completed' && isPersonal) {
+        const row = rawOrders.find((item) => item.id === id);
+        if (row) {
+          openPersonalOpsModal(row, 'deliver');
+          return;
+        }
+      }
+
       const updates: any = { status: newStatus };
 
       if (newStatus === 'completed') {
@@ -290,6 +434,101 @@ export const AdminOrders = () => {
     } catch (error) {
       console.error('Error updating order status:', error);
       toast.error('Failed to update order status');
+    }
+  };
+
+  const openPersonalOpsModal = (order: Order, mode: 'edit' | 'deliver') => {
+    setOpsModalOrder(order);
+    setOpsModalMode(mode);
+    setOpsAssignedAdminId(order.assigned_admin_id || currentAdminId || '');
+    setOpsNote(order.internal_admin_note || '');
+    setOpsChecklist(normalizeChecklist(order.manual_access_checklist));
+  };
+
+  const closePersonalOpsModal = () => {
+    if (opsSaving) return;
+    setOpsModalOrder(null);
+    setOpsModalMode('edit');
+    setOpsAssignedAdminId('');
+    setOpsNote('');
+    setOpsChecklist(DEFAULT_MANUAL_CHECKLIST);
+  };
+
+  const savePersonalOps = async (action: 'save' | 'deliver' | 'reopen') => {
+    if (!opsModalOrder) return;
+    if (
+      action === 'deliver' &&
+      (!opsChecklist.adobe_access_added || !opsChecklist.customer_email_checked || !opsChecklist.plan_duration_verified)
+    ) {
+      toast.warning('Complete the manual access checklist before marking access ready.');
+      return;
+    }
+
+    setOpsSaving(true);
+    try {
+      const updates: Record<string, unknown> = {
+        assigned_admin_id: opsAssignedAdminId || null,
+        internal_admin_note: opsNote.trim() || null,
+        manual_access_checklist: opsChecklist,
+      };
+
+      if (action === 'deliver') {
+        updates.status = 'completed';
+        updates.payment_status = 'paid';
+        updates.delivered_at = new Date().toISOString();
+      }
+
+      if (action === 'reopen') {
+        updates.status = 'pending';
+        updates.payment_status = 'paid';
+        updates.delivered_at = null;
+        updates.reopened_at = new Date().toISOString();
+        updates.reopened_count = (opsModalOrder.reopened_count || 0) + 1;
+      }
+
+      const { error } = await supabase.from('orders').update(updates).eq('id', opsModalOrder.id);
+      if (error) throw error;
+
+      toast.success(
+        action === 'deliver'
+          ? 'Personal access marked as ready.'
+          : action === 'reopen'
+            ? 'Personal order moved back to pending.'
+            : 'Personal order notes updated.',
+      );
+      closePersonalOpsModal();
+      fetchOrders();
+    } catch (error) {
+      console.error('save personal ops error:', error);
+      toast.error('Failed to update personal order.');
+    } finally {
+      setOpsSaving(false);
+    }
+  };
+
+  const handleSendOverdueReminders = async () => {
+    setOverdueReminding(true);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const API_URL = getApiBaseUrl();
+      const res = await fetch(`${API_URL}/api/admin/ops/personal-order-overdue-alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ force_all: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Failed to send reminders');
+      const result = data.result || {};
+      toast.success(
+        `Reminder sent. Overdue: ${Number(result.overdue || 0)} · Urgent: ${Number(result.urgent || 0)}`,
+      );
+      fetchOrders();
+    } catch (error: any) {
+      console.error('overdue reminder error:', error);
+      toast.error(error?.message || 'Failed to send overdue reminders.');
+    } finally {
+      setOverdueReminding(false);
     }
   };
 
@@ -492,6 +731,7 @@ export const AdminOrders = () => {
   const filters: { key: FilterKey; label: string; count: number }[] = [
     { key: 'all', label: 'All', count: stats.total },
     { key: 'pending', label: 'Pending', count: stats.pending },
+    { key: 'personal_manual', label: 'Personal manual', count: stats.personal_manual },
     { key: 'paid', label: 'Paid', count: stats.paid },
     { key: 'completed', label: 'Completed', count: stats.completed },
     { key: 'refunded', label: 'Refunded', count: stats.refunded },
@@ -545,6 +785,15 @@ export const AdminOrders = () => {
               <RefreshCw className={`h-4 w-4 shrink-0 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
+            <button
+              type="button"
+              onClick={handleSendOverdueReminders}
+              disabled={overdueReminding || personalSummary.pendingManual === 0}
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20 sm:text-sm"
+            >
+              {overdueReminding ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <RefreshCw className="h-4 w-4 shrink-0" />}
+              Send overdue reminders
+            </button>
             {stats.pending > 0 && (
               <button
                 type="button"
@@ -584,6 +833,27 @@ export const AdminOrders = () => {
               </button>
             );
           })}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm dark:border-[#303038] dark:bg-[#111113]">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Today incoming</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{personalSummary.todayIncoming}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm dark:border-[#303038] dark:bg-[#111113]">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Pending manual</p>
+            <p className="mt-1 text-2xl font-bold text-amber-700 dark:text-amber-300">{personalSummary.pendingManual}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm dark:border-[#303038] dark:bg-[#111113]">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Delivered today</p>
+            <p className="mt-1 text-2xl font-bold text-emerald-700 dark:text-emerald-300">{personalSummary.deliveredToday}</p>
+          </div>
+          <div className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 shadow-sm dark:border-[#303038] dark:bg-[#111113]">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Avg delivery</p>
+            <p className="mt-1 text-2xl font-bold text-indigo-700 dark:text-indigo-300">
+              {personalSummary.avgMinutes > 0 ? formatEtaLabel(personalSummary.avgMinutes).replace('Usually within ', '') : '—'}
+            </p>
+          </div>
         </div>
 
         <div className="relative mt-5 max-w-xl">
@@ -653,6 +923,8 @@ export const AdminOrders = () => {
                   const pay = paymentLabel(order.payment_method, order.payment_status);
                   const shortOrderId = order.id.slice(0, 8).toUpperCase();
                   const durationMonths = durationToMonths(order.products?.duration);
+                  const priority = getPersonalPriority(order, personalEtaMinutes);
+                  const assignedAdminLabel = order.assigned_admin_id ? adminNameMap.get(order.assigned_admin_id) : '';
                   const exp = new Date(order.created_at);
                   exp.setMonth(exp.getMonth() + durationMonths);
                   const daysLeft = Math.ceil((exp.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
@@ -660,7 +932,13 @@ export const AdminOrders = () => {
                   return (
                     <tr
                       key={order.id}
-                      className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] align-middle"
+                      className={`border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02] align-middle ${
+                        priority?.tone === 'urgent'
+                          ? 'bg-red-50/50 dark:bg-red-500/5'
+                          : priority?.tone === 'delayed'
+                            ? 'bg-amber-50/50 dark:bg-amber-500/5'
+                            : ''
+                      }`}
                     >
                       <td className="py-4 px-4 max-w-[220px]">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -703,6 +981,16 @@ export const AdminOrders = () => {
                             {order.personal_email}
                           </p>
                         ) : null}
+                        {assignedAdminLabel ? (
+                          <p className="text-[11px] mt-1 text-gray-500 dark:text-gray-400">
+                            Assigned admin: <span className="font-medium text-gray-700 dark:text-gray-200">{assignedAdminLabel}</span>
+                          </p>
+                        ) : null}
+                        {order.delivered_at ? (
+                          <p className="text-[11px] mt-1 text-emerald-700 dark:text-emerald-300">
+                            Delivered: {format(new Date(order.delivered_at), 'MMM d, yyyy · HH:mm')}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-start gap-2">
@@ -716,6 +1004,11 @@ export const AdminOrders = () => {
                             </p>
                             {order.users?.phone ? (
                               <p className="text-xs text-gray-500 mt-0.5">{order.users.phone}</p>
+                            ) : null}
+                            {order.internal_admin_note ? (
+                              <p className="mt-2 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[11px] leading-relaxed text-gray-600 dark:bg-white/5 dark:text-gray-300">
+                                {order.internal_admin_note}
+                              </p>
                             ) : null}
                           </div>
                         </div>
@@ -787,6 +1080,24 @@ export const AdminOrders = () => {
                               Manual pay due
                             </span>
                           ) : null}
+                          {priority ? (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                                priority.tone === 'urgent'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200'
+                                  : priority.tone === 'delayed'
+                                    ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200'
+                                    : 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200'
+                              }`}
+                            >
+                              {priority.label}
+                            </span>
+                          ) : null}
+                          {order.reopened_count ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-slate-100 text-slate-700 dark:bg-white/10 dark:text-slate-300">
+                              Reopened {order.reopened_count}x
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       <td className="py-4 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
@@ -805,7 +1116,7 @@ export const AdminOrders = () => {
                                 }
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20"
                               >
-                                <CheckCircle className="w-3.5 h-3.5" /> Approve
+                                <CheckCircle className="w-3.5 h-3.5" /> {order.products?.is_personal ? 'Access given' : 'Approve'}
                               </button>
                               <button
                                 type="button"
@@ -826,6 +1137,15 @@ export const AdminOrders = () => {
                               >
                                 <FileText className="w-3.5 h-3.5" />
                                 Invoice
+                              </button>
+                            )}
+                            {order.products?.is_personal && (
+                              <button
+                                type="button"
+                                onClick={() => openPersonalOpsModal(order, 'edit')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 hover:bg-violet-100 dark:hover:bg-violet-500/20"
+                              >
+                                <Info className="w-3.5 h-3.5" /> Ops
                               </button>
                             )}
                             {order.status === 'paid' && !order.products?.is_personal && (
@@ -866,6 +1186,15 @@ export const AdminOrders = () => {
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10 hover:bg-orange-100 dark:hover:bg-orange-500/20"
                               >
                                 <RotateCcw className="w-3.5 h-3.5" /> Refund
+                              </button>
+                            )}
+                            {order.products?.is_personal && order.status === 'completed' && (
+                              <button
+                                type="button"
+                                onClick={() => openPersonalOpsModal(order, 'edit')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" /> Reopen
                               </button>
                             )}
                             <button
@@ -921,6 +1250,158 @@ export const AdminOrders = () => {
           </div>
         )}
       </div>
+
+      {opsModalOrder ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-[#303038] dark:bg-[#151518]">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-[#26262d]">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">Personal order ops</p>
+                <h3 className="mt-1 text-lg font-bold text-gray-900 dark:text-gray-100">
+                  {opsModalOrder.products?.title || 'Personal order'}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  #{opsModalOrder.id.slice(0, 8).toUpperCase()} · {formatEtaLabel(personalEtaMinutes)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closePersonalOpsModal}
+                className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 dark:border-[#303038] dark:text-gray-300 dark:hover:bg-white/5"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-5 px-5 py-5">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-[#26262d] dark:bg-white/[0.03]">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    {opsModalOrder.users?.name || 'Unknown'}
+                  </p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">{opsModalOrder.users?.email || '—'}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-300">{opsModalOrder.users?.phone || '—'}</p>
+                </div>
+                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-[#26262d] dark:bg-white/[0.03]">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Adobe access email</p>
+                  <p className="mt-1 text-sm font-semibold text-indigo-700 dark:text-indigo-300">
+                    {opsModalOrder.personal_email || '—'}
+                  </p>
+                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">
+                    Ordered {format(new Date(opsModalOrder.created_at), 'MMM d, yyyy · HH:mm')}
+                  </p>
+                  {opsModalOrder.delivered_at ? (
+                    <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">
+                      Delivered {format(new Date(opsModalOrder.delivered_at), 'MMM d, yyyy · HH:mm')}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Manual access checklist</p>
+                <div className="mt-3 grid gap-2">
+                  {[
+                    ['adobe_access_added', 'Adobe access added'],
+                    ['customer_email_checked', 'Customer email checked'],
+                    ['plan_duration_verified', 'Plan duration verified'],
+                  ].map(([key, label]) => (
+                    <label
+                      key={key}
+                      className="flex items-center gap-3 rounded-xl border border-gray-200 px-3 py-3 text-sm text-gray-700 dark:border-[#303038] dark:text-gray-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={opsChecklist[key as keyof ManualChecklist]}
+                        onChange={() =>
+                          setOpsChecklist((current) => ({
+                            ...current,
+                            [key]: !current[key as keyof ManualChecklist],
+                          }))
+                        }
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 dark:text-gray-100">Assigned admin</label>
+                  <select
+                    value={opsAssignedAdminId}
+                    onChange={(e) => setOpsAssignedAdminId(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 dark:border-[#303038] dark:bg-[#111113] dark:text-gray-100"
+                  >
+                    <option value="">Unassigned</option>
+                    {adminRecipients.map((admin) => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.name || admin.email || admin.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 dark:text-gray-100">Priority</label>
+                  <div className="mt-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-700 dark:border-[#303038] dark:bg-[#111113] dark:text-gray-200">
+                    {getPersonalPriority(opsModalOrder, personalEtaMinutes)?.label || 'Ready / not pending'}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 dark:text-gray-100">Internal admin note</label>
+                <textarea
+                  value={opsNote}
+                  onChange={(e) => setOpsNote(e.target.value)}
+                  rows={4}
+                  placeholder="Access given from panel A, waiting for domain check, customer asked for later..."
+                  className="mt-2 w-full rounded-2xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-900 dark:border-[#303038] dark:bg-[#111113] dark:text-gray-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-4 dark:border-[#26262d]">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
+                Checklist, admin note, delivered time, and reopen history are saved on this order.
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => savePersonalOps('save')}
+                  disabled={opsSaving}
+                  className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-[#303038] dark:text-gray-200 dark:hover:bg-white/5"
+                >
+                  Save note
+                </button>
+                {opsModalOrder.status === 'completed' ? (
+                  <button
+                    type="button"
+                    onClick={() => savePersonalOps('reopen')}
+                    disabled={opsSaving}
+                    className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200 dark:hover:bg-amber-500/20"
+                  >
+                    Reopen to pending
+                  </button>
+                ) : null}
+                {opsModalOrder.status === 'pending' ? (
+                  <button
+                    type="button"
+                    onClick={() => savePersonalOps('deliver')}
+                    disabled={opsSaving}
+                    className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {opsSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+                    Mark access ready
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

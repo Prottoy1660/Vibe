@@ -24,6 +24,9 @@ import {
 import { productSavePercent } from '../../lib/productStoreDisplay';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
+import { getApiBaseUrl } from '../../lib/apiBase';
+import { enableWebPush, getPushPermission, isWebPushSupported } from '../../lib/webPushClient';
 
 const PRODUCT_IMAGES_BUCKET = 'product-images';
 const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -61,6 +64,98 @@ interface Product {
   is_personal: boolean;
 }
 
+type PersonalFlowSettings = {
+  enabled: boolean;
+  manual_fulfillment_enabled: boolean;
+  delivery_eta_minutes: number;
+  delivery_eta_label: string;
+};
+
+type PersonalOrderAlertSettings = {
+  enabled: boolean;
+  telegram_enabled: boolean;
+  telegram_bot_token: string;
+  telegram_chat_ids: string[];
+  email_enabled: boolean;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_secure: boolean;
+  smtp_user: string;
+  smtp_pass: string;
+  email_from: string;
+  email_to: string[];
+  browser_push_enabled: boolean;
+  browser_push_all_admins: boolean;
+  browser_push_admin_user_ids: string[];
+};
+
+type AdminRecipient = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  role: string | null;
+};
+
+const DEFAULT_PERSONAL_FLOW_SETTINGS: PersonalFlowSettings = {
+  enabled: true,
+  manual_fulfillment_enabled: false,
+  delivery_eta_minutes: 30,
+  delivery_eta_label: 'Manual setup usually completes within',
+};
+
+const DEFAULT_PERSONAL_ALERT_SETTINGS: PersonalOrderAlertSettings = {
+  enabled: false,
+  telegram_enabled: false,
+  telegram_bot_token: '',
+  telegram_chat_ids: [],
+  email_enabled: false,
+  smtp_host: '',
+  smtp_port: 587,
+  smtp_secure: false,
+  smtp_user: '',
+  smtp_pass: '',
+  email_from: '',
+  email_to: [],
+  browser_push_enabled: false,
+  browser_push_all_admins: true,
+  browser_push_admin_user_ids: [],
+};
+
+function normalizePersonalFlowSettings(value: any): PersonalFlowSettings {
+  return {
+    enabled: value?.enabled !== false,
+    manual_fulfillment_enabled: value?.manual_fulfillment_enabled === true,
+    delivery_eta_minutes: Math.max(15, Math.min(10080, Number(value?.delivery_eta_minutes) || 30)),
+    delivery_eta_label:
+      typeof value?.delivery_eta_label === 'string' && value.delivery_eta_label.trim()
+        ? value.delivery_eta_label.trim()
+        : DEFAULT_PERSONAL_FLOW_SETTINGS.delivery_eta_label,
+  };
+}
+
+function normalizePersonalAlertSettings(value: any): PersonalOrderAlertSettings {
+  return {
+    enabled: value?.enabled === true,
+    telegram_enabled: value?.telegram_enabled === true,
+    telegram_bot_token: typeof value?.telegram_bot_token === 'string' ? value.telegram_bot_token : '',
+    telegram_chat_ids: Array.isArray(value?.telegram_chat_ids) ? value.telegram_chat_ids.filter(Boolean) : [],
+    email_enabled: value?.email_enabled === true,
+    smtp_host: typeof value?.smtp_host === 'string' ? value.smtp_host : '',
+    smtp_port: Math.max(1, Number(value?.smtp_port) || 587),
+    smtp_secure: value?.smtp_secure === true,
+    smtp_user: typeof value?.smtp_user === 'string' ? value.smtp_user : '',
+    smtp_pass: typeof value?.smtp_pass === 'string' ? value.smtp_pass : '',
+    email_from: typeof value?.email_from === 'string' ? value.email_from : '',
+    email_to: Array.isArray(value?.email_to) ? value.email_to.filter(Boolean) : [],
+    browser_push_enabled: value?.browser_push_enabled === true,
+    browser_push_all_admins: value?.browser_push_all_admins !== false,
+    browser_push_admin_user_ids: Array.isArray(value?.browser_push_admin_user_ids)
+      ? value.browser_push_admin_user_ids.filter(Boolean)
+      : [],
+  };
+}
+
 function slotLabel(n: number) {
   return `${n} ${n === 1 ? 'slot' : 'slots'}`;
 }
@@ -69,9 +164,19 @@ export const AdminProducts = () => {
   const { confirm } = useConfirmDialog();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
+  const [personalFlowSettings, setPersonalFlowSettings] = useState<PersonalFlowSettings>(DEFAULT_PERSONAL_FLOW_SETTINGS);
+  const [personalFlowSaving, setPersonalFlowSaving] = useState(false);
+  const [personalFlowMessage, setPersonalFlowMessage] = useState<string | null>(null);
+  const [alertSettings, setAlertSettings] = useState<PersonalOrderAlertSettings>(DEFAULT_PERSONAL_ALERT_SETTINGS);
+  const [alertSaving, setAlertSaving] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [adminRecipients, setAdminRecipients] = useState<AdminRecipient[]>([]);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
+  const [pushEnabling, setPushEnabling] = useState(false);
 
   const [formData, setFormData] = useState<Partial<Product>>({
     title: '',
@@ -93,6 +198,10 @@ export const AdminProducts = () => {
 
   useEffect(() => {
     fetchProducts();
+    void loadPersonalOpsSettings();
+    if (isWebPushSupported()) {
+      void getPushPermission().then(setPushPermission).catch(() => setPushPermission('default'));
+    }
   }, []);
 
   const fetchProducts = async () => {
@@ -110,6 +219,115 @@ export const AdminProducts = () => {
       console.error('Error fetching products:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPersonalOpsSettings = async () => {
+    setSettingsLoading(true);
+    try {
+      const [personalRow, token] = await Promise.all([
+        supabase.from('system_settings').select('value').eq('key', 'personal_subscriptions').maybeSingle(),
+        getAccessTokenForApi(),
+      ]);
+      if (personalRow.error) throw personalRow.error;
+      setPersonalFlowSettings(normalizePersonalFlowSettings(personalRow.data?.value || {}));
+
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/ops/personal-order-alerts`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to load personal alert settings.');
+      setAlertSettings(normalizePersonalAlertSettings(data.settings || {}));
+      setAdminRecipients(Array.isArray(data.admins) ? data.admins : []);
+    } catch (error: any) {
+      console.error('loadPersonalOpsSettings:', error);
+      toast.error(error?.message || 'Failed to load personal order settings');
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const savePersonalFlowSettings = async () => {
+    setPersonalFlowSaving(true);
+    setPersonalFlowMessage(null);
+    try {
+      const value = {
+        enabled: personalFlowSettings.enabled,
+        manual_fulfillment_enabled: personalFlowSettings.manual_fulfillment_enabled,
+        delivery_eta_minutes: Math.max(15, Math.min(10080, Math.floor(Number(personalFlowSettings.delivery_eta_minutes) || 30))),
+        delivery_eta_label: personalFlowSettings.delivery_eta_label.trim() || DEFAULT_PERSONAL_FLOW_SETTINGS.delivery_eta_label,
+      };
+      const { error } = await supabase
+        .from('system_settings')
+        .update({ value, updated_at: new Date().toISOString() })
+        .eq('key', 'personal_subscriptions');
+      if (error) throw error;
+      setPersonalFlowSettings(normalizePersonalFlowSettings(value));
+      setPersonalFlowMessage('Personal flow saved.');
+    } catch (error: any) {
+      setPersonalFlowMessage(error?.message || 'Failed to save personal flow.');
+    } finally {
+      setPersonalFlowSaving(false);
+    }
+  };
+
+  const saveAlertSettings = async () => {
+    setAlertSaving(true);
+    setAlertMessage(null);
+    try {
+      const token = await getAccessTokenForApi();
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const payload = {
+        ...alertSettings,
+        telegram_bot_token: alertSettings.telegram_bot_token.trim(),
+        telegram_chat_ids: alertSettings.telegram_chat_ids.map((x) => x.trim()).filter(Boolean),
+        smtp_host: alertSettings.smtp_host.trim(),
+        smtp_user: alertSettings.smtp_user.trim(),
+        smtp_pass: alertSettings.smtp_pass,
+        email_from: alertSettings.email_from.trim(),
+        email_to: alertSettings.email_to.map((x) => x.trim()).filter(Boolean),
+        browser_push_admin_user_ids: alertSettings.browser_push_admin_user_ids.filter(Boolean),
+      };
+      const res = await fetch(`${getApiBaseUrl()}/api/admin/ops/personal-order-alerts`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to save alert settings.');
+      setAlertSettings(normalizePersonalAlertSettings(data.settings || payload));
+      setAlertMessage('Admin alert channels saved.');
+    } catch (error: any) {
+      setAlertMessage(error?.message || 'Failed to save alert settings.');
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
+  const togglePushRecipient = (userId: string) => {
+    setAlertSettings((current) => ({
+      ...current,
+      browser_push_admin_user_ids: current.browser_push_admin_user_ids.includes(userId)
+        ? current.browser_push_admin_user_ids.filter((id) => id !== userId)
+        : [...current.browser_push_admin_user_ids, userId],
+    }));
+  };
+
+  const handleEnableThisBrowser = async () => {
+    setPushEnabling(true);
+    try {
+      const result = await enableWebPush();
+      if (!result.ok) throw new Error(result.reason || 'Push subscribe failed');
+      setPushPermission('granted');
+      toast.success('This admin browser is ready for push alerts.');
+    } catch (error: any) {
+      toast.error(error?.message || 'Could not enable browser push.');
+    } finally {
+      setPushEnabling(false);
     }
   };
 
@@ -406,6 +624,307 @@ export const AdminProducts = () => {
           )}
         </div>
       </div>
+
+      {activeTab === 'personal' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div className="rounded-2xl border border-violet-100 dark:border-violet-500/20 bg-white dark:bg-[#151518] p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Personal delivery flow</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Control whether personal orders auto-run via API or stay pending for manual delivery.
+                </p>
+              </div>
+              {settingsLoading && <Loader2 className="w-4 h-4 animate-spin text-violet-500 shrink-0" />}
+            </div>
+
+            <div className="space-y-4">
+              <ToggleCard
+                title="Personal plan sales"
+                description="Turn new personal plan purchases on or off for customers."
+                enabled={personalFlowSettings.enabled}
+                onToggle={() =>
+                  setPersonalFlowSettings((current) => ({ ...current, enabled: !current.enabled }))
+                }
+                color="violet"
+              />
+              <ToggleCard
+                title="Manual fulfillment (API off)"
+                description="Keep paid personal orders pending, alert admins, and let customers see a countdown instead of instant Adobe API setup."
+                enabled={personalFlowSettings.manual_fulfillment_enabled}
+                onToggle={() =>
+                  setPersonalFlowSettings((current) => ({
+                    ...current,
+                    manual_fulfillment_enabled: !current.manual_fulfillment_enabled,
+                  }))
+                }
+                color="violet"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Delivery ETA (minutes)" hint="Used for the customer countdown card after payment.">
+                  <input
+                    type="number"
+                    min={15}
+                    max={10080}
+                    value={personalFlowSettings.delivery_eta_minutes}
+                    onChange={(e) =>
+                      setPersonalFlowSettings((current) => ({
+                        ...current,
+                        delivery_eta_minutes: Number(e.target.value),
+                      }))
+                    }
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="Countdown label" hint="Shown above the animated ETA block on the customer side.">
+                  <input
+                    type="text"
+                    value={personalFlowSettings.delivery_eta_label}
+                    onChange={(e) =>
+                      setPersonalFlowSettings((current) => ({
+                        ...current,
+                        delivery_eta_label: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Pending manual personal orders stay visible in admin orders until you approve them.
+              </p>
+              <button
+                type="button"
+                onClick={savePersonalFlowSettings}
+                disabled={personalFlowSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-sm font-semibold"
+              >
+                {personalFlowSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save flow
+              </button>
+            </div>
+            {personalFlowMessage ? (
+              <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">{personalFlowMessage}</p>
+            ) : null}
+          </div>
+
+          <div className="rounded-2xl border border-indigo-100 dark:border-indigo-500/20 bg-white dark:bg-[#151518] p-5">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100">Admin alert channels</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  These alerts fire automatically when a manual personal order is paid.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <ToggleCard
+                title="Send admin alerts"
+                description="Master switch for Telegram, email, and browser push notifications."
+                enabled={alertSettings.enabled}
+                onToggle={() => setAlertSettings((current) => ({ ...current, enabled: !current.enabled }))}
+                color="indigo"
+              />
+              <ToggleCard
+                title="Telegram alerts"
+                description="Uses your bot token and one or more chat IDs."
+                enabled={alertSettings.telegram_enabled}
+                onToggle={() =>
+                  setAlertSettings((current) => ({ ...current, telegram_enabled: !current.telegram_enabled }))
+                }
+                color="indigo"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Telegram bot token">
+                  <input
+                    type="password"
+                    value={alertSettings.telegram_bot_token}
+                    onChange={(e) =>
+                      setAlertSettings((current) => ({ ...current, telegram_bot_token: e.target.value }))
+                    }
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="Telegram chat IDs" hint="Comma or line separated.">
+                  <textarea
+                    value={alertSettings.telegram_chat_ids.join('\n')}
+                    onChange={(e) =>
+                      setAlertSettings((current) => ({
+                        ...current,
+                        telegram_chat_ids: e.target.value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean),
+                      }))
+                    }
+                    className="w-full min-h-[88px] p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">You can place 2 or more Telegram chat IDs here.</p>
+                </Field>
+              </div>
+
+              <ToggleCard
+                title="Email alerts"
+                description="SMTP settings are stored in admin settings and used only for personal manual-order alerts."
+                enabled={alertSettings.email_enabled}
+                onToggle={() => setAlertSettings((current) => ({ ...current, email_enabled: !current.email_enabled }))}
+                color="indigo"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="SMTP host">
+                  <input
+                    type="text"
+                    value={alertSettings.smtp_host}
+                    onChange={(e) => setAlertSettings((current) => ({ ...current, smtp_host: e.target.value }))}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="SMTP port">
+                  <input
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={alertSettings.smtp_port}
+                    onChange={(e) =>
+                      setAlertSettings((current) => ({ ...current, smtp_port: Number(e.target.value) }))
+                    }
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="SMTP username">
+                  <input
+                    type="text"
+                    value={alertSettings.smtp_user}
+                    onChange={(e) => setAlertSettings((current) => ({ ...current, smtp_user: e.target.value }))}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="SMTP password">
+                  <input
+                    type="password"
+                    value={alertSettings.smtp_pass}
+                    onChange={(e) => setAlertSettings((current) => ({ ...current, smtp_pass: e.target.value }))}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="From email">
+                  <input
+                    type="email"
+                    value={alertSettings.email_from}
+                    onChange={(e) => setAlertSettings((current) => ({ ...current, email_from: e.target.value }))}
+                    className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                </Field>
+                <Field label="Recipient emails" hint="Comma or line separated.">
+                  <textarea
+                    value={alertSettings.email_to.join('\n')}
+                    onChange={(e) =>
+                      setAlertSettings((current) => ({
+                        ...current,
+                        email_to: e.target.value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean),
+                      }))
+                    }
+                    className="w-full min-h-[88px] p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-sm"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">You can place 2 or more alert emails here.</p>
+                </Field>
+              </div>
+
+              <ToggleCard
+                title="Browser push alerts"
+                description="Sends a Web Push notification to selected admin accounts that enabled notifications in their browser."
+                enabled={alertSettings.browser_push_enabled}
+                onToggle={() =>
+                  setAlertSettings((current) => ({
+                    ...current,
+                    browser_push_enabled: !current.browser_push_enabled,
+                  }))
+                }
+                color="indigo"
+              />
+              <div className="rounded-xl border border-gray-200 dark:border-[#303038] bg-gray-50/60 dark:bg-[#111113] p-4 space-y-3">
+                <label className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1c1c21] p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={alertSettings.browser_push_all_admins}
+                    onChange={() =>
+                      setAlertSettings((current) => ({
+                        ...current,
+                        browser_push_all_admins: !current.browser_push_all_admins,
+                      }))
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">Send to all admins</span>
+                    <span className="block text-[11px] text-gray-500 dark:text-gray-400">
+                      Every current and future admin with push enabled will receive the alert.
+                    </span>
+                  </span>
+                </label>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">This browser</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Permission: <span className="font-semibold">{pushPermission}</span>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleEnableThisBrowser}
+                    disabled={!isWebPushSupported() || pushEnabling}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-gray-200 dark:border-[#303038] text-sm font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50"
+                  >
+                    {pushEnabling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                    Enable push on this browser
+                  </button>
+                </div>
+                {!alertSettings.browser_push_all_admins && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {adminRecipients.map((admin) => (
+                      <label
+                        key={admin.id}
+                        className="flex items-start gap-2 rounded-xl border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#1c1c21] p-3 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={alertSettings.browser_push_admin_user_ids.includes(admin.id)}
+                          onChange={() => togglePushRecipient(admin.id)}
+                          className="mt-1"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {admin.name || admin.email || admin.id}
+                          </span>
+                          <span className="block text-[11px] text-gray-500 dark:text-gray-400">
+                            {admin.email || admin.phone || admin.role || 'Admin'}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Save after updating any destination, chat ID, SMTP, or browser recipient.
+              </p>
+              <button
+                type="button"
+                onClick={saveAlertSettings}
+                disabled={alertSaving}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold"
+              >
+                {alertSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Save alerts
+              </button>
+            </div>
+            {alertMessage ? <p className="mt-3 text-xs text-gray-600 dark:text-gray-300">{alertMessage}</p> : null}
+          </div>
+        </div>
+      )}
 
       {(isAdding || editingId) && (
         <div className="rounded-2xl border border-indigo-100 dark:border-indigo-500/20 bg-indigo-50/30 dark:bg-[#111113] p-5 md:p-6">
@@ -959,16 +1478,48 @@ function ToggleCard({
   description: string;
   enabled: boolean;
   onToggle: () => void;
-  color: 'amber' | 'blue';
+  color: 'amber' | 'blue' | 'violet' | 'indigo';
 }) {
   const wrap =
     color === 'amber'
       ? 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30'
-      : 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30';
+      : color === 'blue'
+        ? 'bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/30'
+        : color === 'violet'
+          ? 'bg-violet-50 dark:bg-violet-500/10 border-violet-200 dark:border-violet-500/30'
+          : 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30';
   const titleC =
-    color === 'amber' ? 'text-amber-800 dark:text-amber-200' : 'text-blue-800 dark:text-blue-200';
-  const desc = color === 'amber' ? 'text-amber-700 dark:text-amber-400' : 'text-blue-700 dark:text-blue-400';
-  const knob = color === 'amber' ? (enabled ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600') : enabled ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600';
+    color === 'amber'
+      ? 'text-amber-800 dark:text-amber-200'
+      : color === 'blue'
+        ? 'text-blue-800 dark:text-blue-200'
+        : color === 'violet'
+          ? 'text-violet-800 dark:text-violet-200'
+          : 'text-indigo-800 dark:text-indigo-200';
+  const desc =
+    color === 'amber'
+      ? 'text-amber-700 dark:text-amber-400'
+      : color === 'blue'
+        ? 'text-blue-700 dark:text-blue-400'
+        : color === 'violet'
+          ? 'text-violet-700 dark:text-violet-400'
+          : 'text-indigo-700 dark:text-indigo-400';
+  const knob =
+    color === 'amber'
+      ? enabled
+        ? 'bg-amber-500'
+        : 'bg-gray-300 dark:bg-gray-600'
+      : color === 'blue'
+        ? enabled
+          ? 'bg-blue-500'
+          : 'bg-gray-300 dark:bg-gray-600'
+        : color === 'violet'
+          ? enabled
+            ? 'bg-violet-500'
+            : 'bg-gray-300 dark:bg-gray-600'
+          : enabled
+            ? 'bg-indigo-500'
+            : 'bg-gray-300 dark:bg-gray-600';
 
   return (
     <div className={`flex items-center justify-between rounded-xl border px-4 py-3 gap-4 ${wrap}`}>

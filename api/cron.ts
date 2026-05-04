@@ -5,6 +5,7 @@ import { assignEmailForOrder } from './lib/emailAssignment.js';
 import { productDurationToMonths } from './lib/productDuration.js';
 import { runSubscriptionExpiryReminders } from './lib/subscriptionExpiryReminders.js';
 import { runAutoSeizeOverdueRedeemOrders } from './lib/redeemSeizeUnpaid.js';
+import { runPendingPersonalOrderEscalations } from './lib/personalOrderAdminAlerts.js';
 
 dotenv.config();
 
@@ -145,6 +146,20 @@ export function initCronJobs() {
       }
     } catch (err) {
       console.error('[CRON] Redeem auto-seize failed:', err);
+    }
+  });
+
+  // Every 20 minutes: escalate pending manual personal orders after ETA / urgent thresholds.
+  cron.schedule('*/20 * * * *', async () => {
+    if (!supabaseUrl || !supabaseServiceKey) return;
+    console.log('[CRON] Checking pending personal manual order reminders...');
+    try {
+      const result = await runPendingPersonalOrderEscalations(supabase);
+      if (result.scanned > 0 && (result.overdue > 0 || result.urgent > 0)) {
+        console.log('[CRON] Personal manual alerts:', result);
+      }
+    } catch (err) {
+      console.error('[CRON] Personal manual reminder check failed:', err);
     }
   });
 

@@ -72,6 +72,27 @@ function verificationCodeDisplay(code: string): string {
 
 const BANGLADESH_TZ = 'Asia/Dhaka';
 
+function formatCountdown(msLeft: number) {
+  const safe = Math.max(0, Math.floor(msLeft / 1000));
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = safe % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+}
+
+function formatEtaWindow(totalMinutes: number) {
+  if (totalMinutes % (24 * 60) === 0) {
+    const days = Math.max(1, Math.round(totalMinutes / (24 * 60)));
+    return `Usually within ${days} day${days === 1 ? '' : 's'}`;
+  }
+  if (totalMinutes % 60 === 0) {
+    const hours = Math.max(1, Math.round(totalMinutes / 60));
+    return `Usually within ${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  return `Usually within ${totalMinutes} minutes`;
+}
+
 function formatInboxTimeBangladesh(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
@@ -188,12 +209,33 @@ export const AdobeEmail = () => {
   const [activeTab, setActiveTab] = useState<'emails' | 'personal'>('emails');
   /** Admin can disable new personal sales; default true if setting row missing */
   const [personalSubscriptionsEnabled, setPersonalSubscriptionsEnabled] = useState(true);
+  const [personalDeliveryEtaMinutes, setPersonalDeliveryEtaMinutes] = useState(30);
+  const [personalDeliveryEtaLabel, setPersonalDeliveryEtaLabel] = useState('Manual setup usually completes within');
   const [personalOrders, setPersonalOrders] = useState<any[]>([]);
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [personalProducts, setPersonalProducts] = useState<any[]>([]);
   const [requestForm, setRequestForm] = useState({ email: '', productId: '', autoRenew: false });
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [togglingAutoRenewOrderId, setTogglingAutoRenewOrderId] = useState<string | null>(null);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
+  const accessReadyToastIdsRef = useRef<Set<string>>(new Set());
+  const personalOrdersLoadedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('vibe-personal-access-ready') || '[]');
+      if (Array.isArray(stored)) {
+        accessReadyToastIdsRef.current = new Set(stored.filter((item) => typeof item === 'string'));
+      }
+    } catch {
+      accessReadyToastIdsRef.current = new Set();
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const fetchEmailData = async (retryCount = 0) => {
     if (!user) return;
@@ -209,8 +251,19 @@ export const AdobeEmail = () => {
           .in('status', ['paid', 'completed', 'pending']),
       ]);
 
-      const personalEnabled = ((settingsRes.data?.value || {}) as { enabled?: boolean }).enabled !== false;
+      const personalCfg = (settingsRes.data?.value || {}) as {
+        enabled?: boolean;
+        delivery_eta_minutes?: number;
+        delivery_eta_label?: string;
+      };
+      const personalEnabled = personalCfg.enabled !== false;
       setPersonalSubscriptionsEnabled(personalEnabled);
+      setPersonalDeliveryEtaMinutes(Math.max(15, Math.min(10080, Number(personalCfg.delivery_eta_minutes) || 30)));
+      setPersonalDeliveryEtaLabel(
+        typeof personalCfg.delivery_eta_label === 'string' && personalCfg.delivery_eta_label.trim()
+          ? personalCfg.delivery_eta_label.trim()
+          : 'Manual setup usually completes within',
+      );
 
       const pProductsResult = personalEnabled
         ? await supabase
@@ -255,6 +308,20 @@ export const AdobeEmail = () => {
           };
         });
         setPersonalOrders(pOrders);
+        const shouldToastNow = personalOrdersLoadedRef.current;
+        for (const order of pOrders) {
+          if ((order.status === 'completed' || order.status === 'paid') && !accessReadyToastIdsRef.current.has(order.id)) {
+            accessReadyToastIdsRef.current.add(order.id);
+            if (order.delivered_at && shouldToastNow) {
+              toast.success('Your personal Adobe access is now ready.');
+            }
+          }
+        }
+        localStorage.setItem(
+          'vibe-personal-access-ready',
+          JSON.stringify(Array.from(accessReadyToastIdsRef.current).slice(-100)),
+        );
+        personalOrdersLoadedRef.current = true;
       }
 
       if (pProducts) {
@@ -1245,6 +1312,13 @@ export const AdobeEmail = () => {
                 <ul className="space-y-4">
                   {personalOrders.map((order) => {
                     const isLive = order.status === 'completed' || order.status === 'paid';
+                    const etaTarget = new Date(new Date(order.created_at).getTime() + personalDeliveryEtaMinutes * 60 * 1000);
+                    const etaMsLeft = Math.max(0, etaTarget.getTime() - countdownNow);
+                    const isDelayed = !isLive && etaMsLeft === 0;
+                    const etaProgress = Math.min(
+                      100,
+                      Math.max(0, ((personalDeliveryEtaMinutes * 60 * 1000 - etaMsLeft) / (personalDeliveryEtaMinutes * 60 * 1000)) * 100),
+                    );
                     return (
                       <li
                         key={order.id}
@@ -1265,6 +1339,12 @@ export const AdobeEmail = () => {
                               <span className="text-xs text-zinc-500 dark:text-zinc-400">
                                 Ordered {format(new Date(order.created_at), 'MMM d, yyyy')}
                               </span>
+
+                              {isLive && (
+                                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                                  Access ready
+                                </span>
+                              )}
 
                               {isLive && (
                                 <div className="flex items-center gap-2.5 ml-1 pl-3 pr-1 py-1 rounded-full bg-zinc-100 dark:bg-[#151518] border border-zinc-200 dark:border-zinc-800 shadow-sm">
@@ -1315,6 +1395,33 @@ export const AdobeEmail = () => {
                             </div>
 
                             <div>
+                              {!isLive ? (
+                                <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-[#101012] p-3">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                                    Setup progress
+                                  </p>
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                                    {([
+                                      ['Payment received', true],
+                                      ['Setup in progress', true],
+                                      ['Access ready', false],
+                                    ] as Array<[string, boolean]>).map(([label, done], index) => (
+                                      <div
+                                        key={label}
+                                        className={`rounded-xl border px-3 py-2 text-xs font-medium ${
+                                          done
+                                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+                                            : 'border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-400'
+                                        }`}
+                                      >
+                                        <span className="block text-[10px] uppercase tracking-wide opacity-70">Step {index + 1}</span>
+                                        <span className="mt-1 block">{label}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
+
                               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Plan</p>
                               <p className="mt-1 text-sm font-medium text-zinc-900 dark:text-zinc-100">
                                 {order.products?.title ?? 'Adobe'}{' '}
@@ -1326,6 +1433,9 @@ export const AdobeEmail = () => {
 
                             {isLive && order.expiresAt ? (
                               <div>
+                                <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                                  Your manual access has been delivered and is ready to use.
+                                </p>
                                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                                   Access until
                                 </p>
@@ -1346,9 +1456,54 @@ export const AdobeEmail = () => {
                                 </div>
                               </div>
                             ) : (
-                              <p className="text-sm text-amber-800 dark:text-amber-200/90">
-                                We are setting up access for this order. Status updates when payment completes.
-                              </p>
+                              <div className={`rounded-2xl border p-4 ${
+                                isDelayed
+                                  ? 'border-red-300/70 dark:border-red-500/30 bg-gradient-to-r from-red-50 via-rose-50 to-orange-50 dark:from-red-500/10 dark:via-rose-500/10 dark:to-orange-500/10'
+                                  : 'border-amber-300/70 dark:border-amber-500/30 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 dark:from-amber-500/10 dark:via-orange-500/10 dark:to-amber-500/10'
+                              }`}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`inline-flex items-center rounded-full border bg-white/80 dark:bg-black/20 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                                    isDelayed
+                                      ? 'border-red-300/80 text-red-700 dark:border-red-500/30 dark:text-red-200'
+                                      : 'border-amber-300/80 text-amber-700 dark:border-amber-500/30 dark:text-amber-200'
+                                  }`}>
+                                    {isDelayed ? 'Still in queue' : 'Calm down'}
+                                  </span>
+                                  <span className={`text-xs ${isDelayed ? 'text-red-800 dark:text-red-100' : 'text-amber-800 dark:text-amber-100'}`}>
+                                    {formatEtaWindow(personalDeliveryEtaMinutes)}
+                                  </span>
+                                </div>
+                                <p className={`mt-3 text-2xl font-bold tracking-tight ${isDelayed ? 'text-red-900 dark:text-red-50' : 'text-amber-900 dark:text-amber-50 animate-pulse'}`}>
+                                  {isDelayed ? 'We are still preparing your access' : formatCountdown(etaMsLeft)}
+                                </p>
+                                <p className={`mt-1 text-xs ${isDelayed ? 'text-red-700/90 dark:text-red-200/90' : 'text-amber-700/90 dark:text-amber-200/90'}`}>
+                                  Expected by {format(etaTarget, 'MMM d, yyyy h:mm a')}
+                                </p>
+                                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/70 dark:bg-black/30">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-1000 ${
+                                      isDelayed
+                                        ? 'bg-gradient-to-r from-red-400 via-rose-500 to-orange-400'
+                                        : 'bg-gradient-to-r from-amber-400 via-orange-500 to-amber-400'
+                                    }`}
+                                    style={{ width: `${etaProgress}%` }}
+                                  />
+                                </div>
+                                <p className={`mt-3 text-sm ${isDelayed ? 'text-red-900 dark:text-red-100' : 'text-amber-900 dark:text-amber-100'}`}>
+                                  {isDelayed
+                                    ? 'Your order is still in queue. Admin team has been notified again and your access is being prepared.'
+                                    : 'We received your payment. Your personal Adobe access is being prepared and the admin team has already been notified.'}
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <a href="/support" className={btnOutline}>
+                                    <Info className="w-4 h-4" />
+                                    Need help?
+                                  </a>
+                                  <span className="inline-flex items-center rounded-full border border-zinc-200 dark:border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-600 dark:text-zinc-300">
+                                    {personalDeliveryEtaLabel}
+                                  </span>
+                                </div>
+                              </div>
                             )}
                           </div>
 

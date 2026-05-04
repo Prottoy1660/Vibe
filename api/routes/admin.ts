@@ -53,6 +53,12 @@ import {
   restoreRedeemOrderAfterSeize,
 } from '../lib/redeemSeizeUnpaid.js';
 import { fallbackPopularPersonPrefixes, pickRandomPrefixes } from '../lib/emailPrefixDataset.js';
+import {
+  loadPersonalOrderAlertSettings,
+  runPendingPersonalOrderEscalations,
+  sanitizePersonalOrderAlertSettings,
+  PERSONAL_ORDER_ALERTS_SETTINGS_KEY_EXPORT,
+} from '../lib/personalOrderAdminAlerts.js';
 
 dotenv.config();
 
@@ -121,6 +127,7 @@ const EMAIL_TEAM_LIFECYCLE_DEFAULT = {
   expiry_days: 14,
   remind_before_days: 2,
 } as const;
+const PERSONAL_ORDER_ALERTS_SETTINGS_KEY = PERSONAL_ORDER_ALERTS_SETTINGS_KEY_EXPORT;
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = Number(v);
@@ -1202,6 +1209,53 @@ router.patch('/ops/email-team-lifecycle', verifyAdmin, async (req, res) => {
     return res.json({ success: true, settings });
   } catch (error: any) {
     console.error('email team lifecycle settings patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/personal-order-alerts', verifyAdmin, async (_req, res) => {
+  try {
+    const settings = await loadPersonalOrderAlertSettings(supabase);
+    const { data: admins, error: adminsError } = await supabase
+      .from('users')
+      .select('id, name, email, phone, role')
+      .in('role', ['admin', 'super_admin'])
+      .order('created_at', { ascending: true })
+      .limit(200);
+    if (adminsError) throw adminsError;
+    return res.json({ success: true, settings, admins: admins || [] });
+  } catch (error: any) {
+    console.error('personal order alerts get:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/personal-order-alerts', verifyAdmin, async (req, res) => {
+  try {
+    const current = await loadPersonalOrderAlertSettings(supabase);
+    const settings = sanitizePersonalOrderAlertSettings({
+      ...current,
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+    });
+    const { error } = await supabase
+      .from('system_settings')
+      .upsert({ key: PERSONAL_ORDER_ALERTS_SETTINGS_KEY, value: settings, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    return res.json({ success: true, settings });
+  } catch (error: any) {
+    console.error('personal order alerts patch:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/ops/personal-order-overdue-alerts', verifyAdmin, async (req, res) => {
+  try {
+    const result = await runPendingPersonalOrderEscalations(supabase, {
+      forceAllOverdue: req.body?.force_all === true,
+    });
+    return res.json({ success: true, result });
+  } catch (error: any) {
+    console.error('personal order overdue alerts:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
