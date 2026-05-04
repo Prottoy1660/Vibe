@@ -47,8 +47,9 @@ export const Pricing = ({ primaryCtaHref }: Props) => {
         if (error) throw error;
         if (visibilityRes.error) throw visibilityRes.error;
         const rows = (data || []) as StoreProduct[];
-        setHiddenProductIds(new Set(parseHiddenProductIds(visibilityRes.data?.value)));
-        const filtered = rows.filter((p) => !p.is_personal && !isProductHiddenFromStore(p.id, parseHiddenProductIds(visibilityRes.data?.value)));
+        const nextHiddenProductIds = parseHiddenProductIds(visibilityRes.data?.value);
+        setHiddenProductIds(new Set(nextHiddenProductIds));
+        const filtered = rows.filter((p) => !isProductHiddenFromStore(p.id, nextHiddenProductIds));
         const sorted = [...filtered].sort((a, b) => Number(a.price) - Number(b.price));
         if (!cancelled) setProducts(sorted);
       } catch {
@@ -174,6 +175,11 @@ const PricingCard = ({
             <h3 className="text-xl text-white" style={{ fontFamily: "Clash Display" }}>
               {localizedName}
             </h3>
+            {product.is_personal ? (
+              <span className="rounded-full border border-violet-400/35 bg-violet-500/12 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-violet-200">
+                Personal
+              </span>
+            ) : null}
           </div>
           <p className="mt-3 text-sm text-white/55 min-h-[3rem]">{product.description.split("\n")[0] || "Store package"}</p>
         </div>
