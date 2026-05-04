@@ -4,7 +4,12 @@ import { Check, Loader2, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
 import { getStoredLanguage, pickLocalized } from "../../lib/language";
-import { parseProductDescriptionBullets } from "../../lib/productStoreDisplay";
+import {
+  isProductHiddenFromStore,
+  parseHiddenProductIds,
+  parseProductDescriptionBullets,
+  PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+} from "../../lib/productStoreDisplay";
 
 type Props = { primaryCtaHref: string };
 
@@ -23,6 +28,7 @@ type StoreProduct = {
 export const Pricing = ({ primaryCtaHref }: Props) => {
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hiddenProductIds, setHiddenProductIds] = useState<Set<string>>(new Set());
   const language = getStoredLanguage() || "en";
 
   useEffect(() => {
@@ -30,10 +36,19 @@ export const Pricing = ({ primaryCtaHref }: Props) => {
     (async () => {
       try {
         setLoading(true);
-        const { data, error } = await supabase.from("products").select("*").eq("is_active", true);
+        const [{ data, error }, visibilityRes] = await Promise.all([
+          supabase.from("products").select("*").eq("is_active", true),
+          supabase
+            .from("system_settings")
+            .select("value")
+            .eq("key", PRODUCT_STORE_VISIBILITY_SETTINGS_KEY)
+            .maybeSingle(),
+        ]);
         if (error) throw error;
+        if (visibilityRes.error) throw visibilityRes.error;
         const rows = (data || []) as StoreProduct[];
-        const filtered = rows.filter((p) => !p.is_personal);
+        setHiddenProductIds(new Set(parseHiddenProductIds(visibilityRes.data?.value)));
+        const filtered = rows.filter((p) => !p.is_personal && !isProductHiddenFromStore(p.id, parseHiddenProductIds(visibilityRes.data?.value)));
         const sorted = [...filtered].sort((a, b) => Number(a.price) - Number(b.price));
         if (!cancelled) setProducts(sorted);
       } catch {
@@ -48,7 +63,10 @@ export const Pricing = ({ primaryCtaHref }: Props) => {
     };
   }, []);
 
-  const visibleProducts = useMemo(() => products, [products]);
+  const visibleProducts = useMemo(
+    () => products.filter((product) => !isProductHiddenFromStore(product.id, hiddenProductIds)),
+    [hiddenProductIds, products],
+  );
 
   return (
     <section id="pricing" data-testid="pricing-section" className="relative py-24 md:py-32">
@@ -203,4 +221,3 @@ const PricingCard = ({
     </motion.div>
   );
 };
-

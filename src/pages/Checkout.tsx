@@ -17,7 +17,12 @@ import {
   Sparkles,
   Wallet,
 } from 'lucide-react';
-import { productSavePercent } from '../lib/productStoreDisplay';
+import {
+  isProductHiddenFromStore,
+  parseHiddenProductIds,
+  PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+  productSavePercent,
+} from '../lib/productStoreDisplay';
 
 interface Product {
   id: string;
@@ -83,9 +88,22 @@ export const Checkout = () => {
       if (!id) return;
 
       try {
-        const { data, error } = await supabase.from('products').select('*').eq('id', id).single();
+        const [{ data, error }, visibilityRes] = await Promise.all([
+          supabase.from('products').select('*').eq('id', id).single(),
+          supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', PRODUCT_STORE_VISIBILITY_SETTINGS_KEY)
+            .maybeSingle(),
+        ]);
 
         if (error) throw error;
+        if (visibilityRes.error) throw visibilityRes.error;
+        const hiddenProductIds = new Set(parseHiddenProductIds(visibilityRes.data?.value));
+        if (data && isProductHiddenFromStore(data.id, hiddenProductIds)) {
+          navigate('/store');
+          return;
+        }
         if (data) setProduct(data);
 
         if (user) {

@@ -23,7 +23,11 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { productSavePercent } from '../../lib/productStoreDisplay';
+import {
+  parseHiddenProductIds,
+  PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+  productSavePercent,
+} from '../../lib/productStoreDisplay';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
@@ -176,9 +180,12 @@ export const AdminProducts = () => {
   const [alertSettings, setAlertSettings] = useState<PersonalOrderAlertSettings>(DEFAULT_PERSONAL_ALERT_SETTINGS);
   const [alertSaving, setAlertSaving] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [hiddenProductIds, setHiddenProductIds] = useState<string[]>([]);
+  const [visibilitySavingId, setVisibilitySavingId] = useState<string | null>(null);
   const [adminRecipients, setAdminRecipients] = useState<AdminRecipient[]>([]);
   const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
   const [pushEnabling, setPushEnabling] = useState(false);
+  const [formStoreVisible, setFormStoreVisible] = useState(true);
 
   const [formData, setFormData] = useState<Partial<Product>>({
     title: '',
@@ -200,6 +207,7 @@ export const AdminProducts = () => {
 
   useEffect(() => {
     fetchProducts();
+    void loadStoreVisibilitySettings();
     void loadPersonalOpsSettings();
     if (isWebPushSupported()) {
       void getPushPermission().then(setPushPermission).catch(() => setPushPermission('default'));
@@ -248,6 +256,33 @@ export const AdminProducts = () => {
     } finally {
       setSettingsLoading(false);
     }
+  };
+
+  const loadStoreVisibilitySettings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', PRODUCT_STORE_VISIBILITY_SETTINGS_KEY)
+        .maybeSingle();
+      if (error) throw error;
+      setHiddenProductIds(parseHiddenProductIds(data?.value));
+    } catch (error) {
+      console.error('Error loading product visibility settings:', error);
+      setHiddenProductIds([]);
+    }
+  };
+
+  const saveHiddenProductIds = async (ids: string[]) => {
+    const { error } = await supabase.from('system_settings').upsert(
+      {
+        key: PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+        value: { hidden_product_ids: ids },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' },
+    );
+    if (error) throw error;
   };
 
   const savePersonalFlowSettings = async () => {
@@ -390,16 +425,28 @@ export const AdminProducts = () => {
         is_personal: formData.is_personal ?? false,
       };
 
+      let targetProductId = editingId;
+
       if (editingId) {
         const { error } = await supabase.from('products').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('products').insert(payload);
+        const { data, error } = await supabase.from('products').insert(payload).select('id').single();
         if (error) throw error;
+        targetProductId = data.id;
+      }
+
+      if (targetProductId) {
+        const nextHiddenProductIds = formStoreVisible
+          ? hiddenProductIds.filter((id) => id !== targetProductId)
+          : Array.from(new Set([...hiddenProductIds, targetProductId]));
+        await saveHiddenProductIds(nextHiddenProductIds);
+        setHiddenProductIds(nextHiddenProductIds);
       }
 
       setEditingId(null);
       setIsAdding(false);
+      setFormStoreVisible(true);
       fetchProducts();
     } catch (error: any) {
       console.error('Error saving product:', error);
@@ -430,19 +477,21 @@ export const AdminProducts = () => {
 
   const handleToggleVisibility = async (product: Product) => {
     try {
-      const nextIsActive = !product.is_active;
-      const { error } = await supabase
-        .from('products')
-        .update({ is_active: nextIsActive })
-        .eq('id', product.id);
-      if (error) throw error;
-      setProducts((current) =>
-        current.map((item) => (item.id === product.id ? { ...item, is_active: nextIsActive } : item)),
+      setVisibilitySavingId(product.id);
+      const isHiddenNow = hiddenProductIds.includes(product.id);
+      const nextHiddenProductIds = isHiddenNow
+        ? hiddenProductIds.filter((id) => id !== product.id)
+        : [...hiddenProductIds, product.id];
+      await saveHiddenProductIds(nextHiddenProductIds);
+      setHiddenProductIds(nextHiddenProductIds);
+      toast.success(
+        isHiddenNow ? 'Product is now visible in Product section.' : 'Product is now hidden from Product section.',
       );
-      toast.success(nextIsActive ? 'Product is now visible in Product section.' : 'Product is now hidden from Product section.');
     } catch (error) {
       console.error('Error updating product visibility:', error);
       toast.error('Failed to update product visibility');
+    } finally {
+      setVisibilitySavingId(null);
     }
   };
 
@@ -480,6 +529,7 @@ export const AdminProducts = () => {
     });
     setEditingId(product.id);
     setIsAdding(false);
+    setFormStoreVisible(!hiddenProductIds.includes(product.id));
   };
 
   const openAddRegular = () => {
@@ -502,6 +552,7 @@ export const AdminProducts = () => {
     });
     setIsAdding(true);
     setEditingId(null);
+    setFormStoreVisible(true);
   };
 
   const openAddPersonal = () => {
@@ -524,12 +575,14 @@ export const AdminProducts = () => {
     });
     setIsAdding(true);
     setEditingId(null);
+    setFormStoreVisible(true);
   };
 
   const switchTab = (tab: 'regular' | 'personal') => {
     setActiveTab(tab);
     setIsAdding(false);
     setEditingId(null);
+    setFormStoreVisible(true);
   };
 
   const tabs: { id: 'regular' | 'personal'; label: string; sub: string; icon: React.ElementType }[] = [
@@ -1065,13 +1118,23 @@ export const AdminProducts = () => {
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               />
             </Field>
-            <Field
-              label="Show in Product section"
-              hint="Shown = customer store/checkout can see it. Hidden = removed from product section."
-            >
+            <Field label="Status">
               <select
                 value={formData.is_active ? 'true' : 'false'}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
+                className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </Field>
+            <Field
+              label="Product section visibility"
+              hint="Show = visible in product/store section. Hide = customer side থেকে লুকানো থাকবে."
+            >
+              <select
+                value={formStoreVisible ? 'true' : 'false'}
+                onChange={(e) => setFormStoreVisible(e.target.value === 'true')}
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               >
                 <option value="true">Show</option>
@@ -1224,109 +1287,131 @@ export const AdminProducts = () => {
                   <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Email</th>
                 )}
                 <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Store</th>
                 <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider text-right">
                   Actions
                 </th>
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((product) => (
-                <tr
-                  key={product.id}
-                  className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02]"
-                >
-                  <td className="py-3 px-4">
-                    <div className="font-semibold text-gray-900 dark:text-gray-100">{product.title}</div>
-                    {product.title_bn ? (
-                      <div className="text-xs text-gray-500 dark:text-gray-400">{product.title_bn}</div>
-                    ) : null}
-                  </td>
-                  <td className="py-3 px-4 tabular-nums">
-                    <div className="font-semibold text-emerald-600 dark:text-emerald-400">
-                      BDT {Number(product.price).toLocaleString()}
-                    </div>
-                    {product.list_price != null && Number(product.list_price) > Number(product.price) ? (
-                      <div className="text-[11px] text-gray-500 line-through">
-                        was BDT {Number(product.list_price).toLocaleString()}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{product.duration}</td>
-                  {activeTab === 'regular' && (
+              {filteredProducts.map((product) => {
+                const isHiddenFromStore = hiddenProductIds.includes(product.id);
+                return (
+                  <tr
+                    key={product.id}
+                    className="border-b border-gray-100 dark:border-[#26262d] hover:bg-gray-50/60 dark:hover:bg-white/[0.02]"
+                  >
                     <td className="py-3 px-4">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                          <Mail className="w-3.5 h-3.5 shrink-0" /> {slotLabel(product.email_slots ?? 3)}
-                        </span>
-                        <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
-                          {(product.max_users_per_email ?? 1) === 1 ? (
-                            <>
-                              <Lock className="w-3 h-3 text-amber-500 shrink-0" /> Exclusive
-                            </>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{product.title}</div>
+                      {product.title_bn ? (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{product.title_bn}</div>
+                      ) : null}
+                    </td>
+                    <td className="py-3 px-4 tabular-nums">
+                      <div className="font-semibold text-emerald-600 dark:text-emerald-400">
+                        BDT {Number(product.price).toLocaleString()}
+                      </div>
+                      {product.list_price != null && Number(product.list_price) > Number(product.price) ? (
+                        <div className="text-[11px] text-gray-500 line-through">
+                          was BDT {Number(product.list_price).toLocaleString()}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{product.duration}</td>
+                    {activeTab === 'regular' && (
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                            <Mail className="w-3.5 h-3.5 shrink-0" /> {slotLabel(product.email_slots ?? 3)}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
+                            {(product.max_users_per_email ?? 1) === 1 ? (
+                              <>
+                                <Lock className="w-3 h-3 text-amber-500 shrink-0" /> Exclusive
+                              </>
+                            ) : (
+                              <>
+                                <Users className="w-3 h-3 text-indigo-500 shrink-0" /> {product.max_users_per_email}{' '}
+                                shared
+                              </>
+                            )}
+                            {product.with_cloud_access ? (
+                              <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 rounded-md text-[9px] font-bold">
+                                Cloud
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      </td>
+                    )}
+                    <td className="py-3 px-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                          product.is_active
+                            ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400'
+                            : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {product.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+                          isHiddenFromStore
+                            ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                            : 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        }`}
+                      >
+                        {isHiddenFromStore ? 'Hidden' : 'Shown'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleVisibility(product)}
+                          disabled={visibilitySavingId === product.id}
+                          className={`p-2 rounded-lg ${
+                            isHiddenFromStore
+                              ? 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                              : 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                          } disabled:opacity-50`}
+                          title={isHiddenFromStore ? 'Unhide from Product section' : 'Hide from Product section'}
+                        >
+                          {visibilitySavingId === product.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : isHiddenFromStore ? (
+                            <Eye className="w-4 h-4" />
                           ) : (
-                            <>
-                              <Users className="w-3 h-3 text-indigo-500 shrink-0" /> {product.max_users_per_email}{' '}
-                              shared
-                            </>
+                            <EyeOff className="w-4 h-4" />
                           )}
-                          {product.with_cloud_access ? (
-                            <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300 rounded-md text-[9px] font-bold">
-                              Cloud
-                            </span>
-                          ) : null}
-                        </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(product)}
+                          className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(product.id)}
+                          className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
-                  )}
-                  <td className="py-3 px-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                        product.is_active
-                          ? 'bg-green-100 dark:bg-green-500/15 text-green-700 dark:text-green-400'
-                          : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      {product.is_active ? 'Shown' : 'Hidden'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleVisibility(product)}
-                        className={`p-2 rounded-lg ${
-                          product.is_active
-                            ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                            : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
-                        }`}
-                        title={product.is_active ? 'Hide from Product section' : 'Show in Product section'}
-                      >
-                        {product.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => startEdit(product)}
-                        className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-lg"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(product.id)}
-                        className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
               {filteredProducts.length === 0 && !loading && (
                 <tr>
                   <td
-                    colSpan={activeTab === 'regular' ? 6 : 5}
+                    colSpan={activeTab === 'regular' ? 7 : 6}
                     className="py-14 text-center text-gray-500 dark:text-gray-400"
                   >
                     <Package className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />

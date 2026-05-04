@@ -7,7 +7,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { getStoredLanguage, pickLocalized } from '../lib/language';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
-import { parseProductDescriptionBullets, productSavePercent } from '../lib/productStoreDisplay';
+import {
+  isProductHiddenFromStore,
+  parseHiddenProductIds,
+  parseProductDescriptionBullets,
+  PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+  productSavePercent,
+} from '../lib/productStoreDisplay';
 import { toast } from '../lib/toast';
 
 interface Product {
@@ -47,6 +53,7 @@ function shouldLogClientEvent(key: string, ttlMs: number): boolean {
 export const Store = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hiddenProductIds, setHiddenProductIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState<'adobe' | 'envato'>('adobe');
   const navigate = useNavigate();
@@ -67,13 +74,19 @@ export const Store = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const { data, error } = await supabase
-          .from('products')
-          .select('*')
-          .eq('is_active', true);
+        const [{ data, error }, visibilityRes] = await Promise.all([
+          supabase.from('products').select('*').eq('is_active', true),
+          supabase
+            .from('system_settings')
+            .select('value')
+            .eq('key', PRODUCT_STORE_VISIBILITY_SETTINGS_KEY)
+            .maybeSingle(),
+        ]);
 
         if (error) throw error;
+        if (visibilityRes.error) throw visibilityRes.error;
         if (data) setProducts(data);
+        setHiddenProductIds(new Set(parseHiddenProductIds(visibilityRes.data?.value)));
       } catch (error) {
         console.error('Error fetching products:', error);
       } finally {
@@ -149,6 +162,7 @@ export const Store = () => {
   };
 
   const filteredProducts = products.filter(product => {
+    if (isProductHiddenFromStore(product.id, hiddenProductIds)) return false;
     const matchesSearch = product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (product.title_bn && product.title_bn.includes(searchQuery));
 
