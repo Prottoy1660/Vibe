@@ -20,6 +20,8 @@ import {
   ImageIcon,
   Upload,
   X,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { productSavePercent } from '../../lib/productStoreDisplay';
 import { toast } from '../../lib/toast';
@@ -423,6 +425,24 @@ export const AdminProducts = () => {
     } catch (error) {
       console.error('Error deleting product:', error);
       toast.error('Failed to delete product');
+    }
+  };
+
+  const handleToggleVisibility = async (product: Product) => {
+    try {
+      const nextIsActive = !product.is_active;
+      const { error } = await supabase
+        .from('products')
+        .update({ is_active: nextIsActive })
+        .eq('id', product.id);
+      if (error) throw error;
+      setProducts((current) =>
+        current.map((item) => (item.id === product.id ? { ...item, is_active: nextIsActive } : item)),
+      );
+      toast.success(nextIsActive ? 'Product is now visible in Product section.' : 'Product is now hidden from Product section.');
+    } catch (error) {
+      console.error('Error updating product visibility:', error);
+      toast.error('Failed to update product visibility');
     }
   };
 
@@ -1045,14 +1065,17 @@ export const AdminProducts = () => {
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               />
             </Field>
-            <Field label="Status">
+            <Field
+              label="Show in Product section"
+              hint="Shown = customer store/checkout can see it. Hidden = removed from product section."
+            >
               <select
                 value={formData.is_active ? 'true' : 'false'}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
                 className="w-full p-2.5 border border-gray-200 dark:border-[#303038] rounded-xl bg-white dark:bg-[#1c1c21] text-gray-900 dark:text-gray-100 text-sm"
               >
-                <option value="true">Active</option>
-                <option value="false">Inactive</option>
+                <option value="true">Show</option>
+                <option value="false">Hide</option>
               </select>
             </Field>
             <div className="md:col-span-2">
@@ -1263,11 +1286,23 @@ export const AdminProducts = () => {
                           : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-300'
                       }`}
                     >
-                      {product.is_active ? 'Active' : 'Inactive'}
+                      {product.is_active ? 'Shown' : 'Hidden'}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleVisibility(product)}
+                        className={`p-2 rounded-lg ${
+                          product.is_active
+                            ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                            : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                        }`}
+                        title={product.is_active ? 'Hide from Product section' : 'Show in Product section'}
+                      >
+                        {product.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                       <button
                         type="button"
                         onClick={() => startEdit(product)}
