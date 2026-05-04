@@ -73,7 +73,17 @@ export const Orders = () => {
     Math.max(0, Math.min(100, (getPendingRemainingMs(createdAt) / PENDING_CHECKOUT_VISIBLE_MS) * 100));
 
   const getEffectiveStatus = (order: Order) => {
-    if (order.status !== 'pending') return order.status;
+    const rawStatus = (order.status || '').toLowerCase();
+    const paymentStatus = (order.payment_status || '').toLowerCase();
+
+    if (rawStatus === 'refunded' || paymentStatus === 'refunded') return 'refunded';
+    if (rawStatus === 'cancelled' || paymentStatus === 'cancelled') return 'cancelled';
+    if (rawStatus === 'completed') return 'completed';
+
+    // Manual personal orders stay pending until access is delivered, but payment is already done.
+    if (paymentStatus === 'paid') return 'paid';
+
+    if (rawStatus !== 'pending') return order.status;
     return isStalePendingOrder(order.status, order.created_at, nowMs) ? 'expired' : 'pending';
   };
 
