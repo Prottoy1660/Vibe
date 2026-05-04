@@ -551,7 +551,7 @@ export const AdminUsers = () => {
       </div>
 
       <div className="overflow-x-auto bg-white dark:bg-[#151518] rounded-2xl border border-gray-100 dark:border-[#26262d]">
-        <table className="w-full min-w-[980px] text-left border-collapse">
+        <table className="w-full min-w-[820px] text-left border-collapse">
           <thead>
             <tr className="border-b border-gray-200 dark:border-[#26262d] bg-gray-50 dark:bg-white/5">
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -571,9 +571,6 @@ export const AdminUsers = () => {
               </th>
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Joined
-              </th>
-              <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[170px]">
-                Quick note
               </th>
               <th className="py-3 px-4 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right sticky right-0 z-20 bg-gray-50/95 dark:bg-[#1a1a1f]/95">
                 Actions
@@ -628,25 +625,6 @@ export const AdminUsers = () => {
 
                 <td className="py-3 px-4 text-sm text-gray-500 dark:text-gray-400">
                   {format(new Date(u.created_at), 'MMM dd, yyyy')}
-                </td>
-
-                <td className="py-3 px-4 w-[170px] align-top">
-                  <div className="space-y-1">
-                    <textarea
-                      value={userNotes[u.id] || ''}
-                      onChange={(e) => {
-                        dirtyUserNotesRef.current[u.id] = true;
-                        setUserNotes((prev) => ({ ...prev, [u.id]: e.target.value }));
-                      }}
-                      onBlur={(e) => void saveUserNote(u.id, e.target.value)}
-                      rows={1}
-                      placeholder="Internal user note..."
-                      className="w-full h-9 resize-none rounded-lg border border-gray-200 dark:border-[#303038] bg-white dark:bg-[#111113] px-2.5 py-1.5 text-xs text-gray-800 dark:text-gray-200 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
-                    />
-                    {savingUserNoteId === u.id ? (
-                      <p className="text-[11px] text-indigo-600 dark:text-indigo-400">Saving...</p>
-                    ) : null}
-                  </div>
                 </td>
 
                 <td className="py-3 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
