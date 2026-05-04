@@ -160,6 +160,9 @@ export const AdobeEmail = () => {
   const [hasSharedSubscription, setHasSharedSubscription] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const successOrderIdRef = useRef<string | null>(null);
+  const successTabHintRef = useRef<'emails' | 'personal' | null>(null);
+  const successTabAppliedRef = useRef(false);
   
   const [generationCount, setGenerationCount] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -172,8 +175,12 @@ export const AdobeEmail = () => {
     const searchParams = new URLSearchParams(window.location.search);
     const paymentStatus = searchParams.get('payment');
     const orderId = searchParams.get('order_id');
+    const tabHint = searchParams.get('tab');
 
     if (paymentStatus === 'success' && orderId) {
+      successOrderIdRef.current = orderId;
+      successTabHintRef.current = tabHint === 'personal' ? 'personal' : tabHint === 'emails' ? 'emails' : null;
+
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
 
@@ -278,6 +285,20 @@ export const AdobeEmail = () => {
       const pProducts = pProductsResult.data;
         
       if (orders) {
+        if (!successTabAppliedRef.current && successOrderIdRef.current) {
+          const landingOrder = orders.find((o) => o.id === successOrderIdRef.current);
+          if (landingOrder?.products?.is_personal) {
+            setActiveTab('personal');
+            successTabAppliedRef.current = true;
+          } else if (landingOrder) {
+            setActiveTab('emails');
+            successTabAppliedRef.current = true;
+          }
+        } else if (!successTabAppliedRef.current && successTabHintRef.current) {
+          setActiveTab(successTabHintRef.current);
+          successTabAppliedRef.current = true;
+        }
+
         const pOrders = orders
           .filter(o => o.products?.is_personal && o.personal_email)
           .filter(o => !(o.status === 'pending' && Number(o.total_amount) === 0))
@@ -308,6 +329,14 @@ export const AdobeEmail = () => {
           };
         });
         setPersonalOrders(pOrders);
+        if (
+          !successTabAppliedRef.current &&
+          successOrderIdRef.current &&
+          pOrders.some((order) => order.id === successOrderIdRef.current)
+        ) {
+          setActiveTab('personal');
+          successTabAppliedRef.current = true;
+        }
         const shouldToastNow = personalOrdersLoadedRef.current;
         for (const order of pOrders) {
           if ((order.status === 'completed' || order.status === 'paid') && !accessReadyToastIdsRef.current.has(order.id)) {

@@ -32,7 +32,7 @@ interface Product {
 export const Checkout = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const personalEmail = searchParams.get('personal_email');
+  const initialPersonalEmail = searchParams.get('personal_email') || '';
   const location = useLocation();
 
   const { user } = useAuth();
@@ -72,6 +72,11 @@ export const Checkout = () => {
   const [walletPromotional, setWalletPromotional] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
+  const [personalCheckoutEmail, setPersonalCheckoutEmail] = useState(initialPersonalEmail);
+
+  useEffect(() => {
+    setPersonalCheckoutEmail(initialPersonalEmail);
+  }, [initialPersonalEmail]);
 
   useEffect(() => {
     const fetchProductAndUser = async () => {
@@ -167,6 +172,17 @@ export const Checkout = () => {
     const t = window.setTimeout(() => setBkashWelcome(false), 12000);
     return () => clearTimeout(t);
   }, [bkashWelcome]);
+
+  useEffect(() => {
+    if (!product?.is_personal) return;
+    const current = searchParams.get('personal_email') || '';
+    const next = personalCheckoutEmail.trim();
+    if (current === next) return;
+    const sp = new URLSearchParams(location.search);
+    if (next) sp.set('personal_email', next);
+    else sp.delete('personal_email');
+    navigate({ pathname: location.pathname, search: sp.toString() ? `?${sp.toString()}` : '' }, { replace: true });
+  }, [location.pathname, location.search, navigate, personalCheckoutEmail, product?.is_personal, searchParams]);
 
   useEffect(() => {
     if (!checkoutGateways) return;
@@ -282,10 +298,18 @@ export const Checkout = () => {
       return;
     }
 
-    if (product.is_personal && !(personalEmail && personalEmail.trim())) {
+    if (product.is_personal && !(personalCheckoutEmail && personalCheckoutEmail.trim())) {
       setPaymentError(
-        'Personal Adobe plans need the email you confirmed on the Adobe Email page. Go back, request access with your Adobe ID email, then checkout from that link.',
+        'Enter the Adobe ID email where you want access delivered before paying for this personal plan.',
       );
+      return;
+    }
+
+    if (
+      product.is_personal &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalCheckoutEmail.trim())
+    ) {
+      setPaymentError('Enter a valid Adobe ID email address for this personal order.');
       return;
     }
 
@@ -330,7 +354,7 @@ export const Checkout = () => {
           status: 'pending',
           payment_status: 'pending',
           auto_renew: isAutoRenew,
-          personal_email: product.is_personal && personalEmail ? personalEmail.trim() : null,
+          personal_email: product.is_personal && personalCheckoutEmail ? personalCheckoutEmail.trim() : null,
         })
         .select()
         .single();
@@ -527,7 +551,7 @@ export const Checkout = () => {
         </p>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100 tracking-tight mt-1">Complete purchase</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1 max-w-xl">
-          Review the plan, apply a coupon if you have one, then pay the amount due. Personal Adobe orders use the email you entered earlier.
+          Review the plan, apply a coupon if you have one, then pay the amount due. Personal Adobe orders use the Adobe ID email shown below.
         </p>
       </div>
 
@@ -563,11 +587,11 @@ export const Checkout = () => {
                   </span>
                   <span className="text-zinc-600 dark:text-zinc-400">Adobe Creative Cloud access via Vibe Access</span>
                 </p>
-                {personalEmail && (
+                {product.is_personal && personalCheckoutEmail ? (
                   <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1.5 inline-block">
-                    Personal order email: <span className="font-mono">{personalEmail}</span>
+                    Personal order email: <span className="font-mono">{personalCheckoutEmail}</span>
                   </p>
-                )}
+                ) : null}
               </div>
             </div>
             <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 pt-5 border-t border-zinc-100 dark:border-zinc-800">
@@ -620,6 +644,30 @@ export const Checkout = () => {
             </div>
 
             <div className="p-5 sm:p-6 space-y-6">
+              {product.is_personal && (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
+                    Adobe ID email <span className="text-red-500">*</span>
+                  </label>
+                  <div className="max-w-md">
+                    <input
+                      type="email"
+                      required
+                      value={personalCheckoutEmail}
+                      onChange={(e) => {
+                        setPersonalCheckoutEmail(e.target.value);
+                        setPaymentError('');
+                      }}
+                      className="block w-full rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 py-2.5 px-3 text-sm text-zinc-900 dark:text-zinc-100 focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 outline-none"
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1.5">
+                    We will deliver personal Adobe access to this email. You can enter it here when coming directly from Store.
+                  </p>
+                </div>
+              )}
+
               {requirePhone && (
                 <div>
                   <label className="block text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-2">
