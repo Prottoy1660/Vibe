@@ -274,15 +274,18 @@ export const AdminProducts = () => {
   };
 
   const saveHiddenProductIds = async (ids: string[]) => {
-    const { error } = await supabase.from('system_settings').upsert(
-      {
-        key: PRODUCT_STORE_VISIBILITY_SETTINGS_KEY,
+    const { data, error } = await supabase
+      .from('system_settings')
+      .update({
         value: { hidden_product_ids: ids },
         updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'key' },
-    );
+      })
+      .eq('key', PRODUCT_STORE_VISIBILITY_SETTINGS_KEY)
+      .select('key');
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error('Product visibility setting row not found. Run Supabase migration 085 first.');
+    }
   };
 
   const savePersonalFlowSettings = async () => {
