@@ -26,6 +26,7 @@ const AVAILABLE_TABS = [
   { id: 'tutorial_help', label: 'Tutorial & Help Page' },
   { id: 'support', label: 'Support tickets' },
   { id: 'support_chat_ai', label: 'Help chat (AI)' },
+  { id: 'sms', label: 'SMS broadcast' },
   { id: 'platform_settings', label: 'Platform status' },
   { id: 'app_downloads', label: 'App downloads' },
   { id: 'subscription_reminders', label: 'Subscription reminders' },

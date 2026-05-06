@@ -128,6 +128,25 @@ const EMAIL_TEAM_LIFECYCLE_DEFAULT = {
   remind_before_days: 2,
 } as const;
 const PERSONAL_ORDER_ALERTS_SETTINGS_KEY = PERSONAL_ORDER_ALERTS_SETTINGS_KEY_EXPORT;
+const SMS_NET_BD_ENDPOINT = 'https://api.sms.net.bd/sendsms';
+
+function normalizeBdPhone(raw: string): string | null {
+  const cleaned = String(raw || '').replace(/[^\d+]/g, '').trim();
+  if (!cleaned) return null;
+  if (/^8801\d{9}$/.test(cleaned)) return cleaned;
+  if (/^01\d{9}$/.test(cleaned)) return `88${cleaned}`;
+  return null;
+}
+
+function toSmsNetBdSchedule(input: string): string | null {
+  if (!input) return null;
+  const d = new Date(input);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(
+    d.getSeconds(),
+  )}`;
+}
 
 function clampInt(v: unknown, min: number, max: number, fallback: number): number {
   const n = Number(v);
@@ -1176,6 +1195,76 @@ router.post('/ops/sidebar-config', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('sidebar config error:', error);
     res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.post('/sms/send', verifyAdmin, async (req, res) => {
+  try {
+    const smsApiKey = (process.env.SMS_NET_BD_API_KEY || process.env.SMS_API_KEY || '').trim();
+    if (!smsApiKey) {
+      return res.status(500).json({ error: 'SMS API key not configured on server (SMS_NET_BD_API_KEY).' });
+    }
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const msg = String((body as Record<string, unknown>).msg || '').trim();
+    if (!msg) return res.status(400).json({ error: 'msg is required' });
+
+    const rawTo = Array.isArray((body as Record<string, unknown>).to)
+      ? ((body as Record<string, unknown>).to as unknown[])
+      : [String((body as Record<string, unknown>).to || '')];
+    const normalized = [...new Set(rawTo.map((v) => normalizeBdPhone(String(v || ''))).filter(Boolean) as string[])];
+
+    if (!normalized.length) {
+      return res.status(400).json({ error: 'No valid recipient number found. Use 8801XXXXXXXXX or 01XXXXXXXXX format.' });
+    }
+    if (normalized.length > 5000) {
+      return res.status(400).json({ error: 'Too many recipients in one request. Max 5000 numbers.' });
+    }
+
+    const senderId = String((body as Record<string, unknown>).sender_id || '').trim();
+    const scheduleRaw = String((body as Record<string, unknown>).schedule || '').trim();
+    const schedule = scheduleRaw ? toSmsNetBdSchedule(scheduleRaw) : null;
+    if (scheduleRaw && !schedule) {
+      return res.status(400).json({ error: 'Invalid schedule format' });
+    }
+
+    const form = new URLSearchParams();
+    form.set('api_key', smsApiKey);
+    form.set('msg', msg);
+    form.set('to', normalized.join(','));
+    if (senderId) form.set('sender_id', senderId);
+    if (schedule) form.set('schedule', schedule);
+
+    const upstreamRes = await fetch(SMS_NET_BD_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+    });
+    const upstreamText = await upstreamRes.text();
+    let upstreamJson: any = null;
+    try {
+      upstreamJson = upstreamText ? JSON.parse(upstreamText) : {};
+    } catch {
+      upstreamJson = { error: 409, msg: upstreamText || 'Upstream returned non-JSON response' };
+    }
+
+    const upstreamError = Number(upstreamJson?.error ?? 409);
+    if (!upstreamRes.ok || upstreamError !== 0) {
+      return res.status(400).json({
+        error: upstreamJson?.msg || `SMS provider request failed (${upstreamError})`,
+        upstream: upstreamJson,
+      });
+    }
+
+    return res.json({
+      success: true,
+      sent_count: normalized.length,
+      request_id: upstreamJson?.data?.request_id ?? null,
+      upstream: upstreamJson,
+    });
+  } catch (error: any) {
+    console.error('sms send error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });
 

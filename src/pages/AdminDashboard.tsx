@@ -18,6 +18,7 @@ import {
   Megaphone,
   Music2,
   MessageCircle,
+  MessageSquareText,
   Wallet,
   BellRing,
   Download,
@@ -76,6 +77,7 @@ const AdminPaymentGateways = React.lazy(() =>
 const AdminSlotDemand = React.lazy(() =>
   import('../components/admin/AdminSlotDemand').then((m) => ({ default: m.AdminSlotDemand })),
 );
+const AdminSms = React.lazy(() => import('../components/admin/AdminSms').then((m) => ({ default: m.AdminSms })));
 
 const AdminTabFallback = () => (
   <div className="flex justify-center items-center py-16">
@@ -370,6 +372,12 @@ export const AdminDashboard = () => {
                 Help chat (AI)
               </span>
             )}
+            {activeTab === 'sms' && (
+              <span className="flex items-center gap-2">
+                <MessageSquareText className="w-6 h-6" />
+                SMS broadcast
+              </span>
+            )}
             {activeTab === 'lobby_music' && (
               <span className="flex items-center gap-2">
                 <Music2 className="w-6 h-6" />
@@ -431,6 +439,7 @@ export const AdminDashboard = () => {
         {activeTab === 'growth_ops' && <AdminGrowthOps />}
         {activeTab === 'support' && <AdminSupport />}
         {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
+        {activeTab === 'sms' && <AdminSms />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
         {activeTab === 'payment_gateways' && <AdminPaymentGateways />}
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
