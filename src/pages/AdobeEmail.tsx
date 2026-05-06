@@ -300,8 +300,15 @@ export const AdobeEmail = () => {
         }
 
         const pOrders = orders
-          .filter(o => o.products?.is_personal && o.personal_email)
-          .filter(o => !(o.status === 'pending' && Number(o.total_amount) === 0))
+          .filter((o) => o.products?.is_personal && o.personal_email)
+          .filter((o) => {
+            const status = String(o.status || '').toLowerCase();
+            const paymentStatus = String(o.payment_status || '').toLowerCase();
+            if (status === 'refunded' || status === 'cancelled') return false;
+            if (paymentStatus === 'refunded' || paymentStatus === 'cancelled' || paymentStatus === 'failed') return false;
+            // Personal plans page should only show payment-confirmed subscriptions.
+            return status === 'completed' || status === 'paid' || paymentStatus === 'paid';
+          })
           .map(order => {
           // Calculate days left for personal subscriptions
           let daysLeft = 0;
