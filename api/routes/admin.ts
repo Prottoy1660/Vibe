@@ -154,6 +154,12 @@ function clampInt(v: unknown, min: number, max: number, fallback: number): numbe
   return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
+function clampFloat(v: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 function sanitizeEmailTeamLifecycleSettings(value: unknown) {
   const obj = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
   const expiry_days = clampInt(obj.expiry_days, 1, 365, EMAIL_TEAM_LIFECYCLE_DEFAULT.expiry_days);
@@ -1208,6 +1214,10 @@ router.post('/sms/send', verifyAdmin, async (req, res) => {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const msg = String((body as Record<string, unknown>).msg || '').trim();
     if (!msg) return res.status(400).json({ error: 'msg is required' });
+    const recipientModeRaw = String((body as Record<string, unknown>).recipient_mode || 'unknown');
+    const recipientMode = ['selected_users', 'all_users', 'custom_numbers'].includes(recipientModeRaw)
+      ? recipientModeRaw
+      : 'unknown';
 
     const rawTo = Array.isArray((body as Record<string, unknown>).to)
       ? ((body as Record<string, unknown>).to as unknown[])
@@ -1227,6 +1237,11 @@ router.post('/sms/send', verifyAdmin, async (req, res) => {
     if (scheduleRaw && !schedule) {
       return res.status(400).json({ error: 'Invalid schedule format' });
     }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
+    const { data: authData } = await supabase.auth.getUser(token);
+    const adminId = authData?.user?.id || null;
 
     const form = new URLSearchParams();
     form.set('api_key', smsApiKey);
@@ -1250,11 +1265,44 @@ router.post('/sms/send', verifyAdmin, async (req, res) => {
 
     const upstreamError = Number(upstreamJson?.error ?? 409);
     if (!upstreamRes.ok || upstreamError !== 0) {
+      const batchIdFailed = crypto.randomUUID();
+      const failedRows = normalized.map((phone) => ({
+        batch_id: batchIdFailed,
+        admin_id: adminId,
+        recipient_phone: phone,
+        message: msg,
+        sender_id: senderId || null,
+        schedule_at: schedule ? new Date(schedule.replace(' ', 'T') + 'Z').toISOString() : null,
+        provider: 'sms.net.bd',
+        provider_request_id: String(upstreamJson?.data?.request_id || ''),
+        provider_error_code: upstreamError,
+        provider_message: String(upstreamJson?.msg || ''),
+        recipient_mode: recipientMode,
+      }));
+      const { error: logErr } = await supabase.from('sms_send_logs').insert(failedRows);
+      if (logErr) console.error('sms log insert error (failed send):', logErr);
       return res.status(400).json({
         error: upstreamJson?.msg || `SMS provider request failed (${upstreamError})`,
         upstream: upstreamJson,
       });
     }
+
+    const batchId = crypto.randomUUID();
+    const logRows = normalized.map((phone) => ({
+      batch_id: batchId,
+      admin_id: adminId,
+      recipient_phone: phone,
+      message: msg,
+      sender_id: senderId || null,
+      schedule_at: schedule ? new Date(schedule.replace(' ', 'T') + 'Z').toISOString() : null,
+      provider: 'sms.net.bd',
+      provider_request_id: String(upstreamJson?.data?.request_id || ''),
+      provider_error_code: upstreamError,
+      provider_message: String(upstreamJson?.msg || ''),
+      recipient_mode: recipientMode,
+    }));
+    const { error: logErr } = await supabase.from('sms_send_logs').insert(logRows);
+    if (logErr) console.error('sms log insert error:', logErr);
 
     return res.json({
       success: true,
@@ -1264,6 +1312,40 @@ router.post('/sms/send', verifyAdmin, async (req, res) => {
     });
   } catch (error: any) {
     console.error('sms send error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.get('/ops/sms-pricing', verifyAdmin, async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'sms_pricing')
+      .maybeSingle();
+    if (error) throw error;
+    const obj = (data?.value || {}) as Record<string, unknown>;
+    const costPerSms = clampFloat(obj.cost_per_sms, 0, 100, 0.4);
+    const currency = typeof obj.currency === 'string' && obj.currency.trim() ? obj.currency.trim().toUpperCase() : 'BDT';
+    return res.json({ success: true, settings: { cost_per_sms: costPerSms, currency } });
+  } catch (error: any) {
+    console.error('sms pricing get error:', error);
+    return res.status(500).json({ error: error?.message || 'Internal server error' });
+  }
+});
+
+router.patch('/ops/sms-pricing', verifyAdmin, async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    const costPerSms = clampFloat(body.cost_per_sms, 0, 100, 0.4);
+    const currency =
+      typeof body.currency === 'string' && body.currency.trim() ? body.currency.trim().toUpperCase().slice(0, 8) : 'BDT';
+    const settings = { cost_per_sms: Number(costPerSms.toFixed(4)), currency };
+    const { error } = await supabase.from('system_settings').upsert({ key: 'sms_pricing', value: settings });
+    if (error) throw error;
+    return res.json({ success: true, settings });
+  } catch (error: any) {
+    console.error('sms pricing patch error:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
 });

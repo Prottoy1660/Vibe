@@ -361,6 +361,7 @@ export const Layout = () => {
         { name: 'Support tickets', href: '/admin?tab=support', icon: LifeBuoy },
         { name: 'Help chat (AI)', href: '/admin?tab=support_chat_ai', icon: MessageCircle },
         { name: 'SMS broadcast', href: '/admin?tab=sms', icon: MessageSquareText },
+        { name: 'SMS history', href: '/admin?tab=sms_history', icon: MessageSquareText },
         { name: 'Platform status', href: '/admin?tab=platform_settings', icon: Settings },
         { name: 'App downloads', href: '/admin?tab=app_downloads', icon: Download },
         { name: 'Subscription reminders', href: '/admin?tab=subscription_reminders', icon: BellRing },

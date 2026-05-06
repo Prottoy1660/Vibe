@@ -78,6 +78,9 @@ const AdminSlotDemand = React.lazy(() =>
   import('../components/admin/AdminSlotDemand').then((m) => ({ default: m.AdminSlotDemand })),
 );
 const AdminSms = React.lazy(() => import('../components/admin/AdminSms').then((m) => ({ default: m.AdminSms })));
+const AdminSmsHistory = React.lazy(() =>
+  import('../components/admin/AdminSmsHistory').then((m) => ({ default: m.AdminSmsHistory })),
+);
 
 const AdminTabFallback = () => (
   <div className="flex justify-center items-center py-16">
@@ -378,6 +381,12 @@ export const AdminDashboard = () => {
                 SMS broadcast
               </span>
             )}
+            {activeTab === 'sms_history' && (
+              <span className="flex items-center gap-2">
+                <MessageSquareText className="w-6 h-6" />
+                SMS history
+              </span>
+            )}
             {activeTab === 'lobby_music' && (
               <span className="flex items-center gap-2">
                 <Music2 className="w-6 h-6" />
@@ -440,6 +449,7 @@ export const AdminDashboard = () => {
         {activeTab === 'support' && <AdminSupport />}
         {activeTab === 'support_chat_ai' && <AdminSupportChatSettings />}
         {activeTab === 'sms' && <AdminSms />}
+        {activeTab === 'sms_history' && <AdminSmsHistory />}
         {activeTab === 'platform_settings' && <AdminPlatformSettings />}
         {activeTab === 'payment_gateways' && <AdminPaymentGateways />}
         {activeTab === 'subscription_reminders' && <AdminSubscriptionReminders />}
