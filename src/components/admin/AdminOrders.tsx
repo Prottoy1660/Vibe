@@ -172,6 +172,21 @@ function normalizeChecklist(value: Record<string, boolean> | null | undefined): 
   };
 }
 
+function buildPersonalActivationSms(order: Order): string {
+  const MAX_SMS_LENGTH = 160;
+  const customerName = String(order.users?.name || '')
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .trim()
+    .slice(0, 24) || 'Customer';
+  const productTitle = String(order.products?.title || 'subscription')
+    .replace(/[^a-zA-Z0-9 ]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  const shortTitle = productTitle.length > 18 ? `${productTitle.slice(0, 18)}...` : productTitle;
+  const raw = `Dear ${customerName}, your ${shortTitle} is now active. Login and check. Help 01623638558. - Vibe Access`;
+  return raw.length > MAX_SMS_LENGTH ? raw.slice(0, MAX_SMS_LENGTH) : raw;
+}
+
 function isPendingManualPersonalOrder(order: Order) {
   return order.products?.is_personal && order.payment_status === 'paid' && order.status === 'pending';
 }
@@ -488,6 +503,37 @@ export const AdminOrders = () => {
 
       const { error } = await supabase.from('orders').update(updates).eq('id', opsModalOrder.id);
       if (error) throw error;
+
+      // Personal delivery confirmation SMS (best-effort: order status update should not be blocked by SMS failures).
+      if (action === 'deliver') {
+        const phone = String(opsModalOrder.users?.phone || '').trim();
+        if (phone) {
+          try {
+            const token = await getAccessTokenForApi();
+            if (token) {
+              const API_URL = getApiBaseUrl();
+              const res = await fetch(`${API_URL}/api/admin/sms/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                  msg: buildPersonalActivationSms(opsModalOrder),
+                  to: [phone],
+                  recipient_mode: 'selected_users',
+                }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok || data?.success !== true) {
+                throw new Error(data?.error || 'SMS send failed');
+              }
+            }
+          } catch (smsError: any) {
+            console.error('personal delivery sms error:', smsError);
+            toast.warning(`Access delivered, but SMS failed: ${smsError?.message || 'Unknown error'}`);
+          }
+        } else {
+          toast.warning('Access delivered, but customer has no phone number for SMS.');
+        }
+      }
 
       toast.success(
         action === 'deliver'
