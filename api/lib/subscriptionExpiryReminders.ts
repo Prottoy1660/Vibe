@@ -240,11 +240,12 @@ export async function runSubscriptionExpiryReminders(
       const profile = byUser.get(c.row.user_id as string);
       const emailTo = profile?.email?.trim();
 
+      const emailReminderKey: 'd3' | 'd1' = c.key === 'd3' ? 'd3' : 'd1';
       const html = buildExpiryReminderEmailHtml({
         title: inboxTitle,
         bodyPlain: body,
         renewUrl,
-        reminderKey: c.key,
+        reminderKey: emailReminderKey,
         orderId: c.row.id,
       });
 
