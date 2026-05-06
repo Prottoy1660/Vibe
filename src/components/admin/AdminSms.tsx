@@ -1,13 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, MessageSquareText, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { postJsonWithFallback } from '../../lib/apiClient';
+import { Link } from 'react-router-dom';
+import { parseDurationToMonths } from '../../lib/durationUtils';
 
 type SmsUser = {
   id: string;
   name: string | null;
   phone: string | null;
   email: string | null;
+  created_at: string;
+};
+
+type SmsOrder = {
+  user_id: string | null;
+  created_at: string;
+  products: { duration: string | null } | { duration: string | null }[] | null;
 };
 
 type SendSmsResponse = {
@@ -25,6 +34,7 @@ type SendSmsResponse = {
 };
 
 type RecipientMode = 'selected_users' | 'all_users' | 'custom_numbers';
+type UserSegment = 'all_accounts' | 'active_subscribers' | 'expired_subscribers' | 'new_users';
 
 function parseRawNumbers(raw: string): string[] {
   return [
@@ -40,11 +50,15 @@ function parseRawNumbers(raw: string): string[] {
 export const AdminSms: React.FC = () => {
   const [mode, setMode] = useState<RecipientMode>('selected_users');
   const [users, setUsers] = useState<SmsUser[]>([]);
+  const [orders, setOrders] = useState<SmsOrder[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingSegments, setLoadingSegments] = useState(false);
   const [query, setQuery] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState('');
   const [customNumbers, setCustomNumbers] = useState('');
+  const [userSegment, setUserSegment] = useState<UserSegment>('all_accounts');
+  const [newUserDays, setNewUserDays] = useState(7);
   const [senderId, setSenderId] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
   const [sending, setSending] = useState(false);
@@ -54,13 +68,26 @@ export const AdminSms: React.FC = () => {
     if (users.length > 0 || loadingUsers) return;
     setLoadingUsers(true);
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name, phone, email')
-        .order('created_at', { ascending: false })
-        .limit(5000);
-      if (error) throw error;
-      setUsers((data || []) as SmsUser[]);
+      const pageSize = 1000;
+      const rows: SmsUser[] = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await supabase
+          .from('users')
+          .select('id, name, phone, email, created_at')
+          .order('created_at', { ascending: false })
+          .range(from, to);
+        if (error) throw error;
+
+        const chunk = (data || []) as SmsUser[];
+        rows.push(...chunk);
+        if (chunk.length < pageSize || rows.length >= 10000) break;
+        from += pageSize;
+      }
+
+      setUsers(rows);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load users';
       setFeedback({ type: 'err', text: msg });
@@ -68,6 +95,45 @@ export const AdminSms: React.FC = () => {
       setLoadingUsers(false);
     }
   };
+
+  const loadSegmentOrders = async () => {
+    if (loadingSegments || orders.length > 0 || userSegment === 'all_accounts') return;
+    setLoadingSegments(true);
+    try {
+      const pageSize = 1000;
+      const rows: SmsOrder[] = [];
+      let from = 0;
+
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await supabase
+          .from('orders')
+          .select('user_id, created_at, products:product_id(duration)')
+          .in('status', ['paid', 'completed'])
+          .order('created_at', { ascending: false })
+          .range(from, to);
+        if (error) throw error;
+
+        const chunk = (data || []) as SmsOrder[];
+        rows.push(...chunk);
+        if (chunk.length < pageSize || rows.length >= 30000) break;
+        from += pageSize;
+      }
+
+      setOrders(rows);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to load subscription segments';
+      setFeedback({ type: 'err', text: msg });
+    } finally {
+      setLoadingSegments(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mode === 'all_users' && userSegment !== 'all_accounts') {
+      void loadSegmentOrders();
+    }
+  }, [mode, userSegment]);
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -88,13 +154,55 @@ export const AdminSms: React.FC = () => {
     return users.filter((u) => u.phone && u.phone.trim());
   }, [users]);
 
+  const segmentStats = useMemo(() => {
+    const now = Date.now();
+    const hasSubscription = new Set<string>();
+    const activeSubscription = new Set<string>();
+
+    for (const order of orders) {
+      if (!order.user_id) continue;
+      hasSubscription.add(order.user_id);
+
+      const product = Array.isArray(order.products) ? order.products[0] : order.products;
+      const months = parseDurationToMonths(product?.duration || '1 Month');
+      const startAt = new Date(order.created_at);
+      if (Number.isNaN(startAt.getTime())) continue;
+      const expiresAt = new Date(startAt);
+      expiresAt.setMonth(expiresAt.getMonth() + months);
+      if (expiresAt.getTime() >= now) activeSubscription.add(order.user_id);
+    }
+
+    return { hasSubscription, activeSubscription };
+  }, [orders]);
+
+  const segmentedUsersWithPhone = useMemo(() => {
+    const now = Date.now();
+    const windowDays = Math.max(1, Math.min(365, Number(newUserDays) || 7));
+    const nowMinusWindow = now - windowDays * 24 * 60 * 60 * 1000;
+
+    return allUsersWithPhone.filter((u) => {
+      if (userSegment === 'all_accounts') return true;
+
+      const hasSub = segmentStats.hasSubscription.has(u.id);
+      const isActive = segmentStats.activeSubscription.has(u.id);
+
+      if (userSegment === 'active_subscribers') return isActive;
+      if (userSegment === 'expired_subscribers') return hasSub && !isActive;
+      if (userSegment === 'new_users') {
+        const createdAt = new Date(u.created_at).getTime();
+        return !hasSub && !Number.isNaN(createdAt) && createdAt >= nowMinusWindow;
+      }
+      return false;
+    });
+  }, [allUsersWithPhone, newUserDays, segmentStats.activeSubscription, segmentStats.hasSubscription, userSegment]);
+
   const customNumberList = useMemo(() => parseRawNumbers(customNumbers), [customNumbers]);
 
   const recipientCount = useMemo(() => {
     if (mode === 'selected_users') return selectedUsersWithPhone.length;
-    if (mode === 'all_users') return allUsersWithPhone.length;
+    if (mode === 'all_users') return segmentedUsersWithPhone.length;
     return customNumberList.length;
-  }, [mode, selectedUsersWithPhone.length, allUsersWithPhone.length, customNumberList.length]);
+  }, [mode, selectedUsersWithPhone.length, segmentedUsersWithPhone.length, customNumberList.length]);
 
   const toggleUser = (id: string) => {
     setSelectedUserIds((prev) => {
@@ -133,9 +241,9 @@ export const AdminSms: React.FC = () => {
         return;
       }
     } else if (mode === 'all_users') {
-      recipients = allUsersWithPhone.map((u) => String(u.phone || '').trim());
+      recipients = segmentedUsersWithPhone.map((u) => String(u.phone || '').trim());
       if (!recipients.length) {
-        setFeedback({ type: 'err', text: 'No users with phone numbers found.' });
+        setFeedback({ type: 'err', text: 'No users found in this segment with a phone number.' });
         return;
       }
     } else {
@@ -151,6 +259,7 @@ export const AdminSms: React.FC = () => {
       const payload: Record<string, unknown> = {
         msg: text,
         to: recipients,
+        recipient_mode: mode,
       };
       if (senderId.trim()) payload.sender_id = senderId.trim();
       if (scheduleAt.trim()) payload.schedule = new Date(scheduleAt).toISOString();
@@ -184,7 +293,12 @@ export const AdminSms: React.FC = () => {
           <div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Bulk SMS sender</h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              Send SMS to selected users, all users, or custom numbers from one place.
+              Send SMS to selected users, segmented users, or custom numbers from one place.
+            </p>
+            <p className="mt-2 text-sm">
+              <Link to="/admin?tab=sms_history" className="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">
+                Open SMS history →
+              </Link>
             </p>
           </div>
         </div>
@@ -214,6 +328,7 @@ export const AdminSms: React.FC = () => {
                 onClick={() => {
                   setMode('all_users');
                   void loadUsers();
+                  if (userSegment !== 'all_accounts') void loadSegmentOrders();
                 }}
                 className={`rounded-xl px-3 py-2 text-sm font-medium ${
                   mode === 'all_users'
@@ -221,7 +336,7 @@ export const AdminSms: React.FC = () => {
                     : 'bg-gray-100 text-gray-700 dark:bg-[#202027] dark:text-gray-200'
                 }`}
               >
-                All users
+                Segment users
               </button>
               <button
                 type="button"
@@ -289,6 +404,48 @@ export const AdminSms: React.FC = () => {
                   })
                 )}
               </div>
+            </div>
+          )}
+
+          {mode === 'all_users' && (
+            <div className="rounded-xl border border-gray-200 p-3 dark:border-[#26262d]">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    User segment
+                  </label>
+                  <select
+                    value={userSegment}
+                    onChange={(e) => setUserSegment(e.target.value as UserSegment)}
+                    className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-[#26262d] dark:bg-[#0f0f12] dark:text-gray-100"
+                  >
+                    <option value="all_accounts">All account users</option>
+                    <option value="active_subscribers">Active subscribers</option>
+                    <option value="expired_subscribers">Expired subscribers</option>
+                    <option value="new_users">New users (no subscription yet)</option>
+                  </select>
+                </div>
+
+                {userSegment === 'new_users' && (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      New user window (days)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={newUserDays}
+                      onChange={(e) => setNewUserDays(Math.max(1, Math.min(365, Number(e.target.value) || 7)))}
+                      className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm dark:border-[#26262d] dark:bg-[#0f0f12] dark:text-gray-100"
+                    />
+                  </div>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                Segment recipients: {segmentedUsersWithPhone.length}
+                {(loadingUsers || loadingSegments) ? ' (loading...)' : ''}
+              </p>
             </div>
           )}
 
