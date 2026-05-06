@@ -1243,72 +1243,86 @@ router.post('/sms/send', verifyAdmin, async (req, res) => {
     const { data: authData } = await supabase.auth.getUser(token);
     const adminId = authData?.user?.id || null;
 
-    const form = new URLSearchParams();
-    form.set('api_key', smsApiKey);
-    form.set('msg', msg);
-    form.set('to', normalized.join(','));
-    if (senderId) form.set('sender_id', senderId);
-    if (schedule) form.set('schedule', schedule);
+    const batchId = crypto.randomUUID();
+    const scheduleIso = schedule ? new Date(schedule.replace(' ', 'T') + 'Z').toISOString() : null;
+    const logRows: Array<Record<string, unknown>> = [];
 
-    const upstreamRes = await fetch(SMS_NET_BD_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-    });
-    const upstreamText = await upstreamRes.text();
-    let upstreamJson: any = null;
-    try {
-      upstreamJson = upstreamText ? JSON.parse(upstreamText) : {};
-    } catch {
-      upstreamJson = { error: 409, msg: upstreamText || 'Upstream returned non-JSON response' };
-    }
+    let sentCount = 0;
+    let failedCount = 0;
+    let lastSuccessUpstream: any = null;
+    let firstFailedUpstream: any = null;
+    const requestIds: Array<number> = [];
 
-    const upstreamError = Number(upstreamJson?.error ?? 409);
-    if (!upstreamRes.ok || upstreamError !== 0) {
-      const batchIdFailed = crypto.randomUUID();
-      const failedRows = normalized.map((phone) => ({
-        batch_id: batchIdFailed,
+    for (const phone of normalized) {
+      const form = new URLSearchParams();
+      form.set('api_key', smsApiKey);
+      form.set('msg', msg);
+      form.set('to', phone);
+      if (senderId) form.set('sender_id', senderId);
+      if (schedule) form.set('schedule', schedule);
+
+      const upstreamRes = await fetch(SMS_NET_BD_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      });
+      const upstreamText = await upstreamRes.text();
+      let upstreamJson: any = null;
+      try {
+        upstreamJson = upstreamText ? JSON.parse(upstreamText) : {};
+      } catch {
+        upstreamJson = { error: 409, msg: upstreamText || 'Upstream returned non-JSON response' };
+      }
+
+      const upstreamError = Number(upstreamJson?.error ?? 409);
+      const requestIdNum = Number(upstreamJson?.data?.request_id);
+      const isOk = upstreamRes.ok && upstreamError === 0;
+
+      if (isOk) {
+        sentCount += 1;
+        lastSuccessUpstream = upstreamJson;
+        if (Number.isFinite(requestIdNum)) requestIds.push(requestIdNum);
+      } else {
+        failedCount += 1;
+        if (!firstFailedUpstream) firstFailedUpstream = upstreamJson;
+      }
+
+      logRows.push({
+        batch_id: batchId,
         admin_id: adminId,
         recipient_phone: phone,
         message: msg,
         sender_id: senderId || null,
-        schedule_at: schedule ? new Date(schedule.replace(' ', 'T') + 'Z').toISOString() : null,
+        schedule_at: scheduleIso,
         provider: 'sms.net.bd',
         provider_request_id: String(upstreamJson?.data?.request_id || ''),
         provider_error_code: upstreamError,
         provider_message: String(upstreamJson?.msg || ''),
         recipient_mode: recipientMode,
-      }));
-      const { error: logErr } = await supabase.from('sms_send_logs').insert(failedRows);
-      if (logErr) console.error('sms log insert error (failed send):', logErr);
-      return res.status(400).json({
-        error: upstreamJson?.msg || `SMS provider request failed (${upstreamError})`,
-        upstream: upstreamJson,
       });
     }
 
-    const batchId = crypto.randomUUID();
-    const logRows = normalized.map((phone) => ({
-      batch_id: batchId,
-      admin_id: adminId,
-      recipient_phone: phone,
-      message: msg,
-      sender_id: senderId || null,
-      schedule_at: schedule ? new Date(schedule.replace(' ', 'T') + 'Z').toISOString() : null,
-      provider: 'sms.net.bd',
-      provider_request_id: String(upstreamJson?.data?.request_id || ''),
-      provider_error_code: upstreamError,
-      provider_message: String(upstreamJson?.msg || ''),
-      recipient_mode: recipientMode,
-    }));
-    const { error: logErr } = await supabase.from('sms_send_logs').insert(logRows);
-    if (logErr) console.error('sms log insert error:', logErr);
+    if (logRows.length) {
+      const { error: logErr } = await supabase.from('sms_send_logs').insert(logRows);
+      if (logErr) console.error('sms log insert error:', logErr);
+    }
+
+    if (sentCount === 0) {
+      return res.status(400).json({
+        error: firstFailedUpstream?.msg || 'SMS provider rejected all recipients',
+        upstream: firstFailedUpstream || null,
+        sent_count: 0,
+        failed_count: failedCount,
+      });
+    }
 
     return res.json({
       success: true,
-      sent_count: normalized.length,
-      request_id: upstreamJson?.data?.request_id ?? null,
-      upstream: upstreamJson,
+      partial_success: failedCount > 0,
+      sent_count: sentCount,
+      failed_count: failedCount,
+      request_id: requestIds.length === 1 ? requestIds[0] : null,
+      upstream: lastSuccessUpstream || firstFailedUpstream || null,
     });
   } catch (error: any) {
     console.error('sms send error:', error);
@@ -1334,7 +1348,7 @@ router.get('/ops/sms-pricing', verifyAdmin, async (_req, res) => {
   }
 });
 
-router.patch('/ops/sms-pricing', verifyAdmin, async (req, res) => {
+const saveSmsPricingHandler = async (req: any, res: any) => {
   try {
     const body = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
     const costPerSms = clampFloat(body.cost_per_sms, 0, 100, 0.4);
@@ -1348,7 +1362,11 @@ router.patch('/ops/sms-pricing', verifyAdmin, async (req, res) => {
     console.error('sms pricing patch error:', error);
     return res.status(500).json({ error: error?.message || 'Internal server error' });
   }
-});
+};
+
+router.patch('/ops/sms-pricing', verifyAdmin, saveSmsPricingHandler);
+// Frontend json helper currently uses POST; keep POST + PATCH both supported.
+router.post('/ops/sms-pricing', verifyAdmin, saveSmsPricingHandler);
 
 router.get('/ops/email-team-lifecycle', verifyAdmin, async (_req, res) => {
   try {
