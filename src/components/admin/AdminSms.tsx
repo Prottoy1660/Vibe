@@ -34,7 +34,7 @@ type SendSmsResponse = {
 };
 
 type RecipientMode = 'selected_users' | 'all_users' | 'custom_numbers';
-type UserSegment = 'all_accounts' | 'active_subscribers' | 'expired_subscribers' | 'new_users';
+type UserSegment = 'all_accounts' | 'active_subscribers' | 'near_expiry_subscribers' | 'expired_subscribers' | 'new_users';
 
 function parseRawNumbers(raw: string): string[] {
   return [
@@ -158,6 +158,7 @@ export const AdminSms: React.FC = () => {
     const now = Date.now();
     const hasSubscription = new Set<string>();
     const activeSubscription = new Set<string>();
+    const nearExpirySubscription = new Set<string>();
 
     for (const order of orders) {
       if (!order.user_id) continue;
@@ -169,10 +170,15 @@ export const AdminSms: React.FC = () => {
       if (Number.isNaN(startAt.getTime())) continue;
       const expiresAt = new Date(startAt);
       expiresAt.setMonth(expiresAt.getMonth() + months);
-      if (expiresAt.getTime() >= now) activeSubscription.add(order.user_id);
+      const expiresMs = expiresAt.getTime();
+      if (expiresMs >= now) {
+        activeSubscription.add(order.user_id);
+        const daysLeft = Math.ceil((expiresMs - now) / (24 * 60 * 60 * 1000));
+        if (daysLeft >= 0 && daysLeft <= 3) nearExpirySubscription.add(order.user_id);
+      }
     }
 
-    return { hasSubscription, activeSubscription };
+    return { hasSubscription, activeSubscription, nearExpirySubscription };
   }, [orders]);
 
   const segmentedUsersWithPhone = useMemo(() => {
@@ -185,8 +191,10 @@ export const AdminSms: React.FC = () => {
 
       const hasSub = segmentStats.hasSubscription.has(u.id);
       const isActive = segmentStats.activeSubscription.has(u.id);
+      const isNearExpiry = segmentStats.nearExpirySubscription.has(u.id);
 
       if (userSegment === 'active_subscribers') return isActive;
+      if (userSegment === 'near_expiry_subscribers') return isNearExpiry;
       if (userSegment === 'expired_subscribers') return hasSub && !isActive;
       if (userSegment === 'new_users') {
         const createdAt = new Date(u.created_at).getTime();
@@ -194,7 +202,14 @@ export const AdminSms: React.FC = () => {
       }
       return false;
     });
-  }, [allUsersWithPhone, newUserDays, segmentStats.activeSubscription, segmentStats.hasSubscription, userSegment]);
+  }, [
+    allUsersWithPhone,
+    newUserDays,
+    segmentStats.activeSubscription,
+    segmentStats.hasSubscription,
+    segmentStats.nearExpirySubscription,
+    userSegment,
+  ]);
 
   const customNumberList = useMemo(() => parseRawNumbers(customNumbers), [customNumbers]);
 
@@ -421,6 +436,7 @@ export const AdminSms: React.FC = () => {
                   >
                     <option value="all_accounts">All account users</option>
                     <option value="active_subscribers">Active subscribers</option>
+                    <option value="near_expiry_subscribers">Near expiry (0-3 days left)</option>
                     <option value="expired_subscribers">Expired subscribers</option>
                     <option value="new_users">New users (no subscription yet)</option>
                   </select>

@@ -125,6 +125,8 @@ type DeliveryRow = {
   email_detail: string | null;
   whatsapp_status: string;
   whatsapp_detail: string | null;
+  sms_status: string;
+  sms_detail: string | null;
   created_at: string;
   users?: { name: string | null; email: string | null; phone: string | null } | null;
 };
@@ -136,7 +138,14 @@ function normalizeDeliveryRows(raw: unknown): DeliveryRow[] {
     const u = r.users;
     const users: DeliveryRow['users'] =
       u == null ? null : Array.isArray(u) ? (u[0] as DeliveryRow['users']) ?? null : (u as DeliveryRow['users']);
-    return { ...(r as unknown as Omit<DeliveryRow, 'users'>), users };
+    const smsStatus = typeof r.sms_status === 'string' ? r.sms_status : 'skipped_no_provider';
+    const smsDetail = typeof r.sms_detail === 'string' ? r.sms_detail : null;
+    return {
+      ...(r as unknown as Omit<DeliveryRow, 'users' | 'sms_status' | 'sms_detail'>),
+      sms_status: smsStatus,
+      sms_detail: smsDetail,
+      users,
+    };
   });
 }
 
@@ -173,6 +182,7 @@ export const AdminSubscriptionReminders = () => {
   const [form, setForm] = useState<SubscriptionReminderChannels>({
     email_enabled: true,
     whatsapp_enabled: true,
+    sms_enabled: false,
   });
   const [copyForm, setCopyForm] = useState<SubscriptionReminderCopy>(() => ({ ...DEFAULT_SUBSCRIPTION_REMINDER_COPY }));
   const [renewUrlField, setRenewUrlField] = useState('');
@@ -223,20 +233,9 @@ export const AdminSubscriptionReminders = () => {
     setLoading(true);
     setMsg(null);
     try {
-      const [settings, copyRow, log, intJson] = await Promise.all([
+      const [settings, copyRow, intJson] = await Promise.all([
         supabase.from('system_settings').select('value').eq('key', 'subscription_reminder_channels').maybeSingle(),
         supabase.from('system_settings').select('value').eq('key', SUBSCRIPTION_REMINDER_COPY_KEY).maybeSingle(),
-        supabase
-          .from('subscription_reminder_delivery_log')
-          .select(
-            `
-            id, order_id, user_id, reminder_key, product_title, in_app_ok,
-            email_status, email_detail, whatsapp_status, whatsapp_detail, created_at,
-            users:user_id (name, email, phone)
-          `,
-          )
-          .order('created_at', { ascending: false })
-          .limit(300),
         adminFetch('/api/admin/ops/subscription-reminder/integrations', 'GET').catch(() => null),
       ]);
       if (settings.error) throw settings.error;
@@ -247,8 +246,35 @@ export const AdminSubscriptionReminders = () => {
       setCopyForm(parsedCopy.copy);
       setRenewUrlField(parsedCopy.renew_url || '');
 
-      if (log.error) throw log.error;
-      setRows(normalizeDeliveryRows(log.data));
+      const log = await supabase
+        .from('subscription_reminder_delivery_log')
+        .select(
+          `
+          id, order_id, user_id, reminder_key, product_title, in_app_ok,
+          email_status, email_detail, whatsapp_status, whatsapp_detail, sms_status, sms_detail, created_at,
+          users:user_id (name, email, phone)
+        `,
+        )
+        .order('created_at', { ascending: false })
+        .limit(300);
+      if (log.error && String(log.error.message || '').toLowerCase().includes('sms_status')) {
+        const fallback = await supabase
+          .from('subscription_reminder_delivery_log')
+          .select(
+            `
+            id, order_id, user_id, reminder_key, product_title, in_app_ok,
+            email_status, email_detail, whatsapp_status, whatsapp_detail, created_at,
+            users:user_id (name, email, phone)
+          `,
+          )
+          .order('created_at', { ascending: false })
+          .limit(300);
+        if (fallback.error) throw fallback.error;
+        setRows(normalizeDeliveryRows(fallback.data));
+      } else {
+        if (log.error) throw log.error;
+        setRows(normalizeDeliveryRows(log.data));
+      }
 
       const emptyIntegration: IntegrationSettingsPayload = {
         reminder_from_email: '',
@@ -301,6 +327,7 @@ export const AdminSubscriptionReminders = () => {
       const value = {
         email_enabled: form.email_enabled,
         whatsapp_enabled: form.whatsapp_enabled,
+        sms_enabled: form.sms_enabled,
       };
       const { error } = await supabase
         .from('system_settings')
@@ -419,7 +446,7 @@ export const AdminSubscriptionReminders = () => {
       const j = await adminFetch('/api/admin/ops/subscription-reminder/run', 'POST');
       setMsg({
         type: 'ok',
-        text: `Job finished. Inbox reminders queued: d3=${j.sent_d3 ?? 0}, d1=${j.sent_d1 ?? 0}. Email OK=${j.emails_sent ?? 0}, WA OK=${j.whatsapp_sent ?? 0}. Failures: email=${j.emails_failed ?? 0}, WA=${j.whatsapp_failed ?? 0}, inbox errors=${j.errors ?? 0}.`,
+        text: `Job finished. Inbox reminders queued: d3=${j.sent_d3 ?? 0}, d1=${j.sent_d1 ?? 0}, expired=${j.sent_expired ?? 0}. Email OK=${j.emails_sent ?? 0}, WA OK=${j.whatsapp_sent ?? 0}, SMS OK=${j.sms_sent ?? 0}. Failures: email=${j.emails_failed ?? 0}, WA=${j.whatsapp_failed ?? 0}, SMS=${j.sms_failed ?? 0}, inbox errors=${j.errors ?? 0}.`,
       });
       void load();
     } catch (e: unknown) {
@@ -931,6 +958,18 @@ export const AdminSubscriptionReminders = () => {
               variant="emerald"
             />
           </div>
+          <div className="flex flex-1 items-center justify-between gap-3 rounded-xl border border-gray-200 p-4 dark:border-[#303038]">
+            <span className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <MessageCircle className="h-4 w-4 text-amber-500" /> SMS
+            </span>
+            <ReminderSwitch
+              checked={form.sms_enabled}
+              onChange={(v) => setForm((f) => ({ ...f, sms_enabled: v }))}
+              label="Send expiry reminders by SMS"
+              hideLabel
+              variant="amber"
+            />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -981,6 +1020,7 @@ export const AdminSubscriptionReminders = () => {
                   <th className="py-2.5 px-3 font-bold text-gray-500 uppercase">In-app</th>
                   <th className="py-2.5 px-3 font-bold text-gray-500 uppercase">Email</th>
                   <th className="py-2.5 px-3 font-bold text-gray-500 uppercase">WhatsApp</th>
+                  <th className="py-2.5 px-3 font-bold text-gray-500 uppercase">SMS</th>
                 </tr>
               </thead>
               <tbody>
@@ -1021,6 +1061,12 @@ export const AdminSubscriptionReminders = () => {
                         </span>
                         {r.whatsapp_detail ? (
                           <div className="text-[10px] text-gray-500 mt-0.5 max-w-[180px] break-words">{r.whatsapp_detail}</div>
+                        ) : null}
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className={`font-semibold ${statusClass(r.sms_status)}`}>{statusLabel(r.sms_status)}</span>
+                        {r.sms_detail ? (
+                          <div className="text-[10px] text-gray-500 mt-0.5 max-w-[180px] break-words">{r.sms_detail}</div>
                         ) : null}
                       </td>
                     </tr>
