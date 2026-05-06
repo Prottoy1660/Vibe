@@ -97,7 +97,7 @@ export const AdminSmsHistory: React.FC = () => {
 
   const successCount = useMemo(() => filtered.filter((r) => (r.provider_error_code ?? 0) === 0).length, [filtered]);
   const failedCount = useMemo(() => filtered.filter((r) => (r.provider_error_code ?? 0) !== 0).length, [filtered]);
-  const totalCost = useMemo(() => Number((filtered.length * numericCost).toFixed(2)), [filtered.length, numericCost]);
+  const totalCost = useMemo(() => Number((successCount * numericCost).toFixed(2)), [successCount, numericCost]);
 
   const savePricing = async () => {
     setPricingMsg(null);
@@ -280,7 +280,7 @@ export const AdminSmsHistory: React.FC = () => {
                       <p className="max-w-[220px] truncate">{r.provider_message || '-'}</p>
                     </td>
                     <td className="px-4 py-3 align-top text-[11px] text-gray-700 dark:text-gray-200">
-                      {currency} {numericCost.toFixed(2)}
+                      {currency} {((r.provider_error_code ?? 0) === 0 ? numericCost : 0).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 align-top text-[11px] text-gray-600 dark:text-gray-300">
                       <p className="font-semibold text-gray-800 dark:text-gray-100">{admin?.name || 'Admin'}</p>
