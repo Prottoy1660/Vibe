@@ -59,7 +59,7 @@ export type SubscriptionExpiryReminderResult = {
 const SMS_NET_BD_ENDPOINT = 'https://api.sms.net.bd/sendsms';
 
 function normalizeBdPhone(raw: string | null | undefined): string | null {
-  const cleaned = String(raw || '').replace(/[^\d+]/g, '').trim();
+  const cleaned = String(raw || '').replace(/\D/g, '').trim();
   if (!cleaned) return null;
   if (/^8801\d{9}$/.test(cleaned)) return cleaned;
   if (/^01\d{9}$/.test(cleaned)) return `88${cleaned}`;

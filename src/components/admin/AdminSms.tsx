@@ -36,15 +36,34 @@ type SendSmsResponse = {
 type RecipientMode = 'selected_users' | 'all_users' | 'custom_numbers';
 type UserSegment = 'all_accounts' | 'active_subscribers' | 'near_expiry_subscribers' | 'expired_subscribers' | 'new_users';
 
-function parseRawNumbers(raw: string): string[] {
-  return [
-    ...new Set(
-      raw
-        .split(/[\n,;]+/)
-        .map((v) => v.trim())
-        .filter(Boolean),
-    ),
-  ];
+function normalizeBdPhoneLocal(raw: string): string | null {
+  const cleaned = String(raw || '').replace(/\D/g, '').trim();
+  if (!cleaned) return null;
+  if (/^8801\d{9}$/.test(cleaned)) return cleaned;
+  if (/^01\d{9}$/.test(cleaned)) return `88${cleaned}`;
+  if (/^1\d{9}$/.test(cleaned)) return `880${cleaned}`;
+  return null;
+}
+
+function parseCustomNumbers(raw: string): {
+  entriesCount: number;
+  invalidCount: number;
+  duplicateCount: number;
+  validNumbers: string[];
+} {
+  const tokens = raw
+    .split(/[\n,;]+/)
+    .map((v) => v.trim())
+    .filter(Boolean);
+
+  const normalized = tokens.map((v) => normalizeBdPhoneLocal(v)).filter(Boolean) as string[];
+  const uniqueValid = [...new Set(normalized)];
+  return {
+    entriesCount: tokens.length,
+    invalidCount: tokens.filter((v) => !normalizeBdPhoneLocal(v)).length,
+    duplicateCount: Math.max(0, normalized.length - uniqueValid.length),
+    validNumbers: uniqueValid,
+  };
 }
 
 export const AdminSms: React.FC = () => {
@@ -211,13 +230,13 @@ export const AdminSms: React.FC = () => {
     userSegment,
   ]);
 
-  const customNumberList = useMemo(() => parseRawNumbers(customNumbers), [customNumbers]);
+  const customParseResult = useMemo(() => parseCustomNumbers(customNumbers), [customNumbers]);
 
   const recipientCount = useMemo(() => {
     if (mode === 'selected_users') return selectedUsersWithPhone.length;
     if (mode === 'all_users') return segmentedUsersWithPhone.length;
-    return customNumberList.length;
-  }, [mode, selectedUsersWithPhone.length, segmentedUsersWithPhone.length, customNumberList.length]);
+    return customParseResult.validNumbers.length;
+  }, [mode, selectedUsersWithPhone.length, segmentedUsersWithPhone.length, customParseResult.validNumbers.length]);
 
   const toggleUser = (id: string) => {
     setSelectedUserIds((prev) => {
@@ -262,9 +281,9 @@ export const AdminSms: React.FC = () => {
         return;
       }
     } else {
-      recipients = customNumberList;
+      recipients = customParseResult.validNumbers;
       if (!recipients.length) {
-        setFeedback({ type: 'err', text: 'Enter at least one custom number.' });
+        setFeedback({ type: 'err', text: 'Enter at least one valid number (e.g. +8801XXXXXXXXX / 8801XXXXXXXXX / 01XXXXXXXXX).' });
         return;
       }
     }
@@ -477,6 +496,9 @@ export const AdminSms: React.FC = () => {
                 placeholder={'8801XXXXXXXXX\n01XXXXXXXXX'}
                 className="mt-1.5 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 dark:border-[#26262d] dark:bg-[#0f0f12] dark:text-gray-100"
               />
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Entered: {customParseResult.entriesCount} | Valid: {customParseResult.validNumbers.length} | Invalid: {customParseResult.invalidCount} | Duplicates: {customParseResult.duplicateCount}
+              </p>
             </div>
           )}
 
