@@ -629,7 +629,7 @@ router.post('/emails/:emailId/release-assignment', verifyAdmin, async (req, res)
  */
 router.get('/orders/query', verifyAdmin, async (req, res) => {
   try {
-    const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 200));
+    const limit = Math.min(5000, Math.max(1, Number(req.query.limit) || 5000));
     const paymentStatus = typeof req.query.payment_status === 'string' ? req.query.payment_status.trim() : '';
     const from = typeof req.query.from === 'string' ? req.query.from.trim() : '';
     const to = typeof req.query.to === 'string' ? req.query.to.trim() : '';

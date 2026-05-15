@@ -156,6 +156,7 @@ export const AdobeEmail = () => {
   const navigate = useNavigate();
   
   const [emails, setEmails] = useState<UserEmail[]>([]);
+  const [emailHistory, setEmailHistory] = useState<UserEmail[]>([]);
   const [hasActiveSubscription, setHasActiveSubscription] = useState(false);
   const [hasSharedSubscription, setHasSharedSubscription] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -529,9 +530,13 @@ export const AdobeEmail = () => {
         // ------------------------------------- //
       }
 
-      // UI isolation: hide revoked/inactive emails, but keep them in-memory for auto-renew evaluation above.
+      // Keep active seats for normal actions, and retain expired/inactive seats as history.
       const displayEmails = validFormattedEmails.filter((e: any) => e.is_active === true);
+      const historicalEmails = validFormattedEmails.filter(
+        (e: any) => e.is_active !== true || e.subscription_details?.is_expired === true,
+      );
       setEmails(displayEmails);
+      setEmailHistory(historicalEmails);
       
       // Determine if there is at least one active order based on the valid emails
       // Active subscription = at least one currently active email row.
@@ -796,6 +801,9 @@ export const AdobeEmail = () => {
   };
 
   const filteredEmails = emails.filter(email => 
+    email.email_details.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredEmailHistory = emailHistory.filter(email =>
     email.email_details.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -1283,7 +1291,7 @@ export const AdobeEmail = () => {
           );
         })}
 
-        {!loading && filteredEmails.length === 0 && (
+        {!loading && filteredEmails.length === 0 && filteredEmailHistory.length === 0 && (
           <div className="ui-empty-state bg-white dark:bg-[#151518] shadow-soft dark:shadow-none p-12 text-center flex flex-col items-center justify-center">
             <div className="w-16 h-16 rounded-full bg-gray-50 dark:bg-white/5 flex items-center justify-center mb-4 border border-gray-100 dark:border-[#26262d]">
               <XCircle className="w-8 h-8 text-gray-300" />
@@ -1313,6 +1321,58 @@ export const AdobeEmail = () => {
                 </p>
               </>
             )}
+          </div>
+        )}
+
+        {!loading && filteredEmailHistory.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#151518] overflow-hidden shadow-sm dark:shadow-none">
+            <div className="border-b border-gray-100 dark:border-white/5 px-5 py-4">
+              <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">Previous subscriptions</h3>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Expired or inactive Adobe accounts stay here for your history and monthly tracking.
+              </p>
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-white/5">
+              {filteredEmailHistory.map((email) => {
+                const expiresAt = email.subscription_details?.expires_at;
+                const isExpired = email.subscription_details?.is_expired === true || email.is_active === false;
+                return (
+                  <div key={`history-${email.id}`} className="px-5 py-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full border border-zinc-300 bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">
+                            {isExpired ? 'Expired' : 'Inactive'}
+                          </span>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            Order #{email.order_id.slice(0, 8).toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="mt-2 break-all font-mono text-sm text-zinc-900 dark:text-zinc-100">
+                          {email.email_details.email}
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                          Assigned {format(new Date(email.assigned_at), 'MMM d, yyyy')}
+                          {expiresAt ? ` · Expired ${format(expiresAt, 'MMM d, yyyy')}` : ''}
+                        </p>
+                      </div>
+                      <div className="text-sm text-zinc-600 dark:text-zinc-300">
+                        {email.subscription_details ? (
+                          <p>
+                            {email.subscription_details.duration} plan
+                            {typeof email.subscription_details.total_days === 'number'
+                              ? ` · ${email.subscription_details.total_days} days`
+                              : ''}
+                          </p>
+                        ) : (
+                          <p>Subscription history retained</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

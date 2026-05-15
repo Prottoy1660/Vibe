@@ -275,7 +275,7 @@ export const AdminOrders = () => {
       const token = await getAccessTokenForApi();
       const base = getApiBaseUrl();
       if (token && base) {
-        const res = await fetch(`${base}/api/admin/orders/query?limit=200`, {
+        const res = await fetch(`${base}/api/admin/orders/query?limit=5000`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const json = await res.json().catch(() => ({}));
@@ -300,7 +300,7 @@ export const AdminOrders = () => {
         `,
         )
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(5000);
 
       if (error) throw error;
       const rows = (data as unknown as Order[]) || [];
@@ -1263,7 +1263,7 @@ export const AdminOrders = () => {
                       <ShoppingBag className="w-10 h-10 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
                       <p className="font-medium text-gray-700 dark:text-gray-300">
                         {filter === 'all'
-                          ? 'No orders in the last 200 rows.'
+                          ? 'No orders found in loaded history.'
                           : filter === 'pending'
                             ? 'No pending gateway orders or redeem orders awaiting manual payment.'
                             : `No orders with status “${filter}”.`}

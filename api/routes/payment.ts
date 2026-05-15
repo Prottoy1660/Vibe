@@ -50,6 +50,26 @@ async function requireUser(req: any, res: any, next: any) {
   }
 }
 
+/**
+ * Preserve order history by soft-expiring only truly abandoned checkouts.
+ * Excludes redeem/manual-pay flows and any order that already has a paid status.
+ */
+async function expireStalePendingOrders() {
+  try {
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: 'expired', payment_status: 'failed' })
+      .eq('status', 'pending')
+      .eq('payment_status', 'pending')
+      .neq('payment_method', 'redeem_code')
+      .lt('created_at', thirtyMinsAgo);
+    if (error) throw error;
+  } catch (err) {
+    console.error('Scheduled stale pending expiry failed:', err);
+  }
+}
+
 async function computeOrderPricing(orderId: string) {
   const { data: order, error: orderError } = await supabase
     .from('orders')
@@ -408,15 +428,7 @@ async function settleOrderAfterGatewayPayment(params: {
 }
 
 router.post('/create', requireUser, async (req, res) => {
-  // --- Background Lazy Auto-Cleanup Task --- //
-  // Silently destroy all pending/abandoned orders older than 30 minutes
-  try {
-    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    await supabase.from('orders').delete().eq('status', 'pending').lt('created_at', thirtyMinsAgo);
-  } catch (err) {
-    console.error('Scheduled lazy cleanup failed:', err);
-  }
-  // ----------------------------------------- //
+  await expireStalePendingOrders();
 
   try {
     const { order_id, full_name, email, frontend_url, wallet_deduction } = req.body;
@@ -1208,12 +1220,7 @@ router.post('/bkash-tokenized/finish', requireUser, async (req, res) => {
 });
 
 router.post('/webhook', async (req, res) => {
-  // --- Background Lazy Auto-Cleanup Task --- //
-  try {
-    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    await supabase.from('orders').delete().eq('status', 'pending').lt('created_at', thirtyMinsAgo);
-  } catch (err) {}
-  // ----------------------------------------- //
+  await expireStalePendingOrders();
 
   try {
     const { metadata, status, amount } = req.body;
