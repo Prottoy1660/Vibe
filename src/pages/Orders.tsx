@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink, FileText, Timer } from 'lucide-react';
+import { Search, ShoppingCart, Loader2, CreditCard, Sparkles, Package, Copy, Check, ExternalLink, FileText, Timer, AlertCircle } from 'lucide-react';
 import { invoiceEligible } from '../lib/invoiceModel';
 import { format } from 'date-fns';
 import { postJsonWithFallback } from '../lib/apiClient';
@@ -21,6 +21,46 @@ interface Order {
     title: string;
     title_bn: string;
   };
+}
+
+interface RecoveredPayment {
+  id: string;
+  created_at: string;
+  amount: number;
+  gateway: string;
+  event_type: string;
+  message: string;
+  trx_id: string | null;
+  payment_id: string | null;
+}
+
+function extractRecoveredPayments(rows: any[]): RecoveredPayment[] {
+  return (rows || [])
+    .filter((row) => {
+      const eventType = String(row?.event_type || '').toLowerCase();
+      const gateway = String(row?.gateway || '').toLowerCase();
+      if (eventType === 'bkash_payment_executed') return true;
+      if (eventType === 'wallet_only_paid') return true;
+      if (eventType === 'payment_simulated_dev') return true;
+      if (eventType === 'payment_completed' && gateway !== 'bkash_tokenized') return true;
+      return false;
+    })
+    .map((row) => ({
+      id: String(row.id),
+      created_at: String(row.created_at),
+      amount: Number(row.amount) || 0,
+      gateway: String(row.gateway || 'payment'),
+      event_type: String(row.event_type || ''),
+      message: String(row.message || 'Payment confirmed'),
+      trx_id:
+        typeof row.meta?.trx_id === 'string' && row.meta.trx_id.trim()
+          ? row.meta.trx_id.trim()
+          : null,
+      payment_id:
+        typeof row.meta?.payment_id === 'string' && row.meta.payment_id.trim()
+          ? row.meta.payment_id.trim()
+          : null,
+    }));
 }
 
 function gatewayForPaymentRetry(paymentMethod: string | null | undefined): 'uddoktapay' | 'bkash_tokenized' {
@@ -51,6 +91,7 @@ function statusCaption(effectiveStatus: string): string {
 export const Orders = () => {
   const { user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [recoveredPayments, setRecoveredPayments] = useState<RecoveredPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -91,21 +132,31 @@ export const Orders = () => {
     if (!user) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select(`
-          id,
-          created_at,
-          status,
-          payment_status,
-          total_amount,
-          payment_method,
-          product:product_id (title, title_bn)
-        `)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      const [{ data, error }, paymentEventsRes] = await Promise.all([
+        supabase
+          .from('orders')
+          .select(`
+            id,
+            created_at,
+            status,
+            payment_status,
+            total_amount,
+            payment_method,
+            product:product_id (title, title_bn)
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('payment_events')
+          .select('id, created_at, amount, gateway, event_type, message, meta, order_id')
+          .eq('user_id', user.id)
+          .is('order_id', null)
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]);
 
       if (error) throw error;
+      if (paymentEventsRes.error) throw paymentEventsRes.error;
 
       if (data) {
         const formattedOrders = data.map((item: any) => ({
@@ -122,6 +173,7 @@ export const Orders = () => {
         }));
         setOrders(formattedOrders);
       }
+      setRecoveredPayments(extractRecoveredPayments(paymentEventsRes.data || []));
     } catch (error) {
       console.error('Error fetching orders:', error);
     } finally {
@@ -373,6 +425,22 @@ export const Orders = () => {
         ))}
       </div>
 
+      {recoveredPayments.length > 0 && (
+        <div className="rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/20 px-4 sm:px-5 py-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-xl bg-amber-100 dark:bg-amber-900/40 p-2 text-amber-700 dark:text-amber-200">
+              <AlertCircle className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-amber-950 dark:text-amber-100">Recovered payment history found</h2>
+              <p className="mt-1 text-sm text-amber-900/80 dark:text-amber-100/80">
+                Some payments were confirmed, but their original order row is missing. We still show the payment proof below so your history does not disappear.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
         <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-white/5 space-y-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -600,6 +668,58 @@ export const Orders = () => {
           </div>
         )}
       </div>
+
+      {recoveredPayments.length > 0 && (
+        <div className="rounded-2xl border border-gray-200/90 dark:border-[#2a2a32] bg-white dark:bg-[#121214] shadow-sm dark:shadow-none overflow-hidden">
+          <div className="px-4 sm:px-5 py-4 border-b border-gray-100 dark:border-white/5">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-amber-500" />
+              Recovered payment records
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              These payments exist in the gateway log even though the related order is no longer in the main orders table.
+            </p>
+          </div>
+          <div className="divide-y divide-gray-100 dark:divide-white/5">
+            {recoveredPayments.map((payment) => (
+              <div key={payment.id} className="px-4 sm:px-5 py-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                        Payment recovered
+                      </span>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {format(new Date(payment.created_at), 'MMM d, yyyy · HH:mm')}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {payment.gateway === 'bkash_tokenized' ? 'bKash payment confirmed' : 'Gateway payment confirmed'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{payment.message}</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-mono text-gray-600 dark:text-gray-300">
+                      {payment.trx_id ? (
+                        <span className="rounded-md bg-gray-100 dark:bg-white/10 px-2 py-1">Trx: {payment.trx_id}</span>
+                      ) : null}
+                      {payment.payment_id ? (
+                        <span className="rounded-md bg-gray-100 dark:bg-white/10 px-2 py-1">PayID: {payment.payment_id}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="text-left sm:text-right">
+                    <p className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                      ৳{payment.amount.toFixed(2)}
+                    </p>
+                    <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                      {(payment.gateway || 'payment').replace(/_/g, ' ')}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -15,12 +15,53 @@ interface AdminUserDetailsProps {
   onBack: () => void;
 }
 
+type RecoveredPayment = {
+  id: string;
+  created_at: string;
+  amount: number;
+  gateway: string;
+  event_type: string;
+  message: string;
+  trx_id: string | null;
+  payment_id: string | null;
+};
+
+function extractRecoveredPayments(rows: any[]): RecoveredPayment[] {
+  return (rows || [])
+    .filter((row) => {
+      const eventType = String(row?.event_type || '').toLowerCase();
+      const gateway = String(row?.gateway || '').toLowerCase();
+      if (eventType === 'bkash_payment_executed') return true;
+      if (eventType === 'wallet_only_paid') return true;
+      if (eventType === 'payment_simulated_dev') return true;
+      if (eventType === 'payment_completed' && gateway !== 'bkash_tokenized') return true;
+      return false;
+    })
+    .map((row) => ({
+      id: String(row.id),
+      created_at: String(row.created_at),
+      amount: Number(row.amount) || 0,
+      gateway: String(row.gateway || 'payment'),
+      event_type: String(row.event_type || ''),
+      message: String(row.message || 'Payment confirmed'),
+      trx_id:
+        typeof row.meta?.trx_id === 'string' && row.meta.trx_id.trim()
+          ? row.meta.trx_id.trim()
+          : null,
+      payment_id:
+        typeof row.meta?.payment_id === 'string' && row.meta.payment_id.trim()
+          ? row.meta.payment_id.trim()
+          : null,
+    }));
+}
+
 export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBack }) => {
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [emails, setEmails] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [recoveredPayments, setRecoveredPayments] = useState<RecoveredPayment[]>([]);
   
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -43,7 +84,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
   });
 
   /** One section at a time — easier to scan than a 3-column grid */
-  const [detailTab, setDetailTab] = useState<'orders' | 'emails' | 'activity'>('orders');
+  const [detailTab, setDetailTab] = useState<'orders' | 'payments' | 'emails' | 'activity'>('orders');
 
   const fetchUserDetails = async () => {
     setLoading(true);
@@ -78,9 +119,24 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
       if (ordersError) throw ordersError;
       setOrders(userOrders || []);
 
+      const { data: paymentRows, error: paymentsError } = await supabase
+        .from('payment_events')
+        .select('id, created_at, amount, gateway, event_type, message, meta, order_id')
+        .eq('user_id', userId)
+        .is('order_id', null)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (paymentsError) throw paymentsError;
+      const recovered = extractRecoveredPayments(paymentRows || []);
+      setRecoveredPayments(recovered);
+
       // Calculate basic stats
-      const totalSpent = userOrders?.filter(o => o.status === 'completed' || o.status === 'paid')
-                                    .reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
+      const totalSpentFromOrders =
+        userOrders?.filter((o) => o.payment_status === 'paid' || o.status === 'completed' || o.status === 'paid')
+          .reduce((sum, o) => sum + Number(o.total_amount), 0) || 0;
+      const totalRecoveredSpent = recovered.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const totalSpent = totalSpentFromOrders + totalRecoveredSpent;
       const totalOrders = userOrders?.length || 0;
 
       // 3. Fetch Emails
@@ -308,6 +364,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
 
   const detailTabs = [
     { id: 'orders' as const, label: 'Orders', short: 'Purchases', icon: ShoppingBag, count: orders.length },
+    { id: 'payments' as const, label: 'Recovered payments', short: 'Payments', icon: CreditCard, count: recoveredPayments.length },
     { id: 'emails' as const, label: 'Adobe accounts', short: 'Accounts', icon: Mail, count: emails.length },
     { id: 'activity' as const, label: 'Activity', short: 'Log', icon: History, count: activityLogs.length },
   ];
@@ -482,7 +539,7 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
       {/* At-a-glance metrics — compact strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Total spent', sub: 'Completed & paid orders', value: `৳${stats.totalSpent.toFixed(2)}`, icon: CreditCard, tone: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
+          { label: 'Total spent', sub: 'Paid orders plus recovered payments', value: `৳${stats.totalSpent.toFixed(2)}`, icon: CreditCard, tone: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
           { label: 'Orders', sub: 'All time', value: String(stats.totalOrders), icon: ShoppingBag, tone: 'text-sky-600 dark:text-sky-400', bg: 'bg-sky-50 dark:bg-sky-950/30' },
           { label: 'Active subscriptions', sub: 'Non-replaced seats', value: String(stats.activeSubscriptions), icon: Activity, tone: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30' },
           { label: 'Adobe accounts', sub: 'Issued to user', value: String(stats.totalEmailsGenerated), icon: Mail, tone: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30' },
@@ -595,6 +652,71 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
                   <p className="font-medium text-gray-900 dark:text-gray-100">No orders yet</p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
                     When this customer completes a purchase, it will appear in this list.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {detailTab === 'payments' && (
+            <div>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-amber-500" />
+                  Recovered payment records
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                  Successful payment logs that still exist even though the linked order row is missing.
+                </p>
+              </div>
+              {recoveredPayments.length > 0 ? (
+                <div className="divide-y divide-gray-100 dark:divide-white/5 rounded-xl border border-gray-100 dark:border-white/5 overflow-hidden max-h-[min(520px,70vh)] overflow-y-auto">
+                  {recoveredPayments.map((payment) => (
+                    <div key={payment.id} className="p-4 hover:bg-gray-50/80 dark:hover:bg-white/[0.03] transition-colors">
+                      <div className="flex justify-between items-start gap-3 mb-2">
+                        <div>
+                          <div className="font-medium text-gray-900 dark:text-gray-100 text-sm">
+                            {payment.gateway === 'bkash_tokenized' ? 'bKash payment confirmed' : 'Gateway payment confirmed'}
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{payment.message}</p>
+                        </div>
+                        <div className="font-semibold text-amber-700 dark:text-amber-300 text-sm whitespace-nowrap">
+                          ৳{payment.amount.toFixed(2)}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-col gap-1 text-gray-500 dark:text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 shrink-0" /> {format(new Date(payment.created_at), 'MMM d, yyyy · HH:mm')}
+                          </span>
+                          <span className="flex items-center gap-1 capitalize">
+                            <CreditCard className="w-3.5 h-3.5 shrink-0" /> {(payment.gateway || 'payment').replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
+                            Recovered
+                          </span>
+                          {payment.trx_id ? (
+                            <span className="text-gray-400 dark:text-gray-500 font-mono text-[10px]">Trx {payment.trx_id}</span>
+                          ) : payment.payment_id ? (
+                            <span className="text-gray-400 dark:text-gray-500 font-mono text-[10px]">PayID {payment.payment_id.slice(0, 16)}</span>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 font-mono text-[10px]">Event {payment.event_type}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/15 bg-gray-50/50 dark:bg-white/[0.02] px-6 py-12 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-3">
+                    <CreditCard className="w-6 h-6" />
+                  </div>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">No recovered payments</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                    If a payment succeeds but its order row is missing, the gateway log will appear here.
                   </p>
                 </div>
               )}
