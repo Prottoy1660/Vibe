@@ -94,6 +94,11 @@ function isRedeemOrder(order: PaidOrderRow): boolean {
   return String(order.payment_method || '').trim().toLowerCase() === 'redeem_code';
 }
 
+function isBkashTokenizedOrder(order: PaidOrderRow): boolean {
+  const paymentMethod = String(order.payment_method || '').trim().toLowerCase();
+  return paymentMethod === 'bkash_tokenized' || paymentMethod === 'wallet+bkash_tokenized';
+}
+
 function isOrderRefundedOrCancelled(order: PaidOrderRow): boolean {
   const status = String(order.status || '').trim().toLowerCase();
   const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
@@ -398,25 +403,42 @@ export const AdminFinance = ({
     void loadData();
   }, [loadData]);
 
-  const gross = useMemo(
-    () => orders.filter(isPaidCashOrder).reduce((s, o) => s + Number(o.total_amount || 0), 0),
+  const paidCashOrders = useMemo(() => orders.filter(isPaidCashOrder), [orders]);
+  const redeemSalesOrders = useMemo(() => orders.filter(isRedeemRecognizedSale), [orders]);
+  const bkashTokenizedSalesOrders = useMemo(
+    () => orders.filter((o) => isPaidCashOrder(o) && isBkashTokenizedOrder(o)),
     [orders],
   );
-  const grossWithoutRedeem = useMemo(
-    () => orders.filter((o) => isPaidCashOrder(o) && !isRedeemOrder(o)).reduce((s, o) => s + Number(o.total_amount || 0), 0),
-    [orders],
+  const gross = useMemo(
+    () => paidCashOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [paidCashOrders],
+  );
+  const bkashTokenizedSales = useMemo(
+    () => bkashTokenizedSalesOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [bkashTokenizedSalesOrders],
   );
   const redeemSales = useMemo(
-    () => orders.filter(isRedeemRecognizedSale).reduce((s, o) => s + Number(o.total_amount || 0), 0),
-    [orders],
+    () => redeemSalesOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [redeemSalesOrders],
   );
-  const totalSalesWithRedeem = useMemo(() => grossWithoutRedeem + redeemSales, [grossWithoutRedeem, redeemSales]);
+  const totalSalesOrders = useMemo(() => {
+    const map = new Map<string, PaidOrderRow>();
+    for (const order of paidCashOrders) map.set(order.id, order);
+    for (const order of redeemSalesOrders) map.set(order.id, order);
+    return Array.from(map.values());
+  }, [paidCashOrders, redeemSalesOrders]);
+  const totalSalesWithRedeem = useMemo(
+    () => totalSalesOrders.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [totalSalesOrders],
+  );
+  const totalSalesCount = totalSalesOrders.length;
+  const bkashTokenizedSalesCount = bkashTokenizedSalesOrders.length;
+  const redeemSalesCount = redeemSalesOrders.length;
   const totalExpenses = useMemo(
     () => expenses.reduce((s, e) => s + Number(e.amount || 0), 0),
     [expenses],
   );
   const net = gross - totalExpenses;
-  const orderCount = useMemo(() => orders.filter(isPaidCashOrder).length, [orders]);
 
   const productRevenue = useMemo(() => {
     const map: Record<string, { title: string; revenue: number; count: number }> = {};
@@ -964,82 +986,102 @@ export const AdminFinance = ({
 
   const kpiCards = (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-        <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-2xl border border-blue-200/50 dark:border-blue-500/20 bg-gradient-to-br from-blue-50/80 to-indigo-50/40 dark:from-blue-950/20 dark:to-indigo-950/10 p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-blue-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Paid orders</p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">{orderCount}</p>
-              <p className="text-[11px] text-gray-500 mt-1">In selected date range</p>
+              <p className="text-xs font-bold text-blue-900/70 dark:text-blue-200 uppercase tracking-wide">Total sales</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
+                {money(totalSalesWithRedeem)}
+              </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-blue-200/70 dark:border-blue-500/25 bg-white/70 dark:bg-white/5 px-3 py-1.5">
+                <ShoppingCart className="w-4 h-4 text-blue-600 dark:text-blue-300" />
+                <span className="text-sm font-semibold text-blue-900 dark:text-blue-100 tabular-nums">{totalSalesCount} sales</span>
+              </div>
+              <p className="text-[11px] text-blue-900/70 dark:text-blue-200/80 mt-2">
+                Selected range total including redeem-code sales
+              </p>
             </div>
             <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400">
               <ShoppingCart className="w-5 h-5" />
             </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
-          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-emerald-500/10 blur-2xl" />
-          <div className="relative flex justify-between items-start gap-2">
-            <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Total sales (with redeem)</p>
-              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
-                {money(totalSalesWithRedeem)}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">Cash sales + active redeem-code sales</p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
-              <DollarSign className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-cyan-100 dark:border-cyan-900/40 bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
+        <div className="rounded-2xl border border-cyan-200/50 dark:border-cyan-500/20 bg-gradient-to-br from-cyan-50/80 to-sky-50/40 dark:from-cyan-950/20 dark:to-sky-950/10 p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-cyan-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Sales without redeem</p>
-              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
-                {money(grossWithoutRedeem)}
+              <p className="text-xs font-bold text-cyan-900/70 dark:text-cyan-200 uppercase tracking-wide">
+                bKash tokenized
               </p>
-              <p className="text-[11px] text-gray-500 mt-1">Excludes all redeem-code orders</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
+                {money(bkashTokenizedSales)}
+              </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-cyan-200/70 dark:border-cyan-500/25 bg-white/70 dark:bg-white/5 px-3 py-1.5">
+                <DollarSign className="w-4 h-4 text-cyan-600 dark:text-cyan-300" />
+                <span className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 tabular-nums">
+                  {bkashTokenizedSalesCount} sales
+                </span>
+              </div>
+              <p className="text-[11px] text-cyan-900/70 dark:text-cyan-200/80 mt-2">
+                Only `bkash_tokenized` and `wallet+bkash_tokenized` sales
+              </p>
             </div>
             <div className="p-2.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400">
               <DollarSign className="w-5 h-5" />
             </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-violet-100 dark:border-violet-900/40 bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
+        <div className="rounded-2xl border border-violet-200/50 dark:border-violet-500/20 bg-gradient-to-br from-violet-50/80 to-fuchsia-50/40 dark:from-violet-950/20 dark:to-fuchsia-950/10 p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-violet-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Redeem code sales</p>
+              <p className="text-xs font-bold text-violet-900/70 dark:text-violet-200 uppercase tracking-wide">
+                Redeem code
+              </p>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
                 {money(redeemSales)}
               </p>
-              <p className="text-[11px] text-gray-500 mt-1">Redeem orders not seized or cancelled</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-violet-200/70 dark:border-violet-500/25 bg-white/70 dark:bg-white/5 px-3 py-1.5">
+                <ShoppingCart className="w-4 h-4 text-violet-600 dark:text-violet-300" />
+                <span className="text-sm font-semibold text-violet-900 dark:text-violet-100 tabular-nums">
+                  {redeemSalesCount} sales
+                </span>
+              </div>
+              <p className="text-[11px] text-violet-900/70 dark:text-violet-200/80 mt-2">
+                Active redeem sales only, seized/cancelled excluded
+              </p>
             </div>
             <div className="p-2.5 rounded-xl bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400">
               <ShoppingCart className="w-5 h-5" />
             </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
-          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-orange-500/10 blur-2xl" />
+        <div className="rounded-2xl border border-amber-200/50 dark:border-amber-500/20 bg-gradient-to-br from-amber-50/80 to-orange-50/40 dark:from-amber-950/20 dark:to-orange-950/10 p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-amber-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Operational expenses</p>
+              <p className="text-xs font-bold text-amber-900/70 dark:text-amber-200 uppercase tracking-wide">Operational expenses</p>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
                 {money(totalExpenses)}
               </p>
-              <p className="text-[11px] text-gray-500 mt-1">Manual entries below</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-200/70 dark:border-amber-500/25 bg-white/70 dark:bg-white/5 px-3 py-1.5">
+                <TrendingDown className="w-4 h-4 text-amber-600 dark:text-amber-300" />
+                <span className="text-sm font-semibold text-amber-900 dark:text-amber-100">Expense tracking</span>
+              </div>
+              <p className="text-[11px] text-amber-900/70 dark:text-amber-200/80 mt-2">Manual entries inside selected date range</p>
             </div>
-            <div className="p-2.5 rounded-xl bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400">
+            <div className="p-2.5 rounded-xl bg-amber-100 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400">
               <TrendingDown className="w-5 h-5" />
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="rounded-2xl border border-indigo-200/60 dark:border-indigo-500/30 bg-gradient-to-br from-indigo-50/90 to-violet-50/50 dark:from-indigo-950/40 dark:to-violet-950/20 p-5 shadow-sm relative overflow-hidden">
-          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-indigo-500/15 blur-2xl" />
+          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-emerald-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
               <p className="text-xs font-bold text-indigo-800/80 dark:text-indigo-200 uppercase tracking-wide">Net profit</p>
@@ -1050,16 +1092,17 @@ export const AdminFinance = ({
               >
                 {money(net)}
               </p>
-              <p className="text-[11px] text-indigo-900/70 dark:text-indigo-200/80 mt-1">Paid cash revenue − expenses</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-indigo-200/70 dark:border-indigo-500/25 bg-white/60 dark:bg-white/5 px-3 py-1.5">
+                <Scale className="w-4 h-4 text-indigo-700 dark:text-indigo-300" />
+                <span className="text-sm font-semibold text-indigo-900 dark:text-indigo-100">Collected cash basis</span>
+              </div>
+              <p className="text-[11px] text-indigo-900/70 dark:text-indigo-200/80 mt-2">Collected revenue minus expenses for the selected range</p>
             </div>
             <div className="p-2.5 rounded-xl bg-indigo-200/50 dark:bg-indigo-500/30 text-indigo-800 dark:text-indigo-200">
               <Scale className="w-5 h-5" />
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-fuchsia-200/60 dark:border-fuchsia-500/25 bg-gradient-to-br from-fuchsia-50/80 to-pink-50/40 dark:from-fuchsia-950/30 dark:to-pink-950/15 p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-fuchsia-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
@@ -1070,7 +1113,11 @@ export const AdminFinance = ({
               <p className="text-2xl sm:text-3xl font-bold text-fuchsia-900 dark:text-fuchsia-100 mt-1 tabular-nums">
                 {money(partnerShareAmount)}
               </p>
-              <p className="text-[11px] text-fuchsia-900/70 dark:text-fuchsia-200/80 mt-1">
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-fuchsia-200/70 dark:border-fuchsia-500/25 bg-white/60 dark:bg-white/5 px-3 py-1.5">
+                <Users className="w-4 h-4 text-fuchsia-700 dark:text-fuchsia-300" />
+                <span className="text-sm font-semibold text-fuchsia-900 dark:text-fuchsia-100">{partnerPctClamped}% share</span>
+              </div>
+              <p className="text-[11px] text-fuchsia-900/70 dark:text-fuchsia-200/80 mt-2">
                 {partnerPctClamped}% of net profit
                 {net <= 0 ? ' (share applies only when net profit is positive)' : ''}
               </p>
@@ -1092,7 +1139,11 @@ export const AdminFinance = ({
               >
                 {money(yourShareAfterPartner)}
               </p>
-              <p className="text-[11px] text-teal-900/70 dark:text-teal-200/80 mt-1">Net profit − partner share</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-teal-200/70 dark:border-teal-500/25 bg-white/60 dark:bg-white/5 px-3 py-1.5">
+                <Scale className="w-4 h-4 text-teal-700 dark:text-teal-300" />
+                <span className="text-sm font-semibold text-teal-900 dark:text-teal-100">Final owner amount</span>
+              </div>
+              <p className="text-[11px] text-teal-900/70 dark:text-teal-200/80 mt-2">Net profit minus partner share</p>
             </div>
             <div className="p-2.5 rounded-xl bg-teal-200/50 dark:bg-teal-500/30 text-teal-900 dark:text-teal-200">
               <Scale className="w-5 h-5" />
