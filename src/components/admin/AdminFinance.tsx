@@ -6,7 +6,6 @@ import {
   CalendarRange,
   ShoppingCart,
   DollarSign,
-  CreditCard,
   TrendingDown,
   Scale,
   Plus,
@@ -1020,7 +1019,7 @@ export const AdminFinance = ({
                 {money(bkashTokenizedSales)}
               </p>
               <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-cyan-200/70 dark:border-cyan-500/25 bg-white/70 dark:bg-white/5 px-3 py-1.5">
-                <CreditCard className="w-4 h-4 text-cyan-600 dark:text-cyan-300" />
+                <ShoppingCart className="w-4 h-4 text-cyan-600 dark:text-cyan-300" />
                 <span className="text-sm font-semibold text-cyan-900 dark:text-cyan-100 tabular-nums">
                   {bkashTokenizedSalesCount} sales
                 </span>
@@ -1030,7 +1029,7 @@ export const AdminFinance = ({
               </p>
             </div>
             <div className="p-2.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400">
-              <CreditCard className="w-5 h-5" />
+              <ShoppingCart className="w-5 h-5" />
             </div>
           </div>
         </div>
