@@ -36,6 +36,10 @@ interface PaidOrderRow {
   id: string;
   total_amount: number | string;
   created_at: string;
+  status?: string | null;
+  payment_status?: string | null;
+  payment_method?: string | null;
+  redeem_seized_at?: string | null;
   product_id?: string | null;
   products?: { title?: string | null } | null;
 }
@@ -84,6 +88,41 @@ function fmtBdtAmount(ex: OperationalExpense): string {
   const bdt = Number(ex.amount || 0);
   if (!Number.isFinite(bdt)) return '—';
   return money(bdt);
+}
+
+function isRedeemOrder(order: PaidOrderRow): boolean {
+  return String(order.payment_method || '').trim().toLowerCase() === 'redeem_code';
+}
+
+function isOrderRefundedOrCancelled(order: PaidOrderRow): boolean {
+  const status = String(order.status || '').trim().toLowerCase();
+  const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+  return (
+    status === 'refunded' ||
+    status === 'cancelled' ||
+    paymentStatus === 'refunded' ||
+    paymentStatus === 'cancelled' ||
+    Boolean(order.redeem_seized_at)
+  );
+}
+
+function isPaidCashOrder(order: PaidOrderRow): boolean {
+  if (isOrderRefundedOrCancelled(order)) return false;
+  const status = String(order.status || '').trim().toLowerCase();
+  const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+  return paymentStatus === 'paid' || status === 'paid' || status === 'completed';
+}
+
+function isRedeemRecognizedSale(order: PaidOrderRow): boolean {
+  if (!isRedeemOrder(order) || isOrderRefundedOrCancelled(order)) return false;
+  const status = String(order.status || '').trim().toLowerCase();
+  const paymentStatus = String(order.payment_status || '').trim().toLowerCase();
+  return (
+    paymentStatus === 'paid' ||
+    status === 'paid' ||
+    status === 'completed' ||
+    (paymentStatus === 'pending' && status === 'pending')
+  );
 }
 
 export const AdminFinance = ({
@@ -278,7 +317,7 @@ export const AdminFinance = ({
       if (token && base) {
         const [oRes, eRes] = await Promise.all([
           fetch(
-            `${base}/api/admin/orders/query?payment_status=paid&from=${fromIso}&to=${toIso}&limit=${ADMIN_ORDERS_QUERY_LIMIT}`,
+            `${base}/api/admin/orders/query?from=${fromIso}&to=${toIso}&limit=${ADMIN_ORDERS_QUERY_LIMIT}`,
             { headers: { Authorization: `Bearer ${token}` } },
           ).then(async (r) => {
             const j = await r.json().catch(() => ({}));
@@ -288,6 +327,10 @@ export const AdminFinance = ({
               id: o.id,
               total_amount: o.total_amount,
               created_at: o.created_at,
+              status: o.status ?? null,
+              payment_status: o.payment_status ?? null,
+              payment_method: o.payment_method ?? null,
+              redeem_seized_at: o.redeem_seized_at ?? null,
               product_id: o.product_id ?? null,
               products: o.products ?? null,
             })) as PaidOrderRow[];
@@ -307,8 +350,7 @@ export const AdminFinance = ({
         const [oRes, eRes] = await Promise.all([
           supabase
             .from('orders')
-            .select('id, total_amount, created_at, product_id, products (title)')
-            .eq('payment_status', 'paid')
+            .select('id, total_amount, created_at, status, payment_status, payment_method, redeem_seized_at, product_id, products (title)')
             .gte('created_at', start.toISOString())
             .lte('created_at', end.toISOString())
             .order('created_at', { ascending: false })
@@ -357,19 +399,28 @@ export const AdminFinance = ({
   }, [loadData]);
 
   const gross = useMemo(
-    () => orders.reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    () => orders.filter(isPaidCashOrder).reduce((s, o) => s + Number(o.total_amount || 0), 0),
     [orders],
   );
+  const grossWithoutRedeem = useMemo(
+    () => orders.filter((o) => isPaidCashOrder(o) && !isRedeemOrder(o)).reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [orders],
+  );
+  const redeemSales = useMemo(
+    () => orders.filter(isRedeemRecognizedSale).reduce((s, o) => s + Number(o.total_amount || 0), 0),
+    [orders],
+  );
+  const totalSalesWithRedeem = useMemo(() => grossWithoutRedeem + redeemSales, [grossWithoutRedeem, redeemSales]);
   const totalExpenses = useMemo(
     () => expenses.reduce((s, e) => s + Number(e.amount || 0), 0),
     [expenses],
   );
   const net = gross - totalExpenses;
-  const orderCount = orders.length;
+  const orderCount = useMemo(() => orders.filter(isPaidCashOrder).length, [orders]);
 
   const productRevenue = useMemo(() => {
     const map: Record<string, { title: string; revenue: number; count: number }> = {};
-    for (const o of orders) {
+    for (const o of orders.filter(isPaidCashOrder)) {
       const title = String(o.products?.title || 'Unknown product');
       if (!map[title]) map[title] = { title, revenue: 0, count: 0 };
       map[title].revenue += Number(o.total_amount || 0);
@@ -913,7 +964,7 @@ export const AdminFinance = ({
 
   const kpiCards = (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-blue-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
@@ -931,14 +982,44 @@ export const AdminFinance = ({
           <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-emerald-500/10 blur-2xl" />
           <div className="relative flex justify-between items-start gap-2">
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Gross revenue</p>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Total sales (with redeem)</p>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
-                {money(gross)}
+                {money(totalSalesWithRedeem)}
               </p>
-              <p className="text-[11px] text-gray-500 mt-1">Paid &amp; completed orders</p>
+              <p className="text-[11px] text-gray-500 mt-1">Cash sales + active redeem-code sales</p>
             </div>
             <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
               <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-cyan-100 dark:border-cyan-900/40 bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-cyan-500/10 blur-2xl" />
+          <div className="relative flex justify-between items-start gap-2">
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Sales without redeem</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
+                {money(grossWithoutRedeem)}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-1">Excludes all redeem-code orders</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-violet-100 dark:border-violet-900/40 bg-white dark:bg-[#151518] p-5 shadow-sm relative overflow-hidden">
+          <div className="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-violet-500/10 blur-2xl" />
+          <div className="relative flex justify-between items-start gap-2">
+            <div>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Redeem code sales</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
+                {money(redeemSales)}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-1">Redeem orders not seized or cancelled</p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-violet-100 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400">
+              <ShoppingCart className="w-5 h-5" />
             </div>
           </div>
         </div>
@@ -969,7 +1050,7 @@ export const AdminFinance = ({
               >
                 {money(net)}
               </p>
-              <p className="text-[11px] text-indigo-900/70 dark:text-indigo-200/80 mt-1">Gross − expenses</p>
+              <p className="text-[11px] text-indigo-900/70 dark:text-indigo-200/80 mt-1">Paid cash revenue − expenses</p>
             </div>
             <div className="p-2.5 rounded-xl bg-indigo-200/50 dark:bg-indigo-500/30 text-indigo-800 dark:text-indigo-200">
               <Scale className="w-5 h-5" />
