@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { addMonths, parseISO } from 'date-fns';
-import { parseDurationToMonths } from '../../src/lib/durationUtils.js';
+import { parseISO } from 'date-fns';
+import { addDurationToDate } from '../../src/lib/durationUtils.js';
 import {
   phoneToWhatsappE164,
   sendExpiryReminderEmail,
@@ -32,8 +32,7 @@ export type ReminderChannelStatus =
 export { calendarDaysUntilSubscriptionEndInZone as calendarDaysUntilSubscriptionEnd } from './reminderCalendar.js';
 
 export function subscriptionExpiresAt(createdAtIso: string, productDuration: string | null | undefined): Date {
-  const months = parseDurationToMonths(String(productDuration || '1 month'));
-  return addMonths(parseISO(createdAtIso), months);
+  return addDurationToDate(parseISO(createdAtIso), String(productDuration || '1 month'));
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {

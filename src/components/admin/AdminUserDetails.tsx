@@ -5,10 +5,11 @@ import {
   ShoppingBag, CreditCard, ShieldCheck, CheckCircle2, 
   XCircle, Activity, Edit2, Save, Camera, Lock, AlertCircle, History, Sparkles
 } from 'lucide-react';
-import { format, addMonths, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
+import { format, isPast, parseISO, differenceInDays, formatDistanceToNow } from 'date-fns';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getDefaultAvatarUrl, parseAvatarDefaultGender } from '../../lib/defaultAvatar';
+import { addDurationToDate } from '../../lib/durationUtils';
 
 interface AdminUserDetailsProps {
   userId: string;
@@ -182,19 +183,9 @@ export const AdminUserDetails: React.FC<AdminUserDetailsProps> = ({ userId, onBa
             let computedStatus = 'Active';
 
             if (item.orders && item.orders.products) {
-              const durationStr = item.orders.products.duration.toLowerCase();
-              let monthsToAdd = 1;
-              
-              if (durationStr.includes('year') || durationStr.includes('yr')) {
-                const match = durationStr.match(/\d+/);
-                monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-              } else {
-                const match = durationStr.match(/\d+/);
-                monthsToAdd = match ? parseInt(match[0]) : 1;
-              }
-
+              const durationStr = String(item.orders.products.duration || '');
               const orderDate = parseISO(item.orders.created_at);
-              expiresAt = addMonths(orderDate, monthsToAdd);
+              expiresAt = addDurationToDate(orderDate, durationStr);
               const isExp = isPast(expiresAt);
               daysLeft = isExp ? 0 : differenceInDays(expiresAt, new Date());
 

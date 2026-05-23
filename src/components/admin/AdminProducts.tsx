@@ -1080,7 +1080,7 @@ export const AdminProducts = () => {
                 })()}
               </p>
             </Field>
-            <Field label="Duration" hint='e.g. "1 month" or "1 year".'>
+            <Field label="Duration" hint='e.g. "14 days", "1 month", or "1 year".'>
               <input
                 type="text"
                 value={formData.duration}
@@ -1089,6 +1089,7 @@ export const AdminProducts = () => {
               />
               <div className="mt-2 flex flex-wrap gap-2">
                 {[
+                  { label: '14 days', value: '14 days' },
                   { label: '1 month', value: '1 month' },
                   { label: '2 months', value: '2 months' },
                   { label: '3 months', value: '3 months' },

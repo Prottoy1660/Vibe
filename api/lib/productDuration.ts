@@ -2,10 +2,16 @@
 export function productDurationToMonths(duration: string | null | undefined): number {
   const raw = String(duration || '').toLowerCase();
   if (!raw) return 1;
-  if (raw.includes('year') || raw.includes('yr')) {
-    const match = raw.match(/\d+/);
-    return match ? Math.max(1, parseInt(match[0], 10) * 12) : 12;
-  }
   const match = raw.match(/\d+/);
-  return match ? Math.max(1, parseInt(match[0], 10)) : 1;
+  const value = match ? Math.max(1, parseInt(match[0], 10)) : 1;
+  if (raw.includes('day')) {
+    return Math.max(1, Math.ceil(value / 30));
+  }
+  if (raw.includes('week') || raw.includes('wk')) {
+    return Math.max(1, Math.ceil((value * 7) / 30));
+  }
+  if (raw.includes('year') || raw.includes('yr')) {
+    return value * 12;
+  }
+  return value;
 }

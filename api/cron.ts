@@ -100,26 +100,14 @@ export function initCronJobs() {
       if (!recurringOrders || recurringOrders.length === 0) return;
 
       // Ensure date-fns is available or do manual date comp
-      const { isPast, parseISO, addMonths } = await import('date-fns');
-      const { parseDurationToMonths } = await import('../src/lib/durationUtils.js'); // Assuming relative path works or write natively
+      const { isPast, parseISO } = await import('date-fns');
+      const { addDurationToDate } = await import('../src/lib/durationUtils.js');
       
       const now = new Date();
 
       for (const order of recurringOrders) {
-        // Calculate expiration manually 
-        const durationStr = order.products?.duration || '';
-        
-        let monthsToAdd = 1;
-        const lower = durationStr.toLowerCase();
-        const numMatch = lower.match(/\d+/);
-        const num = numMatch ? parseInt(numMatch[0], 10) : 1;
-        if (lower.includes('year') || lower.includes('yr')) {
-          monthsToAdd = num * 12;
-        } else {
-          monthsToAdd = num;
-        }
-
-        const expiresAt = addMonths(parseISO(order.created_at), monthsToAdd);
+        const durationStr = order.products?.duration || '1 month';
+        const expiresAt = addDurationToDate(parseISO(order.created_at), durationStr);
 
         // If it's expired by now, process auto renewal!
         if (isPast(expiresAt)) {

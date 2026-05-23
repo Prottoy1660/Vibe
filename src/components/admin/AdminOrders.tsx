@@ -25,6 +25,7 @@ import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { invoiceEligible } from '../../lib/invoiceModel';
 import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
+import { addDurationToDate } from '../../lib/durationUtils';
 
 interface Order {
   id: string;
@@ -86,17 +87,6 @@ const DEFAULT_MANUAL_CHECKLIST: ManualChecklist = {
   customer_email_checked: false,
   plan_duration_verified: false,
 };
-
-function durationToMonths(duration: string | null | undefined) {
-  const raw = String(duration || '').toLowerCase();
-  if (!raw) return 1;
-  if (raw.includes('year') || raw.includes('yr')) {
-    const match = raw.match(/\d+/);
-    return match ? Math.max(1, Number(match[0]) * 12) : 12;
-  }
-  const match = raw.match(/\d+/);
-  return match ? Math.max(1, Number(match[0])) : 1;
-}
 
 type FilterKey = 'all' | 'pending' | 'paid' | 'completed' | 'refunded' | 'cancelled' | 'personal_manual';
 
@@ -968,11 +958,9 @@ export const AdminOrders = () => {
                 {filteredOrders.map((order) => {
                   const pay = paymentLabel(order.payment_method, order.payment_status);
                   const shortOrderId = order.id.slice(0, 8).toUpperCase();
-                  const durationMonths = durationToMonths(order.products?.duration);
                   const priority = getPersonalPriority(order, personalEtaMinutes);
                   const assignedAdminLabel = order.assigned_admin_id ? adminNameMap.get(order.assigned_admin_id) : '';
-                  const exp = new Date(order.created_at);
-                  exp.setMonth(exp.getMonth() + durationMonths);
+                  const exp = addDurationToDate(new Date(order.created_at), String(order.products?.duration || '1 month'));
                   const daysLeft = Math.ceil((exp.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
                   const isExpired = daysLeft <= 0;
                   return (

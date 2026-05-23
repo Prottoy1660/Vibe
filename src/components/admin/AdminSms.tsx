@@ -3,7 +3,7 @@ import { AlertCircle, CheckCircle2, Loader2, MessageSquareText, Send } from 'luc
 import { supabase } from '../../lib/supabase';
 import { postJsonWithFallback } from '../../lib/apiClient';
 import { Link } from 'react-router-dom';
-import { parseDurationToMonths } from '../../lib/durationUtils';
+import { addDurationToDate } from '../../lib/durationUtils';
 
 type SmsUser = {
   id: string;
@@ -184,11 +184,9 @@ export const AdminSms: React.FC = () => {
       hasSubscription.add(order.user_id);
 
       const product = Array.isArray(order.products) ? order.products[0] : order.products;
-      const months = parseDurationToMonths(product?.duration || '1 Month');
       const startAt = new Date(order.created_at);
       if (Number.isNaN(startAt.getTime())) continue;
-      const expiresAt = new Date(startAt);
-      expiresAt.setMonth(expiresAt.getMonth() + months);
+      const expiresAt = addDurationToDate(startAt, product?.duration || '1 month');
       const expiresMs = expiresAt.getTime();
       if (expiresMs >= now) {
         activeSubscription.add(order.user_id);

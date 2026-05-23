@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Users, Mail, Clock, AlertTriangle, CheckCircle2, XCircle, Search, Filter, ShieldAlert, Zap, ZapOff } from 'lucide-react';
-import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
+import { format, isPast, parseISO, differenceInDays } from 'date-fns';
 import { toast } from '../../lib/toast';
+import { addDurationToDate } from '../../lib/durationUtils';
 
 interface UserEmailRecord {
   id: string;
@@ -93,19 +94,9 @@ export const AdminUserEmails = () => {
             let computedStatus: UserEmailRecord['computed_status'] = 'Active';
 
             if (item.orders && item.orders.products) {
-              const durationStr = item.orders.products.duration.toLowerCase();
-              let monthsToAdd = 1;
-              
-              if (durationStr.includes('year') || durationStr.includes('yr')) {
-                const match = durationStr.match(/\d+/);
-                monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-              } else {
-                const match = durationStr.match(/\d+/);
-                monthsToAdd = match ? parseInt(match[0]) : 1;
-              }
-
+              const durationStr = String(item.orders.products.duration || '');
               const orderDate = parseISO(item.orders.created_at);
-              expiresAt = addMonths(orderDate, monthsToAdd);
+              expiresAt = addDurationToDate(orderDate, durationStr);
               const isExp = isPast(expiresAt);
               daysLeft = isExp ? 0 : differenceInDays(expiresAt, new Date());
 
@@ -190,19 +181,9 @@ export const AdminUserEmails = () => {
           const prod = Array.isArray(item.products) ? item.products[0] : item.products;
           
           if (prod) {
-            const durationStr = prod.duration.toLowerCase();
-            let monthsToAdd = 1;
-            
-            if (durationStr.includes('year') || durationStr.includes('yr')) {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-            } else {
-              const match = durationStr.match(/\d+/);
-              monthsToAdd = match ? parseInt(match[0]) : 1;
-            }
-
+            const durationStr = String(prod.duration || '');
             const orderDate = parseISO(item.created_at);
-            expiresAt = addMonths(orderDate, monthsToAdd);
+            expiresAt = addDurationToDate(orderDate, durationStr);
             const isExp = isPast(expiresAt);
             daysLeft = isExp ? 0 : differenceInDays(expiresAt, new Date());
 

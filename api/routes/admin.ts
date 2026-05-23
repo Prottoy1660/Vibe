@@ -264,12 +264,35 @@ function sanitizeAppDownloadsConfig(value: unknown): AppDownloadsConfig {
 function durationToMonths(duration: string | null | undefined) {
   const raw = String(duration || '').toLowerCase();
   if (!raw) return 1;
-  if (raw.includes('year') || raw.includes('yr')) {
-    const match = raw.match(/\d+/);
-    return match ? Math.max(1, Number(match[0]) * 12) : 12;
-  }
   const match = raw.match(/\d+/);
-  return match ? Math.max(1, Number(match[0])) : 1;
+  const value = match ? Math.max(1, Number(match[0])) : 1;
+  if (raw.includes('day')) return Math.max(1, Math.ceil(value / 30));
+  if (raw.includes('week') || raw.includes('wk')) return Math.max(1, Math.ceil((value * 7) / 30));
+  if (raw.includes('year') || raw.includes('yr')) {
+    return value * 12;
+  }
+  return value;
+}
+
+function addDurationToDate(date: Date, duration: string | null | undefined) {
+  const raw = String(duration || '').toLowerCase();
+  const match = raw.match(/\d+/);
+  const value = match ? Math.max(1, Number(match[0])) : 1;
+  const out = new Date(date);
+  if (raw.includes('day')) {
+    out.setDate(out.getDate() + value);
+    return out;
+  }
+  if (raw.includes('week') || raw.includes('wk')) {
+    out.setDate(out.getDate() + value * 7);
+    return out;
+  }
+  if (raw.includes('year') || raw.includes('yr')) {
+    out.setFullYear(out.getFullYear() + value);
+    return out;
+  }
+  out.setMonth(out.getMonth() + value);
+  return out;
 }
 
 /**
@@ -2250,10 +2273,7 @@ router.post('/ops/run-reminders', verifyAdmin, async (_req, res) => {
     let queued = 0;
     const now = Date.now();
     for (const o of completedOrders || []) {
-      const months = durationToMonths((o as any).products?.duration);
-      const expiry = new Date((o as any).created_at).getTime();
-      const expiryAt = new Date(expiry);
-      expiryAt.setMonth(expiryAt.getMonth() + months);
+      const expiryAt = addDurationToDate(new Date((o as any).created_at), (o as any).products?.duration);
       const daysLeft = Math.ceil((expiryAt.getTime() - now) / (24 * 60 * 60 * 1000));
       const key = daysLeft === 7 ? 'expiry_7d' : daysLeft === 3 ? 'expiry_3d' : daysLeft === 1 ? 'expiry_1d' : null;
       if (!key) continue;
@@ -2316,9 +2336,7 @@ router.get('/ops/subscription-health', verifyAdmin, async (req, res) => {
 
     const now = Date.now();
     const rows = (orders || []).map((o: any) => {
-      const months = durationToMonths(o.products?.duration);
-      const expiry = new Date(o.created_at);
-      expiry.setMonth(expiry.getMonth() + months);
+      const expiry = addDurationToDate(new Date(o.created_at), o.products?.duration);
       const daysLeft = Math.ceil((expiry.getTime() - now) / (24 * 60 * 60 * 1000));
       const userFails = failMap[o.user_id] || 0;
 
@@ -2476,9 +2494,7 @@ router.get('/ops/renewal-packs', verifyAdmin, async (req, res) => {
     const now = Date.now();
     const rows: any[] = [];
     for (const o of orders || []) {
-      const months = durationToMonths((o as any).products?.duration);
-      const exp = new Date((o as any).created_at);
-      exp.setMonth(exp.getMonth() + months);
+      const exp = addDurationToDate(new Date((o as any).created_at), (o as any).products?.duration);
       const daysLeft = Math.ceil((exp.getTime() - now) / (24 * 60 * 60 * 1000));
       if (daysLeft < 0 || daysLeft > days) continue;
       rows.push({
@@ -2627,8 +2643,7 @@ router.post('/ops/churn/run-campaign', verifyAdmin, async (req, res) => {
     for (const o of orders || []) {
       const uid = (o as any).user_id;
       if (!uid) continue;
-      const exp = new Date((o as any).created_at);
-      exp.setMonth(exp.getMonth() + durationToMonths((o as any).products?.duration));
+      const exp = addDurationToDate(new Date((o as any).created_at), (o as any).products?.duration);
       const daysLeft = Math.ceil((exp.getTime() - now) / (24 * 60 * 60 * 1000));
       if (daysLeft < 0 || daysLeft > days) continue;
       const seen = lastSeen[uid] || 0;

@@ -26,11 +26,11 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { format, addMonths, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
+import { format, addDays, isPast, differenceInDays, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { getAccessTokenForApi } from '../lib/getAccessTokenForApi';
-import { parseDurationToMonths, parseDurationToDays } from '../lib/durationUtils';
+import { addDurationToDate, parseDurationToDays } from '../lib/durationUtils';
 import { toast } from '../lib/toast';
 import { buildInboxSnippetFromBody } from '../lib/inboxSnippet';
 import { fireMiniConfetti } from '../lib/premiumEffects';
@@ -319,11 +319,10 @@ export const AdobeEmail = () => {
 
           if (order.status === 'completed' || order.status === 'paid') {
             const durationStr = order.products?.duration || '';
-            const monthsToAdd = parseDurationToMonths(durationStr);
             totalDays = parseDurationToDays(durationStr);
 
             const orderDate = parseISO(order.created_at);
-            expiresAt = addMonths(orderDate, monthsToAdd);
+            expiresAt = addDurationToDate(orderDate, durationStr);
             isExpired = isPast(expiresAt);
             daysLeft = isExpired ? 0 : differenceInDays(expiresAt, new Date());
           }
@@ -436,11 +435,10 @@ export const AdobeEmail = () => {
           
           if (item.orders && item.orders.products) {
             const durationStr = item.orders.products.duration;
-            const monthsToAdd = parseDurationToMonths(durationStr);
             const totalDays = parseDurationToDays(durationStr);
 
             const orderDate = parseISO(item.orders.created_at);
-            const expiresAt = addMonths(orderDate, monthsToAdd);
+            const expiresAt = addDurationToDate(orderDate, durationStr);
             const isExpired = isPast(expiresAt);
             const daysLeft = isExpired ? 0 : differenceInDays(expiresAt, new Date());
             

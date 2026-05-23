@@ -25,7 +25,8 @@ import {
   CreditCard,
   CalendarDays,
 } from 'lucide-react';
-import { format, addMonths, isPast, parseISO, differenceInDays } from 'date-fns';
+import { format, isPast, parseISO, differenceInDays } from 'date-fns';
+import { addDurationToDate } from '../lib/durationUtils';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldPauseAdminLiveRefresh } from '../lib/adminRealtimeGuard';
 import { useAdminDraftShield } from '../hooks/useAdminDraftShield';
@@ -189,19 +190,9 @@ export const AdminDashboard = () => {
               }
 
               if (item.orders && item.orders.products) {
-                const durationStr = item.orders.products.duration.toLowerCase();
-                let monthsToAdd = 1;
-
-                if (durationStr.includes('year') || durationStr.includes('yr')) {
-                  const match = durationStr.match(/\d+/);
-                  monthsToAdd = match ? parseInt(match[0]) * 12 : 12;
-                } else {
-                  const match = durationStr.match(/\d+/);
-                  monthsToAdd = match ? parseInt(match[0]) : 1;
-                }
-
+                const durationStr = String(item.orders.products.duration || '');
                 const orderDate = parseISO(item.orders.created_at);
-                const expiresAt = addMonths(orderDate, monthsToAdd);
+                const expiresAt = addDurationToDate(orderDate, durationStr);
                 const isExp = isPast(expiresAt);
                 const daysLeft = isExp ? 0 : differenceInDays(expiresAt, new Date());
 
