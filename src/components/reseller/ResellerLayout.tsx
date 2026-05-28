@@ -14,9 +14,10 @@ export const ResellerLayout = () => {
 
   const loadProfile = () => {
     if (user?.id) {
-      supabase.from('users').select('name, full_name, email, avatar_url').eq('id', user.id).single().then(({ data }) => {
+      // Reverted to only use 'name' since 'full_name' doesn't exist in the users table
+      supabase.from('users').select('name, email, avatar_url').eq('id', user.id).single().then(({ data }) => {
         if (data) {
-          setUserName(data.full_name || data.name || data.email?.split('@')[0] || 'Reseller Agent');
+          setUserName(data.name || data.email?.split('@')[0] || 'Reseller Agent');
           setAvatarUrl(data.avatar_url);
         }
       });

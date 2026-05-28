@@ -25,7 +25,7 @@ export const ResellerProfile = () => {
       try {
         const { data, error } = await supabase
           .from('users')
-          .select('name, full_name, email, phone, avatar_url')
+          .select('name, email, phone, avatar_url')
           .eq('id', user.id)
           .single();
 
@@ -33,7 +33,7 @@ export const ResellerProfile = () => {
         
         if (data) {
           setFormData({
-            name: data.full_name || data.name || '',
+            name: data.name || '',
             email: data.email || user.email || '',
             phone: data.phone || '',
             password: '',
@@ -104,7 +104,7 @@ export const ResellerProfile = () => {
       if (formData.password) authUpdates.password = formData.password;
       
       authUpdates.data = {
-        full_name: formData.name,
+        name: formData.name,
         phone: formData.phone
       };
 
@@ -118,7 +118,6 @@ export const ResellerProfile = () => {
         .from('users')
         .update({
           name: formData.name,
-          full_name: formData.name,
           phone: formData.phone,
           email: formData.email,
         })
