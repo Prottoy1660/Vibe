@@ -28,7 +28,7 @@ export const AdminUsers = () => {
   const [loading, setLoading] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'reseller' | 'user'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'banned'>('all');
   const [signupFilter, setSignupFilter] = useState<'all' | 'email' | 'google' | 'facebook' | 'azure'>('all');
   const [userNotes, setUserNotes] = useState<Record<string, string>>({});
@@ -495,6 +495,7 @@ export const AdminUsers = () => {
             >
               <option value="all">All roles</option>
               <option value="admin">Admin</option>
+              <option value="reseller">Reseller</option>
               <option value="user">User</option>
             </select>
 
@@ -596,6 +597,8 @@ export const AdminUsers = () => {
                     className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
                       u.role === 'admin'
                         ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                        : u.role === 'reseller'
+                        ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
                         : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
                     }`}
                   >

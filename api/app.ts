@@ -26,6 +26,7 @@ import telemetryRoutes from './routes/telemetry.js'
 import referralRoutes from './routes/referral.js'
 import supportChatRoutes from './routes/supportChat.js'
 import pushRoutes from './routes/push.js'
+import resellerRoutes from './routes/reseller.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -174,6 +175,7 @@ app.use('/api/support-chat', supportChatLimiter, supportChatRoutes)
 app.use('/api/cron', cronRoutes)
 app.use('/api/telemetry', telemetryRoutes)
 app.use('/api/push', pushRoutes)
+app.use('/api/reseller', resellerRoutes)
 
 /**
  * health

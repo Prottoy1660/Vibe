@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { MaintenanceModeProvider } from './contexts/MaintenanceModeContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -9,6 +9,19 @@ import { AppToaster } from './components/AppToaster';
 import { HttpErrorNavBridge } from './components/HttpErrorNavBridge';
 import { NetworkStatusToasts } from './components/NetworkStatusToasts';
 import { Loader2, Sparkles } from 'lucide-react';
+
+import { ResellerLayout } from './components/reseller/ResellerLayout';
+import { ResellerProtectedRoute } from './components/reseller/ResellerProtectedRoute';
+const ResellerDashboard = React.lazy(() => import('./pages/reseller/ResellerDashboard').then(m => ({ default: m.ResellerDashboard })));
+const ActivateUser = React.lazy(() => import('./pages/reseller/ActivateUser').then(m => ({ default: m.ActivateUser })));
+const BulkActivate = React.lazy(() => import('./pages/reseller/BulkActivate').then(m => ({ default: m.BulkActivate })));
+const BulkRemove = React.lazy(() => import('./pages/reseller/BulkRemove').then(m => ({ default: m.BulkRemove })));
+const MyUsers = React.lazy(() => import('./pages/reseller/MyUsers').then(m => ({ default: m.MyUsers })));
+const AddFunds = React.lazy(() => import('./pages/reseller/AddFunds').then(m => ({ default: m.AddFunds })));
+const TransactionHistory = React.lazy(() => import('./pages/reseller/TransactionHistory').then(m => ({ default: m.TransactionHistory })));
+const ResellerLogin = React.lazy(() => import('./pages/reseller/ResellerLogin').then(m => ({ default: m.ResellerLogin })));
+const ResellerSignup = React.lazy(() => import('./pages/reseller/ResellerSignup').then(m => ({ default: m.ResellerSignup })));
+const ResellerOauthCallback = React.lazy(() => import('./pages/reseller/ResellerOauthCallback').then(m => ({ default: m.ResellerOauthCallback })));
 
 const Login = React.lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
 const Register = React.lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
@@ -75,6 +88,36 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// Domain-based routing logic to enforce separation
+function DomainRouter() {
+  const location = useLocation();
+  
+  React.useEffect(() => {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    const RESELLER_DOMAIN = 'superreseller.shop';
+    
+    if (!isLocalhost) {
+      const isResellerPath = location.pathname.startsWith('/reseller');
+      
+      // If someone visits /reseller on vibeaccessbd.com, redirect to superreseller.shop
+      if (hostname !== RESELLER_DOMAIN && isResellerPath) {
+        window.location.replace(`https://${RESELLER_DOMAIN}${location.pathname}${location.search}`);
+        return;
+      }
+      
+      // If someone visits superreseller.shop, force them into /reseller paths
+      // so they can't access main domain features (like customer login or admin panel)
+      if (hostname === RESELLER_DOMAIN && !isResellerPath) {
+        window.location.replace(`https://${RESELLER_DOMAIN}/reseller`);
+        return;
+      }
+    }
+  }, [location.pathname, location.search]);
+  
+  return null;
+}
+
 function AppRoutes() {
   const { user, loading, role, isAdmin } = useAuth();
   const roleResolved = !user || role !== null;
@@ -103,6 +146,23 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+
+        {/* Reseller Panel Auth Routes */}
+        <Route path="/reseller/login" element={<ResellerLogin />} />
+        <Route path="/reseller/signup" element={<ResellerSignup />} />
+        <Route path="/reseller/oauth/callback" element={<ResellerOauthCallback />} />
+
+        {/* Reseller Panel Protected Routes */}
+        <Route path="/reseller" element={<ResellerProtectedRoute><ResellerLayout /></ResellerProtectedRoute>}>
+          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="dashboard" element={<ResellerDashboard />} />
+          <Route path="activate" element={<ActivateUser />} />
+          <Route path="bulk-activate" element={<BulkActivate />} />
+          <Route path="bulk-remove" element={<BulkRemove />} />
+          <Route path="users" element={<MyUsers />} />
+          <Route path="add-funds" element={<AddFunds />} />
+          <Route path="transactions" element={<TransactionHistory />} />
+        </Route>
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route
@@ -148,6 +208,7 @@ function App() {
         <AuthProvider>
           <MaintenanceModeProvider>
             <Router>
+              <DomainRouter />
               <NetworkStatusToasts />
               <AppRoutes />
               <AppToaster />
