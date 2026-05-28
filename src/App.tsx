@@ -21,6 +21,7 @@ const AddFunds = React.lazy(() => import('./pages/reseller/AddFunds').then(m => 
 const TransactionHistory = React.lazy(() => import('./pages/reseller/TransactionHistory').then(m => ({ default: m.TransactionHistory })));
 const ResellerLogin = React.lazy(() => import('./pages/reseller/ResellerLogin').then(m => ({ default: m.ResellerLogin })));
 const ResellerSignup = React.lazy(() => import('./pages/reseller/ResellerSignup').then(m => ({ default: m.ResellerSignup })));
+const ResellerForgotPassword = React.lazy(() => import('./pages/reseller/ResellerForgotPassword').then(m => ({ default: m.ResellerForgotPassword })));
 const ResellerOauthCallback = React.lazy(() => import('./pages/reseller/ResellerOauthCallback').then(m => ({ default: m.ResellerOauthCallback })));
 const ResellerProfile = React.lazy(() => import('./pages/reseller/ResellerProfile').then(m => ({ default: m.ResellerProfile })));
 
@@ -151,6 +152,7 @@ function AppRoutes() {
         {/* Reseller Panel Auth Routes */}
         <Route path="/reseller/login" element={<ResellerLogin />} />
         <Route path="/reseller/signup" element={<ResellerSignup />} />
+        <Route path="/reseller/forgot-password" element={<ResellerForgotPassword />} />
         <Route path="/reseller/oauth/callback" element={<ResellerOauthCallback />} />
 
         {/* Reseller Panel Protected Routes */}

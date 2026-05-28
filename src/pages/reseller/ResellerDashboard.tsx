@@ -122,18 +122,18 @@ export const ResellerDashboard = () => {
               </div>
             ) : (
               transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center justify-between p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${tx.amount > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
-                      {tx.amount > 0 ? <ArrowUpRight className="h-5 w-5" /> : <ArrowDownRight className="h-5 w-5" />}
+                <div key={tx.id} className="flex items-center justify-between p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all group gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <div className={`w-10 h-10 sm:w-12 sm:h-12 shrink-0 rounded-full flex items-center justify-center ${tx.amount > 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                      {tx.amount > 0 ? <ArrowUpRight className="h-4 w-4 sm:h-5 sm:w-5" /> : <ArrowDownRight className="h-4 w-4 sm:h-5 sm:w-5" />}
                     </div>
-                    <div>
-                      <p className="font-semibold text-gray-200 group-hover:text-white transition-colors">{tx.description}</p>
-                      <p className="text-sm text-gray-500 mt-0.5">{new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-200 group-hover:text-white transition-colors truncate break-words whitespace-normal leading-snug">{tx.description}</p>
+                      <p className="text-xs sm:text-sm text-gray-500 mt-0.5">{new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
                     </div>
                   </div>
-                  <div className={`text-lg font-bold ${tx.amount > 0 ? 'text-emerald-500' : 'text-white'}`}>
-                    {tx.amount > 0 ? '+' : ''}{tx.amount.toFixed(2)} <span className="text-sm font-medium text-gray-500">USD</span>
+                  <div className={`text-base sm:text-lg font-bold shrink-0 text-right ${tx.amount > 0 ? 'text-emerald-500' : 'text-white'}`}>
+                    {tx.amount > 0 ? '+' : ''}{tx.amount.toFixed(2)} <span className="text-xs sm:text-sm font-medium text-gray-500 block sm:inline">USD</span>
                   </div>
                 </div>
               ))

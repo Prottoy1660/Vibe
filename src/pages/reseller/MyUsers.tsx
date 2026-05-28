@@ -83,17 +83,17 @@ export const MyUsers = () => {
         </div>
       </div>
 
-      <div className="bg-[#111111] border border-white/5 rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl">
-        <div className="overflow-x-auto">
+      <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
+        <div className="overflow-x-auto custom-scrollbar">
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-xs uppercase tracking-widest text-gray-500">
-                <th className="p-4 lg:p-5 font-bold">Customer Email</th>
-                <th className="p-4 lg:p-5 font-bold">Products</th>
-                <th className="p-4 lg:p-5 font-bold">Duration</th>
-                <th className="p-4 lg:p-5 font-bold">Status</th>
-                <th className="p-4 lg:p-5 font-bold">Expires</th>
-                <th className="p-4 lg:p-5 font-bold text-right">Actions</th>
+                <th className="p-4 lg:p-6 font-bold">Customer Email</th>
+                <th className="p-4 lg:p-6 font-bold">Products</th>
+                <th className="p-4 lg:p-6 font-bold">Duration</th>
+                <th className="p-4 lg:p-6 font-bold">Status</th>
+                <th className="p-4 lg:p-6 font-bold">Expires</th>
+                <th className="p-4 lg:p-6 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-sm">
@@ -101,7 +101,7 @@ export const MyUsers = () => {
                 {loading ? (
                   <tr>
                     <td colSpan={6} className="p-12 text-center">
-                      <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mx-auto" />
+                      <Loader2 className="h-8 w-8 animate-spin text-white mx-auto" />
                       <p className="text-gray-500 mt-4 font-medium">Loading users...</p>
                     </td>
                   </tr>
@@ -125,30 +125,32 @@ export const MyUsers = () => {
                       key={user.id}
                       className="hover:bg-white/[0.02] transition-colors group"
                     >
-                      <td className="p-4 lg:p-5">
+                      <td className="p-4 lg:p-6">
                         <div className="font-semibold text-gray-200 group-hover:text-white transition-colors">{user.email}</div>
                       </td>
-                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
+                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
                         {user.products.join(', ')}
                       </td>
-                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
+                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
                         {user.durationMonths} {user.durationMonths.endsWith('d') ? '' : 'Month(s)'}
                       </td>
-                      <td className="p-4 lg:p-5">
+                      <td className="p-4 lg:p-6">
                         {getStatusBadge(user.status, user.activatedAt)}
                       </td>
-                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 opacity-50" />
-                          {new Date(user.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2 text-gray-300">
+                            <Clock className="h-4 w-4 opacity-50" />
+                            {new Date(user.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </div>
                         </div>
                       </td>
-                      <td className="p-4 lg:p-5 text-right">
+                      <td className="p-4 lg:p-6 text-right">
                         {user.status === 'active' && (
                           <button
                             onClick={() => handleDelete(user.id)}
                             disabled={deletingId === user.id}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl text-rose-400 font-semibold hover:text-white hover:bg-rose-500 transition-all disabled:opacity-50 active:scale-95 text-xs lg:text-sm"
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-rose-400 font-semibold hover:text-white hover:bg-rose-500 transition-all disabled:opacity-50 active:scale-95 text-xs lg:text-sm bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20"
                           >
                             {deletingId === user.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />

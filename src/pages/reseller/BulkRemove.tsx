@@ -52,109 +52,127 @@ export const BulkRemove = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto mt-8 pb-10">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="bg-[#111111] border border-white/5 rounded-3xl overflow-hidden shadow-2xl"
-      >
-        <div className="bg-gradient-to-r from-rose-600/20 to-orange-600/20 p-10 border-b border-white/5 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4"></div>
-          <div className="relative z-10">
-            <div className="w-14 h-14 bg-white/10 rounded-2xl flex items-center justify-center mb-6 backdrop-blur-md shadow-lg border border-white/5">
-              <ListMinus className="h-7 w-7 text-rose-400" />
+    <div className="w-full pb-10 flex flex-col lg:flex-row gap-6 lg:gap-8">
+      
+      {/* Left Side - Pure Text/Info */}
+      <div className="lg:w-1/3 flex flex-col">
+        <div className="sticky top-28">
+          <h1 className="text-3xl lg:text-4xl font-bold text-white mb-3 tracking-tight">Bulk Remove</h1>
+          <p className="text-gray-400 text-sm lg:text-base leading-relaxed mb-6">
+            Deactivate multiple customer accounts simultaneously.
+          </p>
+          
+          <div className="space-y-4 hidden sm:block">
+            <div className="flex items-start gap-3 text-gray-300">
+              <CheckCircle2 className="h-5 w-5 text-white shrink-0 mt-0.5" />
+              <span className="text-sm font-medium">Automatic 24h refund calculation</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">Bulk Remove Users</h1>
-            <p className="text-rose-200/80 text-lg">Deactivate multiple accounts at once. Paste emails separated by commas or new lines.</p>
+            <div className="flex items-start gap-3 text-gray-300">
+              <CheckCircle2 className="h-5 w-5 text-white shrink-0 mt-0.5" />
+              <span className="text-sm font-medium">Instant API synchronization</span>
+            </div>
+            <div className="flex items-start gap-3 text-gray-300">
+              <CheckCircle2 className="h-5 w-5 text-white shrink-0 mt-0.5" />
+              <span className="text-sm font-medium">Ignores already expired accounts</span>
+            </div>
           </div>
         </div>
+      </div>
 
-        <form onSubmit={handleSubmit} className="p-10 space-y-8">
-          <AnimatePresence>
-            {successData && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
-                animate={{ opacity: 1, height: 'auto', marginBottom: 24 }} 
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                className="p-6 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 space-y-4 shadow-lg shadow-emerald-500/5 overflow-hidden"
-              >
-                <div className="flex items-center gap-3 text-emerald-400">
-                  <CheckCircle2 className="h-6 w-6 shrink-0" />
-                  <p className="font-bold text-lg">Successfully processed {successData.processedCount} users!</p>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-[#111111]/50 rounded-2xl p-4 text-center border border-white/5 shadow-inner">
-                    <div className="text-2xl font-black text-amber-500">{successData.refundedCount}</div>
-                    <div className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-wider">Refunded (&le;24h)</div>
+      {/* Right Side - Form */}
+      <div className="lg:w-2/3 flex flex-col">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden shadow-2xl"
+        >
+          <form onSubmit={handleSubmit} className="p-5 sm:p-8 space-y-6">
+            <AnimatePresence>
+              {successData && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
+                  animate={{ opacity: 1, height: 'auto', marginBottom: 20 }} 
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  className="p-4 sm:p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 space-y-3 shadow-lg shadow-emerald-500/5 overflow-hidden"
+                >
+                  <div className="flex items-center gap-3 text-emerald-400">
+                    <CheckCircle2 className="h-5 w-5 lg:h-6 lg:w-6 shrink-0" />
+                    <p className="font-bold text-sm lg:text-base">Successfully processed {successData.processedCount} users!</p>
                   </div>
-                  <div className="bg-[#111111]/50 rounded-2xl p-4 text-center border border-white/5 shadow-inner">
-                    <div className="text-2xl font-black text-gray-400">{successData.expiredCount}</div>
-                    <div className="text-xs font-medium text-gray-500 mt-1 uppercase tracking-wider">Expired (&gt;24h)</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-[#111111]/50 rounded-xl p-3 text-center border border-white/5 shadow-inner">
+                      <div className="text-lg lg:text-xl font-black text-amber-500">{successData.refundedCount}</div>
+                      <div className="text-[10px] lg:text-xs font-medium text-gray-500 mt-1 uppercase tracking-wider">Refunded</div>
+                    </div>
+                    <div className="bg-[#111111]/50 rounded-xl p-3 text-center border border-white/5 shadow-inner">
+                      <div className="text-lg lg:text-xl font-black text-gray-400">{successData.expiredCount}</div>
+                      <div className="text-[10px] lg:text-xs font-medium text-gray-500 mt-1 uppercase tracking-wider">Expired</div>
+                    </div>
+                    <div className="bg-[#111111]/50 rounded-xl p-3 text-center border border-emerald-500/10 shadow-inner">
+                      <div className="text-lg lg:text-xl font-black text-emerald-500">+${successData.totalRefund.toFixed(2)}</div>
+                      <div className="text-[10px] lg:text-xs font-medium text-emerald-500/70 mt-1 uppercase tracking-wider">Refund</div>
+                    </div>
                   </div>
-                  <div className="bg-[#111111]/50 rounded-2xl p-4 text-center border border-emerald-500/10 shadow-inner">
-                    <div className="text-2xl font-black text-emerald-500">+${successData.totalRefund.toFixed(2)}</div>
-                    <div className="text-xs font-medium text-emerald-500/70 mt-1 uppercase tracking-wider">Total Refund</div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
+                </motion.div>
+              )}
 
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
-                animate={{ opacity: 1, height: 'auto', marginBottom: 24 }} 
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-4 text-rose-400 shadow-lg shadow-rose-500/5 overflow-hidden"
-              >
-                <AlertCircle className="h-6 w-6 shrink-0" />
-                <p className="font-medium text-sm">{error}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {error && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0, marginBottom: 0 }} 
+                  animate={{ opacity: 1, height: 'auto', marginBottom: 20 }} 
+                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                  className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center gap-3 text-rose-400 shadow-lg shadow-rose-500/5 overflow-hidden"
+                >
+                  <AlertCircle className="h-5 w-5 lg:h-6 lg:w-6 shrink-0" />
+                  <p className="font-medium text-xs lg:text-sm">{error}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          <div className="space-y-3">
-            <label className="text-sm font-semibold text-gray-300 ml-1">Customer Emails to Remove</label>
-            <div className="relative group">
-              <textarea
-                required
-                rows={8}
-                value={emailsText}
-                onChange={(e) => setEmailsText(e.target.value)}
-                className="block w-full p-5 bg-[#0a0a0a] border border-white/10 rounded-2xl text-white focus:ring-2 focus:ring-rose-500 focus:border-rose-500 transition-all placeholder:text-gray-600 font-mono text-sm shadow-inner resize-none"
-                placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"
-              />
+            <div className="space-y-2">
+              <label className="text-xs lg:text-sm font-semibold text-gray-300 ml-1">Customer Emails to Remove</label>
+              <div className="relative group">
+                <textarea
+                  required
+                  rows={8}
+                  value={emailsText}
+                  onChange={(e) => setEmailsText(e.target.value)}
+                  className="block w-full p-4 bg-[#111111] border border-white/10 rounded-xl lg:rounded-2xl text-white focus:ring-2 focus:ring-white/20 focus:border-white/20 transition-all placeholder:text-gray-600 font-mono text-xs lg:text-sm shadow-inner resize-none"
+                  placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com"
+                />
+              </div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-2 px-1 gap-2">
+                <p className="text-xs lg:text-sm text-gray-500">
+                  Valid emails detected: <span className="text-white font-bold px-2 py-0.5 bg-white/10 rounded-md ml-1">{parsedEmails.length}</span>
+                </p>
+                <p className="text-[10px] lg:text-xs font-medium text-gray-500 bg-white/5 px-2.5 py-1 rounded-md">
+                  Only active accounts will be processed.
+                </p>
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-3 px-1 gap-2">
-              <p className="text-sm text-gray-500">
-                Valid emails detected: <span className="text-rose-400 font-bold px-2 py-0.5 bg-rose-500/10 rounded-md ml-1">{parsedEmails.length}</span>
-              </p>
-              <p className="text-xs font-medium text-gray-500 bg-white/5 px-3 py-1.5 rounded-lg">
-                Only active accounts will be processed.
-              </p>
-            </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading || parsedEmails.length === 0}
-            className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all duration-300 ${
-              parsedEmails.length === 0
-                ? 'bg-white/5 text-gray-500 cursor-not-allowed'
-                : 'bg-rose-500 hover:bg-rose-600 text-white shadow-xl shadow-rose-500/20 active:scale-95'
-            }`}
-          >
-            {loading ? (
-              <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            ) : (
-              <>
-                <Trash2 className="h-5 w-5" />
-                Remove {parsedEmails.length} Users
-              </>
-            )}
-          </button>
-        </form>
-      </motion.div>
+            <button
+              type="submit"
+              disabled={loading || parsedEmails.length === 0}
+              className={`w-full py-3.5 lg:py-4 rounded-xl lg:rounded-2xl font-bold flex items-center justify-center gap-2 transition-all duration-300 text-sm lg:text-base ${
+                parsedEmails.length === 0
+                  ? 'bg-white/5 text-gray-500 cursor-not-allowed'
+                  : 'bg-rose-500 hover:bg-rose-600 text-white shadow-xl shadow-rose-500/25 active:scale-[0.98]'
+              }`}
+            >
+              {loading ? (
+                <div className="h-5 w-5 lg:h-5 lg:w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 lg:h-5 lg:w-5" />
+                  Remove {parsedEmails.length} Users
+                </>
+              )}
+            </button>
+          </form>
+        </motion.div>
+      </div>
     </div>
   );
 };

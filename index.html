@@ -15,7 +15,7 @@
     <meta name="theme-color" content="#09090b" />
     <meta name="description" content="Premium digital accounts management platform" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <title>Vibe Access</title>
+    <title>Super Reseller</title>
     <script type="module">
       if (import.meta.hot?.on) {
         import.meta.hot.on('vite:error', (error) => {
@@ -32,5 +32,13 @@
     <!-- React mounts the full UI here at runtime. "View page source" only shows this empty div until JS runs. -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Dynamically update the document title based on the domain
+      if (window.location.hostname === 'superreseller.shop' || window.location.hostname.includes('superreseller')) {
+        document.title = 'Super Reseller - Premium Dashboard';
+      } else {
+        document.title = 'Super Reseller - Digital Marketplace';
+      }
+    </script>
   </body>
 </html>
