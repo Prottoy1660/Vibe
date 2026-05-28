@@ -40,7 +40,7 @@ export const AdminResellerPackages = () => {
 
   const handleSave = async () => {
     console.log('handleSave called with:', { formData, isAdding, editingId });
-    if (!formData.label || !formData.value || isNaN(formData.cost) || formData.cost <= 0) {
+    if (!formData.label || !formData.value || isNaN(formData.cost) || formData.cost < 0) {
       toast.error('Please fill all fields correctly');
       return;
     }
