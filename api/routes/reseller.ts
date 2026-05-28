@@ -1,8 +1,14 @@
 import express from 'express';
 import crypto from 'crypto';
-import { supabase } from '../lib/supabaseClient.js'; // Ensure correct path for your project
+import { createClient } from '@supabase/supabase-js';
 
 const router = express.Router();
+
+const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+const supabaseServiceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const supabase = supabaseUrl && supabaseServiceKey 
+  ? createClient(supabaseUrl, supabaseServiceKey) 
+  : null;
 
 const ADOBE_API_KEY = process.env.ADOBE_API_KEY || '';
 const ADOBE_BASE_URL = 'https://reseller.ado-besoft.com/api/credits-pool/external';
@@ -32,6 +38,10 @@ function getAdobeApiHeaders(body: object) {
  */
 router.post('/adobe/activate', async (req, res) => {
   try {
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not initialized' });
+    }
+
     // 1. Verify user authentication (via authorization header)
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -94,6 +104,10 @@ router.post('/adobe/activate', async (req, res) => {
  */
 router.post('/adobe/deactivate', async (req, res) => {
   try {
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not initialized' });
+    }
+
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       return res.status(401).json({ success: false, error: 'Unauthorized' });
