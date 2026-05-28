@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound, LogIn } from 'lucide-react';
+import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound, LogIn, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 import { AdminUserDetails } from './AdminUserDetails';
 import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
@@ -20,6 +20,7 @@ interface User {
   created_at: string;
   signup_auth_provider?: string | null;
   last_sign_in_provider?: string | null;
+  wallet_balance?: number;
 }
 
 export const AdminUsers = () => {
@@ -34,6 +35,11 @@ export const AdminUsers = () => {
   const [userNotes, setUserNotes] = useState<Record<string, string>>({});
   const [savingUserNoteId, setSavingUserNoteId] = useState<string | null>(null);
   const dirtyUserNotesRef = useRef<Record<string, boolean>>({});
+
+  // Funds loading state
+  const [addingFundsUserId, setAddingFundsUserId] = useState<string | null>(null);
+  const [fundsAmount, setFundsAmount] = useState<string>('');
+  const [isAddingFunds, setIsAddingFunds] = useState(false);
 
   const loadUserNotes = async (userIds: string[]) => {
     if (!userIds.length) {
@@ -212,6 +218,51 @@ export const AdminUsers = () => {
     } catch (error) {
       console.error(`Error trying to ${action} user:`, error);
       toast.error(`Failed to ${action} user`);
+    }
+  };
+
+  const handleAddFunds = async (userId: string, currentBalance: number = 0) => {
+    const amount = parseFloat(fundsAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    try {
+      setIsAddingFunds(true);
+      const newBalance = currentBalance + amount;
+      
+      // Update balance in users table
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ wallet_balance: newBalance })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
+      // Add transaction record
+      const { error: txError } = await supabase
+        .from('reseller_transactions')
+        .insert({
+          reseller_id: userId,
+          amount: amount,
+          type: 'deposit',
+          status: 'completed',
+          description: 'Funds manually added by Admin',
+          balance_after: newBalance
+        });
+
+      if (txError) throw txError;
+
+      toast.success(`Successfully added $${amount.toFixed(2)} to reseller's balance`);
+      setAddingFundsUserId(null);
+      setFundsAmount('');
+      await fetchUsers();
+    } catch (err: any) {
+      console.error('Error adding funds:', err);
+      toast.error(err.message || 'Failed to add funds');
+    } finally {
+      setIsAddingFunds(false);
     }
   };
 
@@ -490,10 +541,10 @@ export const AdminUsers = () => {
           <div className="flex flex-wrap items-center gap-3">
             <select
               value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value as any)}
+              onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}
               className="px-3 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             >
-              <option value="all">All roles</option>
+              <option value="all">All Roles</option>
               <option value="admin">Admin</option>
               <option value="reseller">Reseller</option>
               <option value="user">User</option>
@@ -594,12 +645,12 @@ export const AdminUsers = () => {
 
                 <td className="py-3 px-4">
                   <span
-                    className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
-                      u.role === 'admin'
-                        ? 'bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300'
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-medium border ${
+                      u.role === 'admin' 
+                        ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/10 dark:text-purple-400 dark:border-purple-500/20'
                         : u.role === 'reseller'
-                        ? 'bg-indigo-100 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
-                        : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-gray-200'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20'
+                        : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-white/5 dark:text-gray-300 dark:border-white/10'
                     }`}
                   >
                     {u.role}
@@ -632,6 +683,50 @@ export const AdminUsers = () => {
 
                 <td className="py-3 px-4 text-right sticky right-0 z-10 bg-white/95 dark:bg-[#151518]/95 backdrop-blur-sm">
                   <div className="flex items-center justify-end gap-2 flex-wrap">
+                    {u.role === 'reseller' && (
+                      <div className="relative">
+                        {addingFundsUserId === u.id ? (
+                          <div className="flex items-center gap-2 bg-gray-50 dark:bg-[#0a0a0b] p-1.5 rounded-lg border border-gray-200 dark:border-[#26262d]">
+                            <span className="text-gray-500 dark:text-gray-400 pl-1">$</span>
+                            <input
+                              type="number"
+                              value={fundsAmount}
+                              onChange={(e) => setFundsAmount(e.target.value)}
+                              placeholder="0.00"
+                              className="w-20 bg-transparent text-sm text-gray-900 dark:text-white focus:outline-none"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleAddFunds(u.id, u.wallet_balance)}
+                              disabled={isAddingFunds}
+                              className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-md transition-colors"
+                              title="Confirm Add Funds"
+                            >
+                              {isAddingFunds ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldAlert className="w-3 h-3" />}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setAddingFundsUserId(null);
+                                setFundsAmount('');
+                              }}
+                              className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                            >
+                              X
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setAddingFundsUserId(u.id)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-500/10 rounded-lg transition-colors flex items-center gap-1"
+                            title="Add Funds"
+                          >
+                            <span className="text-xs font-medium">${(u.wallet_balance || 0).toFixed(2)}</span>
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     <button
                       onClick={() => setSelectedUserId(u.id)}
                       className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors"
