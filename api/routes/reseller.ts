@@ -69,7 +69,7 @@ router.post('/adobe/activate', async (req, res) => {
     // 2. Prepare payload for Adobe API
     const body = {
       email,
-      durationMonths
+      durationMonths: durationMonths.toString()
     };
 
     const headers = getAdobeApiHeaders(body);

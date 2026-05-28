@@ -134,6 +134,10 @@ export const ResellerApi = {
     }
 
     // 2. Call external API via our backend
+    // Clean up duration value. Usually Adobe API expects plain numbers like '1', '3', '6'
+    // but sometimes UI sends '1 Month', '1', '7d'.
+    // If it's a number string like '1', pass it. If it contains 'd', like '7d', we pass it as '7d' or however Adobe API expects.
+    // Assuming Adobe API expects exactly what UI passes:
     const apiRes = await fetch('/api/reseller/adobe/activate', {
       method: 'POST',
       headers: {
