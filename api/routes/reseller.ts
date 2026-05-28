@@ -12,6 +12,8 @@ const supabase = supabaseUrl && supabaseServiceKey
 
 const ADOBE_API_KEY = process.env.ADOBE_API_KEY || '';
 const ADOBE_BASE_URL = 'https://reseller.ado-besoft.com/api/credits-pool/external';
+const BINANCE_API_KEY = process.env.BINANCE_API_KEY || '';
+const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY || '';
 
 /**
  * Helper function to generate HMAC signature and headers for Adobe API
@@ -266,6 +268,153 @@ router.post('/adobe/deactivate', async (req, res) => {
     });
   } catch (error: any) {
     console.error('Adobe Deactivate Error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+});
+
+/**
+ * Helper to generate Binance HMAC signature
+ */
+function generateBinanceSignature(queryString: string) {
+  return crypto
+    .createHmac('sha256', BINANCE_SECRET_KEY)
+    .update(queryString)
+    .digest('hex');
+}
+
+/**
+ * POST /api/reseller/binance/verify
+ * Verifies a transaction ID and adds funds automatically if valid
+ */
+router.post('/binance/verify', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not initialized' });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !authData.user) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+    
+    const user = authData.user;
+    const { txId, expectedAmount } = req.body;
+
+    if (!txId || !expectedAmount) {
+      return res.status(400).json({ success: false, error: 'Transaction ID and amount are required' });
+    }
+
+    if (!BINANCE_API_KEY || !BINANCE_SECRET_KEY) {
+      return res.status(500).json({ success: false, error: 'Binance API keys not configured' });
+    }
+
+    // 1. Check if this TxID is already used
+    const { data: existingTx } = await supabase
+      .from('reseller_transactions')
+      .select('id')
+      .eq('tx_id', txId)
+      .eq('status', 'completed')
+      .single();
+
+    if (existingTx) {
+      return res.status(400).json({ success: false, error: 'Transaction already processed' });
+    }
+
+    // 2. Fetch Binance Pay History
+    const timestamp = Date.now();
+    // Using Binance Pay Merchant / Pay API history endpoint if applicable
+    // Or standard Binance deposit history if using crypto deposit:
+    // GET /sapi/v1/capital/deposit/hisrec
+    // Since we are verifying a general deposit / transfer, we'll check deposit history.
+    
+    const queryString = `timestamp=${timestamp}`;
+    const signature = generateBinanceSignature(queryString);
+
+    const binanceRes = await fetch(`https://api.binance.com/sapi/v1/capital/deposit/hisrec?${queryString}&signature=${signature}`, {
+      method: 'GET',
+      headers: {
+        'X-MBX-APIKEY': BINANCE_API_KEY
+      }
+    });
+
+    const deposits = await binanceRes.json();
+
+    if (!binanceRes.ok) {
+      console.error('Binance API Error:', deposits);
+      return res.status(400).json({ success: false, error: 'Failed to connect to Binance' });
+    }
+
+    // deposits should be an array of deposit objects
+    // Example: { txId: "...", amount: "10.00", coin: "USDT", status: 1 } (1 = success)
+    let verifiedDeposit = null;
+    if (Array.isArray(deposits)) {
+      verifiedDeposit = deposits.find(d => 
+        (d.txId === txId || d.id === txId) && 
+        d.status === 1 && 
+        parseFloat(d.amount) >= parseFloat(expectedAmount) &&
+        (d.coin === 'USDT' || d.coin === 'BUSD' || d.coin === 'USDC')
+      );
+    }
+
+    if (!verifiedDeposit) {
+      // If we don't find it in deposits, it might be a Binance Pay transfer, 
+      // which requires the Binance Pay API (C2C) history.
+      // For now, we will fallback to pending state for admin to manually approve
+      // if it's a P2P/Pay transfer that standard deposit API doesn't catch.
+      
+      const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+      
+      await supabase.from('reseller_transactions').insert({
+        reseller_id: user.id,
+        amount: expectedAmount,
+        type: 'deposit',
+        status: 'pending',
+        tx_id: txId,
+        description: 'Binance verification pending (Not found in auto-scan)',
+        balance_after: profile?.wallet_balance || 0
+      });
+
+      return res.status(200).json({ 
+        success: true, 
+        status: 'pending',
+        message: 'Transaction recorded. Admin will review shortly.' 
+      });
+    }
+
+    // 3. Transaction Verified Automatically!
+    const verifiedAmount = parseFloat(verifiedDeposit.amount);
+    
+    // Add balance to user
+    const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+    const currentBalance = profile?.wallet_balance || 0;
+    const newBalance = currentBalance + verifiedAmount;
+
+    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
+
+    await supabase.from('reseller_transactions').insert({
+      reseller_id: user.id,
+      amount: verifiedAmount,
+      type: 'deposit',
+      status: 'completed',
+      tx_id: txId,
+      description: 'Binance Deposit Auto-Verified',
+      balance_after: newBalance
+    });
+
+    return res.status(200).json({
+      success: true,
+      status: 'completed',
+      message: `Successfully verified and added $${verifiedAmount} to balance.`
+    });
+
+  } catch (error: any) {
+    console.error('Binance Verify Error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
   }
 });

@@ -29,13 +29,19 @@ export const AddFunds = () => {
 
     setLoading(true);
     try {
-      await ResellerApi.addFunds(parseFloat(amount), txId);
+      const result = await ResellerApi.addFunds(parseFloat(amount), txId);
+      if (result.status === 'completed') {
+        alert(result.message || 'Payment verified automatically!');
+      } else {
+        alert(result.message || 'Payment sent for manual review.');
+      }
       setStep('success');
       setTimeout(() => {
         navigate('/reseller/dashboard');
       }, 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      alert(error.message || 'Failed to verify transaction. Please check your TxID.');
     } finally {
       setLoading(false);
     }

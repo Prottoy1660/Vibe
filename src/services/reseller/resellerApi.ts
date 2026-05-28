@@ -425,22 +425,24 @@ export const ResellerApi = {
   },
 
   addFunds: async (amount: number, txId: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('Not authenticated');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error('Not authenticated');
 
-    const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
-    
-    await supabase.from('reseller_transactions').insert({
-      reseller_id: user.id,
-      amount,
-      type: 'deposit',
-      status: 'pending',
-      tx_id: txId,
-      description: 'Binance Deposit Pending',
-      balance_after: profile?.wallet_balance || 0
+    const apiRes = await fetch('/api/reseller/binance/verify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ txId, expectedAmount: amount })
     });
 
-    return true;
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to verify transaction');
+    }
+
+    return data; // contains status ('completed' or 'pending') and message
   },
   
   getTransactions: async () => {
