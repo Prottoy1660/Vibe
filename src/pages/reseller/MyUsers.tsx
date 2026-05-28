@@ -31,9 +31,10 @@ export const MyUsers = () => {
     try {
       await ResellerApi.deleteUser(id);
       await fetchUsers();
-    } catch (error) {
+      alert('User removed successfully.');
+    } catch (error: any) {
       console.error(error);
-      alert('Failed to delete user');
+      alert(error.message || 'Failed to delete user');
     } finally {
       setDeletingId(null);
     }
