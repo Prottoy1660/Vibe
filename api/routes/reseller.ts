@@ -66,10 +66,14 @@ router.post('/adobe/activate', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing email or durationMonths' });
     }
 
+    // Convert '7d' or '14d' to valid days string if Adobe API expects days for trials,
+    // otherwise pass it exactly as it is since the Adobe API might be handling '7d' directly.
+    const durationStr = durationMonths.toString();
+
     // 2. Prepare payload for Adobe API
     const body = {
       email,
-      durationMonths: durationMonths.toString()
+      durationMonths: durationStr
     };
 
     const headers = getAdobeApiHeaders(body);

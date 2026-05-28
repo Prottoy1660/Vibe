@@ -160,7 +160,20 @@ export const ResellerApi = {
        throw new Error(apiData.error || apiData.message || apiData.msg || 'Failed to activate user on Adobe API');
     }
 
-    const durationDays = duration.endsWith('d') ? parseInt(duration) : parseInt(duration) * 30;
+    // Parse the duration string correctly for durationDays calculation
+    // '7d' -> 7 days
+    // '14d' -> 14 days
+    // '1' -> 30 days
+    // '3' -> 90 days
+    let durationDays = 30;
+    const durationStr = duration.toString().toLowerCase();
+    
+    if (durationStr.endsWith('d')) {
+      durationDays = parseInt(durationStr.replace('d', '')) || 7;
+    } else {
+      durationDays = (parseInt(durationStr) || 1) * 30;
+    }
+    
     const now = new Date();
     const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
