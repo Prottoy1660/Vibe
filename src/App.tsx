@@ -22,6 +22,7 @@ const TransactionHistory = React.lazy(() => import('./pages/reseller/Transaction
 const ResellerLogin = React.lazy(() => import('./pages/reseller/ResellerLogin').then(m => ({ default: m.ResellerLogin })));
 const ResellerSignup = React.lazy(() => import('./pages/reseller/ResellerSignup').then(m => ({ default: m.ResellerSignup })));
 const ResellerOauthCallback = React.lazy(() => import('./pages/reseller/ResellerOauthCallback').then(m => ({ default: m.ResellerOauthCallback })));
+const ResellerProfile = React.lazy(() => import('./pages/reseller/ResellerProfile').then(m => ({ default: m.ResellerProfile })));
 
 const Login = React.lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
 const Register = React.lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
@@ -156,6 +157,7 @@ function AppRoutes() {
         <Route path="/reseller" element={<ResellerProtectedRoute><ResellerLayout /></ResellerProtectedRoute>}>
           <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<ResellerDashboard />} />
+          <Route path="profile" element={<ResellerProfile />} />
           <Route path="activate" element={<ActivateUser />} />
           <Route path="bulk-activate" element={<BulkActivate />} />
           <Route path="bulk-remove" element={<BulkRemove />} />

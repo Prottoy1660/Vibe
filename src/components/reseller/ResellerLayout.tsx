@@ -10,16 +10,26 @@ export const ResellerLayout = () => {
   const location = useLocation();
   const { user } = useAuth();
   const [userName, setUserName] = useState('Reseller Agent');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadProfile = () => {
     if (user?.id) {
-      supabase.from('users').select('name, full_name, email').eq('id', user.id).single().then(({ data }) => {
+      supabase.from('users').select('name, full_name, email, avatar_url').eq('id', user.id).single().then(({ data }) => {
         if (data) {
-          // Fallback logic: full_name -> name -> email prefix
           setUserName(data.full_name || data.name || data.email?.split('@')[0] || 'Reseller Agent');
+          setAvatarUrl(data.avatar_url);
         }
       });
     }
+  };
+
+  useEffect(() => {
+    loadProfile();
+    
+    // Listen for avatar/profile updates from ResellerProfile
+    const handleRefresh = () => loadProfile();
+    window.addEventListener('vibe:reseller-avatar-refresh', handleRefresh);
+    return () => window.removeEventListener('vibe:reseller-avatar-refresh', handleRefresh);
   }, [user]);
 
   const handleLogout = async () => {
@@ -98,16 +108,23 @@ export const ResellerLayout = () => {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-screen z-10 relative">
-        <header className="h-20 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-md flex items-center justify-end px-8 sticky top-0">
-          <div className="flex items-center gap-4">
+        <header className="h-20 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-md flex items-center justify-end px-8 sticky top-0 z-20">
+          <button 
+            onClick={() => navigate('/reseller/profile')}
+            className="flex items-center gap-4 hover:bg-white/5 p-2 pr-4 rounded-full transition-colors cursor-pointer group"
+          >
             <div className="text-right mr-2">
-              <div className="text-sm font-medium text-gray-200">{userName}</div>
-              <div className="text-xs text-gray-500">Premium Account</div>
+              <div className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{userName}</div>
+              <div className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">Premium Account</div>
             </div>
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 uppercase">
-              {userName.charAt(0)}
+            <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 uppercase ring-2 ring-transparent group-hover:ring-indigo-500/50 transition-all">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={userName} className="h-full w-full object-cover" />
+              ) : (
+                userName.charAt(0)
+              )}
             </div>
-          </div>
+          </button>
         </header>
         
         <div className="flex-1 overflow-auto p-8">
