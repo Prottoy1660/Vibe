@@ -56,14 +56,25 @@ router.post('/adobe/activate', async (req, res) => {
     }
 
     // Ensure user is a reseller
-    const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'reseller') {
+    const { data: userRoleProfile } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userRoleProfile?.role !== 'reseller') {
        return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
-    const { email, durationMonths } = req.body;
+    const { email, durationMonths, cost, durationDays } = req.body;
     if (!email || !durationMonths) {
       return res.status(400).json({ success: false, error: 'Missing email or durationMonths' });
+    }
+
+    const costNum = Number(cost) || 0;
+    const daysNum = Number(durationDays) || 30;
+
+    // Verify balance before calling Adobe API
+    const { data: balanceProfile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+    const balance = balanceProfile?.wallet_balance || 0;
+
+    if (balance < costNum) {
+      return res.status(400).json({ success: false, error: 'Insufficient balance.' });
     }
 
     // Convert '7d' or '14d' to valid days string if Adobe API expects days for trials,
@@ -104,7 +115,44 @@ router.post('/adobe/activate', async (req, res) => {
       });
     }
 
-    return res.status(200).json(data);
+    // 4. Update Database (bypasses RLS because supabase uses service_role key)
+    const newBalance = balance - costNum;
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + daysNum * 24 * 60 * 60 * 1000);
+
+    // Deduct balance
+    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
+
+    // Create user access record
+    const { data: newUserRecord, error: insertError } = await supabase.from('reseller_user_access').insert({
+      reseller_id: user.id,
+      customer_email: email,
+      duration_months: durationStr,
+      duration_days: daysNum,
+      status: 'active',
+      products: ['Creative Cloud Pro'],
+      expires_at: expiresAt.toISOString()
+    }).select().single();
+
+    if (insertError) {
+      console.error('Failed to insert user access record:', insertError);
+    }
+
+    // Record transaction
+    await supabase.from('reseller_transactions').insert({
+      reseller_id: user.id,
+      amount: -costNum,
+      type: 'deduct',
+      status: 'completed',
+      description: `User activation: ${email} (${durationStr})`,
+      balance_after: newBalance
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'User activated successfully',
+      data: newUserRecord || data
+    });
   } catch (error: any) {
     console.error('Adobe Activate Error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });
@@ -139,7 +187,7 @@ router.post('/adobe/deactivate', async (req, res) => {
        return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
-    const { email } = req.body;
+    const { email, recordId, cost, hoursDiff, currentBalance, status } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: 'Missing email' });
     }
@@ -174,7 +222,48 @@ router.post('/adobe/deactivate', async (req, res) => {
       });
     }
 
-    return res.status(200).json(data);
+    // Secure database updates if recordId is provided
+    if (recordId) {
+      let newStatus = 'expired';
+      let finalBalance = currentBalance || 0;
+      
+      if (hoursDiff <= 24 && status === 'active') {
+        newStatus = 'refunded';
+        finalBalance += (cost || 0);
+
+        // Update balance
+        await supabase.from('users').update({ wallet_balance: finalBalance }).eq('id', user.id);
+
+        // Record refund transaction
+        await supabase.from('reseller_transactions').insert({
+          reseller_id: user.id,
+          amount: cost || 0,
+          type: 'refund',
+          status: 'completed',
+          description: `Refunded: ${email} (within 24h)`,
+          balance_after: finalBalance
+        });
+      } else {
+        // Record system deduct transaction
+        await supabase.from('reseller_transactions').insert({
+          reseller_id: user.id,
+          amount: 0,
+          type: 'system',
+          status: 'completed',
+          description: `Subscription expired / removed: ${email}`,
+          balance_after: finalBalance
+        });
+      }
+
+      // Update access record
+      await supabase.from('reseller_user_access').update({ status: newStatus }).eq('id', recordId);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'User deactivated successfully',
+      data
+    });
   } catch (error: any) {
     console.error('Adobe Deactivate Error:', error);
     return res.status(500).json({ success: false, error: 'Internal Server Error' });

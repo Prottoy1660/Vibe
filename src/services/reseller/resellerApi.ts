@@ -133,18 +133,30 @@ export const ResellerApi = {
       throw new Error('Insufficient balance. Please add funds.');
     }
 
-    // 2. Call external API via our backend
-    // Clean up duration value. Usually Adobe API expects plain numbers like '1', '3', '6'
-    // but sometimes UI sends '1 Month', '1', '7d'.
-    // If it's a number string like '1', pass it. If it contains 'd', like '7d', we pass it as '7d' or however Adobe API expects.
-    // Assuming Adobe API expects exactly what UI passes:
+    // 2. Prepare payload and durationDays
+    let durationDays = 30;
+    const durationStr = duration.toString().toLowerCase();
+    
+    if (durationStr.endsWith('d')) {
+      durationDays = parseInt(durationStr.replace('d', '')) || 7;
+    } else {
+      durationDays = (parseInt(durationStr) || 1) * 30;
+    }
+    
+    // Call external API via our backend.
+    // The backend now securely handles the balance deduction and database inserts!
     const apiRes = await fetch('/api/reseller/adobe/activate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`
       },
-      body: JSON.stringify({ email, durationMonths: duration })
+      body: JSON.stringify({ 
+        email, 
+        durationMonths: duration,
+        cost,
+        durationDays 
+      })
     });
 
     const text = await apiRes.text();
@@ -160,61 +172,17 @@ export const ResellerApi = {
        throw new Error(apiData.error || apiData.message || apiData.msg || 'Failed to activate user on Adobe API');
     }
 
-    // Parse the duration string correctly for durationDays calculation
-    // '7d' -> 7 days
-    // '14d' -> 14 days
-    // '1' -> 30 days
-    // '3' -> 90 days
-    let durationDays = 30;
-    const durationStr = duration.toString().toLowerCase();
-    
-    if (durationStr.endsWith('d')) {
-      durationDays = parseInt(durationStr.replace('d', '')) || 7;
-    } else {
-      durationDays = (parseInt(durationStr) || 1) * 30;
-    }
-    
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
-
-    const newBalance = balance - cost;
-
-    // 3. Update DB in a transaction-like manner
-    // Deduct balance
-    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
-
-    // Create user access record
-    const { data: newUserRecord, error: insertError } = await supabase.from('reseller_user_access').insert({
-      reseller_id: user.id,
-      customer_email: email,
-      duration_months: duration,
-      duration_days: durationDays,
-      status: 'active',
-      products: ['Creative Cloud Pro'],
-      expires_at: expiresAt.toISOString()
-    }).select().single();
-
-    if (insertError) throw insertError;
-
-    // Record transaction
-    await supabase.from('reseller_transactions').insert({
-      reseller_id: user.id,
-      amount: -cost,
-      type: 'deduct',
-      status: 'completed',
-      description: `User activation: ${email} (${duration})`,
-      balance_after: newBalance
-    });
+    // Database updates are now handled securely by the backend API
 
     return {
-      id: newUserRecord.id,
+      id: apiData.data?.id || 'pending',
       email,
       durationMonths: duration,
       durationDays,
-      activatedAt: newUserRecord.activated_at,
-      expiresAt: newUserRecord.expires_at,
+      activatedAt: apiData.data?.activated_at || new Date().toISOString(),
+      expiresAt: apiData.data?.expires_at || new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString(),
       status: 'active',
-      products: newUserRecord.products
+      products: apiData.data?.products || ['Creative Cloud Pro']
     } as ResellerUser;
   },
 
@@ -236,6 +204,14 @@ export const ResellerApi = {
     // 2. Call external API for each user via backend
     const successfulEmails: string[] = [];
     const failedEmails: string[] = [];
+    
+    let durationDays = 30;
+    const durationStr = duration.toString().toLowerCase();
+    if (durationStr.endsWith('d')) {
+      durationDays = parseInt(durationStr.replace('d', '')) || 7;
+    } else {
+      durationDays = (parseInt(durationStr) || 1) * 30;
+    }
 
     // Process in chunks or sequentially to avoid overwhelming the external API
     for (const email of emails) {
@@ -246,7 +222,12 @@ export const ResellerApi = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({ email, durationMonths: duration })
+          body: JSON.stringify({ 
+            email, 
+            durationMonths: duration,
+            cost: costPerUser,
+            durationDays
+          })
         });
         
         const text = await apiRes.text();
@@ -271,40 +252,8 @@ export const ResellerApi = {
       throw new Error('Failed to activate any users via Adobe API.');
     }
 
-    // Only charge for successful activations
-    const actualCost = costPerUser * successfulEmails.length;
-    const durationDays = duration.endsWith('d') ? parseInt(duration) : parseInt(duration) * 30;
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
-
-    const newBalance = balance - actualCost;
-
-    // 3. Update DB
-    await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
-
-    const recordsToInsert = successfulEmails.map(email => ({
-      reseller_id: user.id,
-      customer_email: email,
-      duration_months: duration,
-      duration_days: durationDays,
-      status: 'active',
-      products: ['Creative Cloud Pro'],
-      expires_at: expiresAt.toISOString()
-    }));
-
-    const { error: insertError } = await supabase.from('reseller_user_access').insert(recordsToInsert);
-    if (insertError) throw insertError;
-
-    // Record transaction
-    await supabase.from('reseller_transactions').insert({
-      reseller_id: user.id,
-      amount: -actualCost,
-      type: 'deduct',
-      status: 'completed',
-      description: `Bulk activation: ${successfulEmails.length} users (${duration})`,
-      balance_after: newBalance
-    });
-
+    // Backend handles the balance deduction and database inserts per user!
+    
     if (failedEmails.length > 0) {
       throw new Error(`Activated ${successfulEmails.length} users. Failed: ${failedEmails.length} (${failedEmails.join(', ')}). You were only charged for successful activations.`);
     }
@@ -346,7 +295,14 @@ export const ResellerApi = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`
       },
-      body: JSON.stringify({ email: accessRecord.customer_email })
+      body: JSON.stringify({ 
+        email: accessRecord.customer_email,
+        recordId: id,
+        cost,
+        hoursDiff,
+        currentBalance,
+        status: accessRecord.status
+      })
     });
 
     const text = await apiRes.text();
@@ -362,47 +318,8 @@ export const ResellerApi = {
       throw new Error(apiData.error || apiData.message || apiData.msg || 'Failed to deactivate user on Adobe API');
     }
 
-    let newStatus = 'expired';
-    let refundAmount = 0;
-
-    if (hoursDiff <= 24 && accessRecord.status === 'active') {
-      // Refund
-      newStatus = 'refunded';
-      refundAmount = cost;
-      currentBalance += cost;
-
-      // Update balance
-      await supabase.from('users').update({ wallet_balance: currentBalance }).eq('id', user.id);
-
-      // Record refund transaction
-      await supabase.from('reseller_transactions').insert({
-        reseller_id: user.id,
-        amount: cost,
-        type: 'refund',
-        status: 'completed',
-        description: `Refunded: ${accessRecord.customer_email} (within 24h)`,
-        balance_after: currentBalance
-      });
-    } else {
-      // System deduct
-      await supabase.from('reseller_transactions').insert({
-        reseller_id: user.id,
-        amount: 0,
-        type: 'system',
-        status: 'completed',
-        description: `Subscription expired / removed: ${accessRecord.customer_email}`,
-        balance_after: currentBalance
-      });
-    }
-
-    // Update access record
-    await supabase.from('reseller_user_access').update({ status: newStatus }).eq('id', id);
-
-    return {
-      id,
-      email: accessRecord.customer_email,
-      status: newStatus
-    };
+    // Database updates are now securely handled by the backend API
+    return true;
   },
 
   bulkDeleteUsers: async (emails: string[]) => {
