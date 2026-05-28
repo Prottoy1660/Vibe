@@ -44,16 +44,16 @@ export const ResellerDashboard = () => {
   ];
 
   return (
-    <div className="space-y-10 pb-10">
+    <div className="space-y-6 lg:space-y-10 pb-10">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-extrabold text-white tracking-tight">Overview</h1>
-          <p className="text-gray-400 mt-2 text-lg">Welcome back. Here's what's happening with your account today.</p>
+          <h1 className="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Overview</h1>
+          <p className="text-gray-400 mt-1 lg:mt-2 text-base lg:text-lg">Welcome back. Here's what's happening with your account today.</p>
         </div>
         <Link 
           to="/reseller/add-funds" 
-          className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-white text-black font-semibold hover:bg-gray-100 transition-all active:scale-95 shadow-lg shadow-white/10"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 lg:px-6 lg:py-3 rounded-xl bg-white text-black font-semibold hover:bg-gray-100 transition-all active:scale-95 shadow-lg shadow-white/10 w-full sm:w-auto"
         >
           <DollarSign className="h-5 w-5" />
           Add Funds
@@ -62,31 +62,31 @@ export const ResellerDashboard = () => {
 
       {/* Stats Grid */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-36 bg-white/5 animate-pulse rounded-3xl border border-white/5" />
+            <div key={i} className={`h-28 lg:h-36 bg-white/5 animate-pulse rounded-2xl lg:rounded-3xl border border-white/5 ${i === 1 ? 'col-span-2 lg:col-span-1' : ''}`} />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
           {stats.map((stat, i) => (
             <motion.div
               key={stat.name}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1, duration: 0.4, ease: "easeOut" }}
-              className="bg-[#111111] border border-white/5 rounded-3xl p-6 relative overflow-hidden group hover:border-white/10 transition-all hover:shadow-2xl hover:-translate-y-1"
+              className={`bg-[#111111] border border-white/5 rounded-2xl lg:rounded-3xl p-4 lg:p-6 relative overflow-hidden group hover:border-white/10 transition-all hover:shadow-2xl hover:-translate-y-1 ${i === 0 ? 'col-span-2 lg:col-span-1' : ''}`}
             >
               <div className="absolute -top-6 -right-6 p-4 opacity-10 group-hover:opacity-20 group-hover:scale-110 transition-all duration-500 ease-out">
-                <stat.icon className={`h-32 w-32 ${stat.color} blur-2xl`} />
+                <stat.icon className={`h-24 w-24 lg:h-32 lg:w-32 ${stat.color} blur-xl lg:blur-2xl`} />
               </div>
               <div className="relative z-10 flex flex-col h-full justify-between">
-                <div className={`w-12 h-12 rounded-2xl ${stat.bg} flex items-center justify-center mb-4`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                <div className={`w-10 h-10 lg:w-12 lg:h-12 rounded-xl lg:rounded-2xl ${stat.bg} flex items-center justify-center mb-3 lg:mb-4`}>
+                  <stat.icon className={`h-5 w-5 lg:h-6 lg:w-6 ${stat.color}`} />
                 </div>
                 <div>
-                  <h3 className="text-3xl font-bold text-white mb-1 tracking-tight">{stat.value}</h3>
-                  <p className="text-sm font-medium text-gray-500">{stat.name}</p>
+                  <h3 className="text-2xl lg:text-3xl font-bold text-white mb-0.5 lg:mb-1 tracking-tight">{stat.value}</h3>
+                  <p className="text-xs lg:text-sm font-medium text-gray-500 line-clamp-1">{stat.name}</p>
                 </div>
               </div>
             </motion.div>
@@ -100,7 +100,7 @@ export const ResellerDashboard = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, duration: 0.5 }}
-          className="lg:col-span-2 bg-[#111111] border border-white/5 rounded-3xl p-8"
+          className="lg:col-span-2 bg-[#111111] border border-white/5 rounded-3xl p-5 lg:p-8"
         >
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold text-white tracking-tight">Recent Transactions</h2>

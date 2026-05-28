@@ -83,17 +83,17 @@ export const MyUsers = () => {
         </div>
       </div>
 
-      <div className="bg-[#111111] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
+      <div className="bg-[#111111] border border-white/5 rounded-2xl lg:rounded-3xl overflow-hidden shadow-2xl">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-xs uppercase tracking-widest text-gray-500">
-                <th className="p-5 font-bold">Customer Email</th>
-                <th className="p-5 font-bold">Products</th>
-                <th className="p-5 font-bold">Duration</th>
-                <th className="p-5 font-bold">Status</th>
-                <th className="p-5 font-bold">Expires</th>
-                <th className="p-5 font-bold text-right">Actions</th>
+                <th className="p-4 lg:p-5 font-bold">Customer Email</th>
+                <th className="p-4 lg:p-5 font-bold">Products</th>
+                <th className="p-4 lg:p-5 font-bold">Duration</th>
+                <th className="p-4 lg:p-5 font-bold">Status</th>
+                <th className="p-4 lg:p-5 font-bold">Expires</th>
+                <th className="p-4 lg:p-5 font-bold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-sm">
@@ -107,7 +107,7 @@ export const MyUsers = () => {
                   </tr>
                 ) : filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-16 text-center text-gray-500">
+                    <td colSpan={6} className="p-10 lg:p-16 text-center text-gray-500">
                       <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Users className="h-6 w-6 text-gray-500" />
                       </div>
@@ -125,30 +125,30 @@ export const MyUsers = () => {
                       key={user.id}
                       className="hover:bg-white/[0.02] transition-colors group"
                     >
-                      <td className="p-5">
+                      <td className="p-4 lg:p-5">
                         <div className="font-semibold text-gray-200 group-hover:text-white transition-colors">{user.email}</div>
                       </td>
-                      <td className="p-5 text-gray-400 font-medium">
+                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
                         {user.products.join(', ')}
                       </td>
-                      <td className="p-5 text-gray-400 font-medium">
+                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
                         {user.durationMonths} {user.durationMonths.endsWith('d') ? '' : 'Month(s)'}
                       </td>
-                      <td className="p-5">
+                      <td className="p-4 lg:p-5">
                         {getStatusBadge(user.status, user.activatedAt)}
                       </td>
-                      <td className="p-5 text-gray-400 font-medium">
+                      <td className="p-4 lg:p-5 text-gray-400 font-medium">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 opacity-50" />
                           {new Date(user.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </div>
                       </td>
-                      <td className="p-5 text-right">
+                      <td className="p-4 lg:p-5 text-right">
                         {user.status === 'active' && (
                           <button
                             onClick={() => handleDelete(user.id)}
                             disabled={deletingId === user.id}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-rose-400 font-semibold hover:text-white hover:bg-rose-500 transition-all disabled:opacity-50 active:scale-95"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 lg:px-4 lg:py-2 rounded-xl text-rose-400 font-semibold hover:text-white hover:bg-rose-500 transition-all disabled:opacity-50 active:scale-95 text-xs lg:text-sm"
                           >
                             {deletingId === user.id ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
