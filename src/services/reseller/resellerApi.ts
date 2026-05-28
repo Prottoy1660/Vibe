@@ -152,8 +152,8 @@ export const ResellerApi = {
       throw new Error(`Server error: invalid response format.`);
     }
 
-    if (!apiRes.ok || !apiData.success) {
-       throw new Error(apiData.error || 'Failed to activate user on Adobe API');
+    if (!apiRes.ok || apiData.success === false) {
+       throw new Error(apiData.error || apiData.message || apiData.msg || 'Failed to activate user on Adobe API');
     }
 
     const durationDays = duration.endsWith('d') ? parseInt(duration) : parseInt(duration) * 30;
@@ -341,8 +341,8 @@ export const ResellerApi = {
       throw new Error(`Server error: invalid response format.`);
     }
 
-    if (!apiRes.ok || !apiData.success) {
-      throw new Error(apiData.error || 'Failed to deactivate user on Adobe API');
+    if (!apiRes.ok || apiData.success === false) {
+      throw new Error(apiData.error || apiData.message || apiData.msg || 'Failed to deactivate user on Adobe API');
     }
 
     let newStatus = 'expired';
