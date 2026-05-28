@@ -340,19 +340,46 @@ export const ResellerApi = {
       throw new Error('No active users found for the provided emails.');
     }
 
+    // 2. Fetch packages to calculate costs
+    const { data: packages } = await supabase.from('reseller_packages').select('*');
+    const packageMap = new Map((packages || []).map(p => [p.value, p.cost]));
+
+    // Get current balance
+    const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+    let currentBalance = profile?.wallet_balance || 0;
+
+    const now = new Date();
+
     // Call external API for each record
     const successfulIds: string[] = [];
     const failedEmails: string[] = [];
 
+    let totalRefund = 0;
+    let refundedCount = 0;
+    let expiredCount = 0;
+
     for (const record of accessRecords) {
       try {
+        const activatedAt = new Date(record.activated_at);
+        const hoursDiff = (now.getTime() - activatedAt.getTime()) / (1000 * 60 * 60);
+        
+        const cost = packageMap.get(record.duration_months) || 
+          (record.duration_months.endsWith('d') ? parseInt(record.duration_months) * 0.5 : parseInt(record.duration_months) * 5.0);
+
         const apiRes = await fetch('/api/reseller/adobe/deactivate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${session.access_token}`
           },
-          body: JSON.stringify({ email: record.customer_email })
+          body: JSON.stringify({ 
+            email: record.customer_email,
+            recordId: record.id,
+            cost,
+            hoursDiff,
+            currentBalance,
+            status: record.status
+          })
         });
         
         const text = await apiRes.text();
@@ -363,6 +390,14 @@ export const ResellerApi = {
 
         if (apiRes.ok && (apiData as any).success) {
           successfulIds.push(record.id);
+          // If refunded, optimistic balance update for next iteration
+          if (hoursDiff <= 24 && record.status === 'active') {
+            currentBalance += cost;
+            totalRefund += cost;
+            refundedCount++;
+          } else {
+            expiredCount++;
+          }
         } else {
           failedEmails.push(record.customer_email);
         }
@@ -375,69 +410,16 @@ export const ResellerApi = {
       throw new Error('Failed to deactivate any users via Adobe API.');
     }
 
-    // Filter to only successful records
-    const successfulRecords = accessRecords.filter(r => successfulIds.includes(r.id));
-
-    // 2. Fetch packages to calculate costs
-    const { data: packages } = await supabase.from('reseller_packages').select('*');
-    const packageMap = new Map((packages || []).map(p => [p.value, p.cost]));
-
-    let totalRefund = 0;
-    const refundedIds: string[] = [];
-    const expiredIds: string[] = [];
-
-    const now = new Date();
-
-    successfulRecords.forEach(record => {
-      const activatedAt = new Date(record.activated_at);
-      const hoursDiff = (now.getTime() - activatedAt.getTime()) / (1000 * 60 * 60);
-      
-      if (hoursDiff <= 24) {
-        const cost = packageMap.get(record.duration_months) || 
-          (record.duration_months.endsWith('d') ? parseInt(record.duration_months) * 0.5 : parseInt(record.duration_months) * 5.0);
-        totalRefund += cost;
-        refundedIds.push(record.id);
-      } else {
-        expiredIds.push(record.id);
-      }
-    });
-
-    // 3. Update balance if there is a refund
-    let currentBalance = 0;
-    const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
-    currentBalance = profile?.wallet_balance || 0;
-
-    if (totalRefund > 0) {
-      currentBalance += totalRefund;
-      await supabase.from('users').update({ wallet_balance: currentBalance }).eq('id', user.id);
-    }
-
-    // 4. Update statuses
-    if (refundedIds.length > 0) {
-      await supabase.from('reseller_user_access').update({ status: 'refunded' }).in('id', refundedIds);
-    }
-    if (expiredIds.length > 0) {
-      await supabase.from('reseller_user_access').update({ status: 'expired' }).in('id', expiredIds);
-    }
-
-    // 5. Create transaction record
-    await supabase.from('reseller_transactions').insert({
-      reseller_id: user.id,
-      amount: totalRefund,
-      type: totalRefund > 0 ? 'refund' : 'system',
-      status: 'completed',
-      description: `Bulk remove: ${successfulRecords.length} users (${refundedIds.length} refunded, ${expiredIds.length} expired)`,
-      balance_after: currentBalance
-    });
-
+    // Backend handles the balance deduction and database inserts per user!
+    
     if (failedEmails.length > 0) {
-      throw new Error(`Removed ${successfulRecords.length} users. Failed: ${failedEmails.length} (${failedEmails.join(', ')}). Only successful removals were processed.`);
+      throw new Error(`Removed ${successfulIds.length} users. Failed: ${failedEmails.length} (${failedEmails.join(', ')}). Only successful removals were processed.`);
     }
 
     return {
-      processedCount: successfulRecords.length,
-      refundedCount: refundedIds.length,
-      expiredCount: expiredIds.length,
+      processedCount: successfulIds.length,
+      refundedCount,
+      expiredCount,
       totalRefund
     };
   },
