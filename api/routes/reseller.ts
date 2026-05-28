@@ -81,12 +81,22 @@ router.post('/adobe/activate', async (req, res) => {
       body: JSON.stringify(body)
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.error('Adobe API returned non-JSON:', text);
+      return res.status(response.status).json({
+        success: false,
+        error: `Adobe API Error: ${response.statusText}`
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({ 
         success: false, 
-        error: data.error || 'Failed to activate user on Adobe API' 
+        error: data.error || data.message || 'Failed to activate user on Adobe API' 
       });
     }
 
@@ -141,12 +151,22 @@ router.post('/adobe/deactivate', async (req, res) => {
       body: JSON.stringify(body)
     });
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.error('Adobe API returned non-JSON:', text);
+      return res.status(response.status).json({
+        success: false,
+        error: `Adobe API Error: ${response.statusText}`
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({ 
         success: false, 
-        error: data.error || 'Failed to deactivate user on Adobe API' 
+        error: data.error || data.message || 'Failed to deactivate user on Adobe API' 
       });
     }
 

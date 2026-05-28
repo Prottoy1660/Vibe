@@ -143,7 +143,15 @@ export const ResellerApi = {
       body: JSON.stringify({ email, durationMonths: duration })
     });
 
-    const apiData = await apiRes.json();
+    const text = await apiRes.text();
+    let apiData;
+    try {
+      apiData = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.error('Raw response from backend:', text);
+      throw new Error(`Server error: invalid response format.`);
+    }
+
     if (!apiRes.ok || !apiData.success) {
        throw new Error(apiData.error || 'Failed to activate user on Adobe API');
     }
@@ -223,8 +231,16 @@ export const ResellerApi = {
           },
           body: JSON.stringify({ email, durationMonths: duration })
         });
-        const apiData = await apiRes.json();
-        if (apiRes.ok && apiData.success) {
+        
+        const text = await apiRes.text();
+        let apiData = {};
+        try {
+          if (text) apiData = JSON.parse(text);
+        } catch (e) {
+          // ignore parsing errors here, it will fail the check below
+        }
+
+        if (apiRes.ok && (apiData as any).success) {
           successfulEmails.push(email);
         } else {
           failedEmails.push(email);
@@ -316,7 +332,15 @@ export const ResellerApi = {
       body: JSON.stringify({ email: accessRecord.customer_email })
     });
 
-    const apiData = await apiRes.json();
+    const text = await apiRes.text();
+    let apiData;
+    try {
+      apiData = text ? JSON.parse(text) : {};
+    } catch (e) {
+      console.error('Raw response from backend:', text);
+      throw new Error(`Server error: invalid response format.`);
+    }
+
     if (!apiRes.ok || !apiData.success) {
       throw new Error(apiData.error || 'Failed to deactivate user on Adobe API');
     }
@@ -396,8 +420,14 @@ export const ResellerApi = {
           },
           body: JSON.stringify({ email: record.customer_email })
         });
-        const apiData = await apiRes.json();
-        if (apiRes.ok && apiData.success) {
+        
+        const text = await apiRes.text();
+        let apiData = {};
+        try {
+          if (text) apiData = JSON.parse(text);
+        } catch (e) {}
+
+        if (apiRes.ok && (apiData as any).success) {
           successfulIds.push(record.id);
         } else {
           failedEmails.push(record.customer_email);
