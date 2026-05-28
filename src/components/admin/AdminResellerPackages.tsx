@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, Loader2, Save, X } from 'lucide-react';
 import { ResellerApi, ResellerPackage } from '../../services/reseller/resellerApi';
+import { toast } from '../../lib/toast';
 
 export const AdminResellerPackages = () => {
   const [packages, setPackages] = useState<ResellerPackage[]>([]);
@@ -38,8 +39,9 @@ export const AdminResellerPackages = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.label || !formData.value || formData.cost <= 0) {
-      alert('Please fill all fields correctly');
+    console.log('handleSave called with:', { formData, isAdding, editingId });
+    if (!formData.label || !formData.value || isNaN(formData.cost) || formData.cost <= 0) {
+      toast.error('Please fill all fields correctly');
       return;
     }
 
@@ -47,14 +49,17 @@ export const AdminResellerPackages = () => {
       setLoading(true);
       if (isAdding) {
         await ResellerApi.adminCreatePackage(formData);
+        toast.success('Package added successfully');
       } else if (editingId) {
-        await ResellerApi.adminUpdatePackage(editingId, formData);
+        const result = await ResellerApi.adminUpdatePackage(editingId, formData);
+        toast.success('Package updated successfully');
       }
       setIsAdding(false);
       setEditingId(null);
       await fetchPackages();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Save error:', err);
+      toast.error(err.message || 'Failed to save package');
     } finally {
       setLoading(false);
     }
@@ -65,9 +70,11 @@ export const AdminResellerPackages = () => {
     try {
       setLoading(true);
       await ResellerApi.adminDeletePackage(id);
+      toast.success('Package deleted successfully');
       await fetchPackages();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      toast.error(err.message || 'Failed to delete package');
       setLoading(false);
     }
   };
@@ -138,8 +145,11 @@ export const AdminResellerPackages = () => {
                     type="number"
                     step="0.01"
                     min="0"
-                    value={formData.cost}
-                    onChange={e => setFormData({ ...formData, cost: parseFloat(e.target.value) })}
+                    value={isNaN(formData.cost) ? '' : formData.cost}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, cost: val === '' ? NaN : parseFloat(val) });
+                    }}
                     className="w-full px-3 py-2 bg-white dark:bg-[#0a0a0b] border border-gray-300 dark:border-[#26262d] rounded-lg focus:ring-2 focus:ring-indigo-500"
                   />
                 </td>
@@ -180,8 +190,11 @@ export const AdminResellerPackages = () => {
                       type="number"
                       step="0.01"
                       min="0"
-                      value={formData.cost}
-                      onChange={e => setFormData({ ...formData, cost: parseFloat(e.target.value) })}
+                      value={isNaN(formData.cost) ? '' : formData.cost}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setFormData({ ...formData, cost: val === '' ? NaN : parseFloat(val) });
+                      }}
                       className="w-full px-3 py-2 bg-white dark:bg-[#0a0a0b] border border-gray-300 dark:border-[#26262d] rounded-lg focus:ring-2 focus:ring-indigo-500"
                     />
                   </td>
