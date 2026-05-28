@@ -60,16 +60,19 @@ export const ResellerLayout = () => {
       <motion.aside 
         initial={{ x: -250 }}
         animate={{ x: 0 }}
-        className="w-64 border-r border-white/5 bg-[#0a0a0a]/80 backdrop-blur-xl flex flex-col z-10"
+        className="w-72 border-r border-white/5 bg-[#080808]/90 backdrop-blur-2xl flex flex-col z-10"
       >
-        <div className="h-20 flex items-center px-6 border-b border-white/5">
-          <Hexagon className="h-8 w-8 text-indigo-500 fill-indigo-500/20 mr-3" />
-          <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-500">
-            Super Reseller
+        <div className="h-24 flex items-center px-8 border-b border-white/5">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-4 shadow-lg shadow-indigo-500/20">
+            <Hexagon className="h-6 w-6 text-white" />
+          </div>
+          <span className="text-2xl font-black text-white tracking-tight">
+            Reseller<span className="text-indigo-400">Pro</span>
           </span>
         </div>
         
-        <nav className="flex-1 py-6 px-4 space-y-2">
+        <nav className="flex-1 py-8 px-4 space-y-1.5 overflow-y-auto">
+          <div className="text-xs font-bold text-gray-500 uppercase tracking-widest px-4 mb-4 mt-2">Menu</div>
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             const Icon = item.icon;
@@ -79,46 +82,46 @@ export const ResellerLayout = () => {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) => `
-                  flex items-center px-4 py-3 rounded-xl transition-all duration-300 group relative overflow-hidden
-                  ${isActive ? 'text-white bg-white/5' : 'text-gray-400 hover:text-white hover:bg-white/[0.02]'}
+                  flex items-center px-4 py-3.5 rounded-2xl transition-all duration-200 group relative
+                  ${isActive ? 'text-white bg-indigo-500/10' : 'text-gray-400 hover:text-white hover:bg-white/5'}
                 `}
               >
                 {isActive && (
                   <motion.div 
                     layoutId="activeTab"
-                    className="absolute inset-0 bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500"
+                    className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-indigo-500 rounded-r-full"
                   />
                 )}
-                <Icon className={`h-5 w-5 mr-3 transition-transform duration-300 ${isActive ? 'scale-110 text-indigo-400' : 'group-hover:scale-110'}`} />
-                <span className="font-medium relative z-10">{item.name}</span>
+                <Icon className={`h-5 w-5 mr-3.5 transition-colors ${isActive ? 'text-indigo-400' : 'group-hover:text-gray-300'}`} />
+                <span className="font-semibold relative z-10">{item.name}</span>
               </NavLink>
             );
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/5">
+        <div className="p-6 border-t border-white/5">
           <button
             onClick={handleLogout}
-            className="flex items-center w-full px-4 py-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-300"
+            className="flex items-center w-full px-4 py-3 rounded-2xl text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all duration-200 font-semibold"
           >
             <LogOut className="h-5 w-5 mr-3" />
-            <span className="font-medium">Sign Out</span>
+            <span>Sign Out</span>
           </button>
         </div>
       </motion.aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-screen z-10 relative">
-        <header className="h-20 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-md flex items-center justify-end px-8 sticky top-0 z-20">
+        <header className="h-24 border-b border-white/5 bg-transparent flex items-center justify-end px-10 sticky top-0 z-20 backdrop-blur-sm">
           <button 
             onClick={() => navigate('/reseller/profile')}
-            className="flex items-center gap-4 hover:bg-white/5 p-2 pr-4 rounded-full transition-colors cursor-pointer group"
+            className="flex items-center gap-4 hover:bg-white/[0.03] p-2 pr-4 rounded-full transition-all cursor-pointer group border border-transparent hover:border-white/5"
           >
-            <div className="text-right mr-2">
-              <div className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors">{userName}</div>
-              <div className="text-xs text-gray-500 group-hover:text-gray-400 transition-colors">Premium Account</div>
+            <div className="text-right mr-1">
+              <div className="text-sm font-bold text-gray-200 group-hover:text-white transition-colors">{userName}</div>
+              <div className="text-xs font-medium text-indigo-400/80 group-hover:text-indigo-400 transition-colors">Premium Reseller</div>
             </div>
-            <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 uppercase ring-2 ring-transparent group-hover:ring-indigo-500/50 transition-all">
+            <div className="h-11 w-11 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/20 uppercase ring-2 ring-transparent group-hover:ring-indigo-500/30 transition-all">
               {avatarUrl ? (
                 <img src={avatarUrl} alt={userName} className="h-full w-full object-cover" />
               ) : (
@@ -128,7 +131,7 @@ export const ResellerLayout = () => {
           </button>
         </header>
         
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-auto p-10 pt-6">
           <div className="max-w-6xl mx-auto">
             <Outlet />
           </div>

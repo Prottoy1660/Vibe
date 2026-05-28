@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { revokeAdobeCloudAccess } from '../lib/adobeApi.js';
 
 const router = express.Router();
 
@@ -163,8 +164,7 @@ router.post('/adobe/activate', async (req, res) => {
 
 /**
  * POST /api/reseller/adobe/deactivate
- * Remove a user via Adobe Reseller API
- * (Assuming the endpoint is /remove-user or /delete-user based on standard reseller API practices)
+ * Remove a reseller customer (Adobe API when available, always updates local records).
  */
 router.post('/adobe/deactivate', async (req, res) => {
   try {
@@ -194,38 +194,23 @@ router.post('/adobe/deactivate', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing email' });
     }
 
-    // The user's documentation didn't explicitly provide the remove-user endpoint, 
-    // but we'll assume it's `/remove-user` and takes `{ email: "user@example.com" }`
-    const body = { email };
-    const headers = getAdobeApiHeaders(body);
-
-    const response = await fetch(`${ADOBE_BASE_URL}/remove-user`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body)
-    });
-
-    const text = await response.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch (e) {
-      console.error('Adobe API returned non-JSON:', text);
-      return res.status(response.status).json({
-        success: false,
-        error: `Adobe API Error: ${response.status} ${response.statusText}`
-      });
+    const adobe = await revokeAdobeCloudAccess(email);
+    if (!adobe.success) {
+      return res.status(400).json({ success: false, error: adobe.error || 'Failed to deactivate user on Adobe API' });
     }
 
-    if (!response.ok || data.success === false) {
-      return res.status(response.status === 200 ? 400 : response.status).json({ 
-        success: false, 
-        error: data.error || data.message || data.msg || 'Failed to deactivate user on Adobe API' 
-      });
-    }
-
-    // Secure database updates if recordId is provided
     if (recordId) {
+      const { data: accessRow, error: accessError } = await supabase
+        .from('reseller_user_access')
+        .select('id')
+        .eq('id', recordId)
+        .eq('reseller_id', user.id)
+        .single();
+
+      if (accessError || !accessRow) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+      }
+
       let newStatus = 'expired';
       let finalBalance = currentBalance || 0;
       
@@ -233,10 +218,8 @@ router.post('/adobe/deactivate', async (req, res) => {
         newStatus = 'refunded';
         finalBalance += (cost || 0);
 
-        // Update balance
         await supabase.from('users').update({ wallet_balance: finalBalance }).eq('id', user.id);
 
-        // Record refund transaction
         await supabase.from('reseller_transactions').insert({
           reseller_id: user.id,
           amount: cost || 0,
@@ -246,7 +229,6 @@ router.post('/adobe/deactivate', async (req, res) => {
           balance_after: finalBalance
         });
       } else {
-        // Record system deduct transaction
         await supabase.from('reseller_transactions').insert({
           reseller_id: user.id,
           amount: 0,
@@ -257,14 +239,20 @@ router.post('/adobe/deactivate', async (req, res) => {
         });
       }
 
-      // Update access record
-      await supabase.from('reseller_user_access').update({ status: newStatus }).eq('id', recordId);
+      await supabase
+        .from('reseller_user_access')
+        .update({ status: newStatus })
+        .eq('id', recordId)
+        .eq('reseller_id', user.id);
     }
 
     return res.status(200).json({
       success: true,
-      message: 'User deactivated successfully',
-      data
+      message: adobe.alreadyGone
+        ? 'User was already removed from Adobe; your panel has been updated.'
+        : 'User deactivated and removed from Adobe successfully',
+      adobeAlreadyGone: !!adobe.alreadyGone,
+      data: adobe.data,
     });
   } catch (error: any) {
     console.error('Adobe Deactivate Error:', error);
