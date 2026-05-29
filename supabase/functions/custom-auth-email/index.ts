@@ -16,7 +16,7 @@ serve(async (req) => {
     const brandName = isReseller ? 'Super Reseller' : 'VibeAccess';
     const logoUrl = isReseller 
       ? 'https://superreseller.shop/super.png' 
-      : 'https://vibeaccessbd.com/favicon.png';
+      : 'https://vibeaccess.space/favicon.png';
 
     let subject = 'Confirm your email';
     let htmlContent = '';
