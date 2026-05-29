@@ -8,15 +8,23 @@ serve(async (req) => {
     const payload = await req.json();
     const { user, email_data } = payload;
 
-    // Check if the user is a reseller (from user_metadata) or a normal VibeAccess user
+    // Check if the user is a reseller (from user_metadata)
     const isReseller = user.user_metadata?.role === 'reseller';
 
-    // Set the appropriate brand details
-    const senderEmail = isReseller ? 'noreply@superreseller.shop' : 'noreply@vibeaccess.space';
-    const brandName = isReseller ? 'Super Reseller' : 'VibeAccess';
-    const logoUrl = isReseller 
-      ? 'https://superreseller.shop/super.png' 
-      : 'https://vibeaccess.space/favicon.png';
+    // If the user is NOT a reseller (i.e., normal VibeAccess user),
+    // we bypass Resend and let Supabase handle it via its default Namecheap SMTP.
+    if (!isReseller) {
+      // By returning an empty object or not calling Resend, Supabase's native SMTP
+      // (Namecheap) will automatically take over and send the default template.
+      return new Response(JSON.stringify({ message: 'Bypassed Resend for VibeAccess user. Falling back to native SMTP.' }), { 
+        headers: { "Content-Type": "application/json" } 
+      });
+    }
+
+    // Set the appropriate brand details ONLY for Super Reseller
+    const senderEmail = 'noreply@superreseller.shop';
+    const brandName = 'Super Reseller';
+    const logoUrl = 'https://superreseller.shop/super.png';
 
     let subject = 'Confirm your email';
     let htmlContent = '';
