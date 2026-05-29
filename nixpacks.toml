@@ -1,6 +1,12 @@
-# Force Nixpacks to treat this as a Node.js app (not a static site).
-# Without this, Nixpacks detects Vite and serves via Nginx,
-# which returns 405 for POST /api/* requests.
+# Force Node.js — supabase/functions/*.ts imports deno.land and would otherwise
+# trigger the Deno provider (build image has no npm).
+providers = ["node"]
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.install]
+cmds = ["npm ci"]
 
 [phases.build]
 cmds = ["npm run build"]

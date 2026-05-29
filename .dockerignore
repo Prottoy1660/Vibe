@@ -1,0 +1,10 @@
+.git
+node_modules
+dist
+.env
+.env.*
+src-tauri
+supabase/functions
+*.md
+.cursor
+.vscode
