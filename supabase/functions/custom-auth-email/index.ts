@@ -12,7 +12,7 @@ serve(async (req) => {
     const isReseller = user.user_metadata?.role === 'reseller';
 
     // Set the appropriate brand details
-    const senderEmail = isReseller ? 'support@superreseller.shop' : 'support@vibeaccessbd.com';
+    const senderEmail = isReseller ? 'noreply@superreseller.shop' : 'noreply@vibeaccess.space';
     const brandName = isReseller ? 'Super Reseller' : 'VibeAccess';
     const logoUrl = isReseller 
       ? 'https://superreseller.shop/super.png' 
