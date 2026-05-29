@@ -81,8 +81,8 @@ export const ResellerLayout = () => {
       >
         <div className="h-20 flex items-center px-6 border-b border-white/5 shrink-0 justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-lg">
-              <Hexagon className="h-5 w-5 text-black" />
+            <div className="w-8 h-8 flex items-center justify-center overflow-hidden">
+              <img src="/super.png" alt="Super Reseller" className="w-full h-full object-contain drop-shadow-xl" />
             </div>
             <span className="text-xl font-bold text-white tracking-tight">
               Super<span className="text-gray-500 font-medium">Reseller</span>

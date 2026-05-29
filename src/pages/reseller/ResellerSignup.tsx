@@ -77,8 +77,8 @@ export const ResellerSignup = () => {
           animate={{ opacity: 1, y: 0 }}
           className="flex justify-center"
         >
-          <div className="h-16 w-16 bg-white rounded-2xl flex items-center justify-center shadow-2xl">
-            <Hexagon className="h-10 w-10 text-black fill-black" />
+          <div className="h-20 w-20 flex items-center justify-center">
+            <img src="/super.png" alt="Super Reseller" className="h-full w-full object-contain drop-shadow-2xl" />
           </div>
         </motion.div>
         <motion.h2 
