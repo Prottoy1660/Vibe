@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import {
+  extendAdobeCloudAccess,
   fetchAdobePanelUsers,
   getAdobeOrgMap,
   getAdobeOrgSnapshotByEmail,
@@ -416,47 +417,30 @@ router.post('/adobe/extend', async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found in your account. Please activate them first.' });
     }
 
-    // 1. Attempt to call Adobe API (try add-user to renew)
-    const body = {
-      email,
-      durationMonths: durationMonths.toString()
-    };
-    const headers = getAdobeApiHeaders(body);
-    
-    // We try to call Adobe API. If it fails, we still process locally or return error based on response
-    try {
-      const response = await fetch(`${ADOBE_BASE_URL}/add-user`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body)
+    const adobe = await extendAdobeCloudAccess(email, durationMonths.toString());
+    if (!adobe.success) {
+      return res.status(400).json({
+        success: false,
+        error: adobe.error || 'Failed to extend user on Adobe credits-pool',
       });
-      // We'll ignore the adobe response and just trust it if it succeeds, or log if fails.
-      // Often "add-user" works for extending as well.
-    } catch (e) {
-      console.error('Adobe API Extension warning:', e);
-      // Fall through to update local DB anyway, so the reseller panel is accurate.
     }
 
-    // 2. Update Database
     const newBalance = balance - costNum;
-    
-    // Calculate new expiration
+
     const now = new Date();
     const currentExpiry = new Date(existingUser.expires_at);
-    
-    // If already expired, start from now. If active, add to existing expiry.
     const baseDate = currentExpiry > now ? currentExpiry : now;
-    const newExpiresAt = new Date(baseDate.getTime() + daysNum * 24 * 60 * 60 * 1000);
+    const fallbackExpiresAt = new Date(baseDate.getTime() + daysNum * 24 * 60 * 60 * 1000);
+    const newExpiresAt = adobe.newExpiresAt ? new Date(adobe.newExpiresAt) : fallbackExpiresAt;
 
-    // Deduct balance
     await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
 
-    // Update user access record
     await supabase.from('reseller_user_access').update({
       duration_months: durationMonths.toString(),
       duration_days: daysNum,
       status: 'active',
-      expires_at: newExpiresAt.toISOString()
+      expires_at: newExpiresAt.toISOString(),
+      adobe_synced_at: new Date().toISOString(),
     }).eq('id', existingUser.id);
 
     // Record transaction
@@ -471,8 +455,8 @@ router.post('/adobe/extend', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'User extended successfully',
-      data: { expires_at: newExpiresAt.toISOString() }
+      message: 'User extended successfully on Adobe',
+      data: { expires_at: newExpiresAt.toISOString(), adobe: adobe.data },
     });
   } catch (error: any) {
     console.error('Adobe Extend Error:', error);

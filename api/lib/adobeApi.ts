@@ -341,3 +341,67 @@ export async function revokeAdobeCloudAccess(
     data: out.data,
   };
 }
+
+/**
+ * Extend Adobe credits-pool access via the reseller panel session API (`POST /extend-user`).
+ * `extensionMonths` accepts panel values such as `1`, `"1"`, or `"7d"`.
+ */
+export async function extendAdobeCloudAccess(
+  email: string,
+  extensionMonths: string | number,
+): Promise<{ success: boolean; error?: string; newExpiresAt?: string; data?: any }> {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return { success: false, error: 'Invalid email for Adobe extension' };
+  }
+
+  const extensionValue = String(extensionMonths ?? '').trim();
+  if (!extensionValue) {
+    return { success: false, error: 'Extension duration is required' };
+  }
+
+  const extendOnce = async (token: string) => {
+    const res = await fetch(`${PANEL_ROOT}/extend-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ email: normalizedEmail, extensionMonths: extensionValue }),
+      signal: AbortSignal.timeout(25000),
+    });
+    const text = await res.text();
+    let data: any;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { error: `Invalid non-JSON response (${res.status})`, raw: text?.slice(0, 300) };
+    }
+    return { status: res.status, data };
+  };
+
+  let auth = await getPanelToken();
+  if (!auth.token) return { success: false, error: auth.error };
+
+  let out = await extendOnce(auth.token);
+
+  if (out.status === 401) {
+    auth = await getPanelToken(true);
+    if (!auth.token) return { success: false, error: auth.error };
+    out = await extendOnce(auth.token);
+  }
+
+  if (out.status === 200 && out.data?.success) {
+    return {
+      success: true,
+      newExpiresAt: out.data?.newExpiresAt ? String(out.data.newExpiresAt) : undefined,
+      data: out.data,
+    };
+  }
+
+  return {
+    success: false,
+    error: out.data?.error || out.data?.message || `Adobe extension failed (HTTP ${out.status})`,
+    data: out.data,
+  };
+}
