@@ -33,9 +33,20 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Dynamically update the document title based on the domain
+      // Dynamically update the document title and favicon based on the domain
+      const changeFavicon = (src) => {
+        const link = document.createElement('link');
+        const oldLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
+        oldLinks.forEach(e => e.parentNode.removeChild(e));
+        link.id = 'dynamic-favicon';
+        link.rel = 'icon';
+        link.href = src;
+        document.head.appendChild(link);
+      };
+
       if (window.location.hostname === 'superreseller.shop' || window.location.hostname.includes('superreseller')) {
         document.title = 'Super Reseller - Premium Dashboard';
+        changeFavicon('/super-reseller-favicon.svg');
       } else {
         document.title = 'Super Reseller - Digital Marketplace';
       }
