@@ -3,6 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Loader2, RefreshCw, Save, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getJsonWithFallback, postJsonWithFallback } from '../../lib/apiClient';
+import { paginateItems, TablePagination } from '../TablePagination';
 
 type SmsLogRow = {
   id: string;
@@ -28,6 +29,8 @@ export const AdminSmsHistory: React.FC = () => {
   const [currency, setCurrency] = useState('BDT');
   const [savingPricing, setSavingPricing] = useState(false);
   const [pricingMsg, setPricingMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const load = async (showLoader: boolean) => {
     if (showLoader) setLoading(true);
@@ -88,6 +91,15 @@ export const AdminSmsHistory: React.FC = () => {
       );
     });
   }, [rows, search]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, pageSize]);
+
+  const paginatedRows = useMemo(
+    () => paginateItems(filtered, page, pageSize),
+    [filtered, page, pageSize],
+  );
 
   const numericCost = useMemo(() => {
     const n = Number(costPerSms);
@@ -204,7 +216,7 @@ export const AdminSmsHistory: React.FC = () => {
 
         <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-gray-50/50 dark:bg-white/[0.02]">
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            Showing {filtered.length} of {rows.length}
+            {filtered.length} SMS record{filtered.length === 1 ? '' : 's'} loaded
           </span>
           <div className="relative w-full sm:w-96">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -242,7 +254,7 @@ export const AdminSmsHistory: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {filtered.map((r) => {
+                {paginatedRows.map((r) => {
                   const admin = Array.isArray(r.admins) ? r.admins[0] : null;
                   return (
                   <tr key={r.id} className="hover:bg-gray-50/80 dark:hover:bg-white/[0.03]">
@@ -292,6 +304,20 @@ export const AdminSmsHistory: React.FC = () => {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && filtered.length > 0 && (
+          <TablePagination
+            totalItems={filtered.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="SMS"
+            variant="admin"
+          />
         )}
       </div>
     </div>

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Users, Mail, Clock, AlertTriangle, CheckCircle2, XCircle, Search, Filter, ShieldAlert, Zap, ZapOff } from 'lucide-react';
 import { format, isPast, parseISO, differenceInDays } from 'date-fns';
 import { toast } from '../../lib/toast';
 import { addDurationToDate } from '../../lib/durationUtils';
+import { paginateItems, TablePagination } from '../TablePagination';
 
 interface UserEmailRecord {
   id: string;
@@ -45,6 +46,8 @@ export const AdminUserEmails = () => {
   >('All');
   const [activeTab, setActiveTab] = useState<'regular' | 'personal'>('regular');
   const [showCredentials, setShowCredentials] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchData = async () => {
     setLoading(true);
@@ -259,6 +262,20 @@ export const AdminUserEmails = () => {
     
     return matchesSearch && matchesFilter;
   });
+
+  const activeFilteredItems = useMemo(
+    () => (activeTab === 'regular' ? filteredEmails : filteredPersonalSubs),
+    [activeTab, filteredEmails, filteredPersonalSubs],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, filter, activeTab, pageSize]);
+
+  const paginatedActiveItems = useMemo(
+    () => paginateItems(activeFilteredItems, page, pageSize),
+    [activeFilteredItems, page, pageSize],
+  );
 
   const escapeCsv = (value: any) => {
     const s = value === null || value === undefined ? '' : String(value);
@@ -500,7 +517,7 @@ export const AdminUserEmails = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {filteredEmails.map((email) => {
+                {paginatedActiveItems.map((email) => {
                   const isFaded = email.computed_status === 'Replaced' || email.computed_status === 'Revoked';
                   const autoRenew = !!email.orders?.auto_renew;
                   
@@ -592,7 +609,7 @@ export const AdminUserEmails = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-                {filteredPersonalSubs.map((sub) => {
+                {paginatedActiveItems.map((sub) => {
                   const isFaded = sub.computed_status === 'Revoked';
                   const autoRenew = !!sub.auto_renew;
                   
@@ -667,6 +684,20 @@ export const AdminUserEmails = () => {
             </table>
           )}
         </div>
+        {!loading && activeFilteredItems.length > 0 && (
+          <TablePagination
+            totalItems={activeFilteredItems.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="subscriptions"
+            variant="admin"
+          />
+        )}
       </div>
     </div>
   );

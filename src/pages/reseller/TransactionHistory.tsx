@@ -1,11 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { RefreshCw, ArrowUpRight, ArrowDownRight, Info, Loader2, History } from 'lucide-react';
+import { RefreshCw, ArrowUpRight, ArrowDownRight, Loader2, History } from 'lucide-react';
 import { ResellerApi, Transaction } from '../../services/reseller/resellerApi';
+import { paginateItems, TablePagination } from '../../components/reseller/TablePagination';
 
 export const TransactionHistory = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const paginatedTransactions = paginateItems(transactions, page, pageSize);
 
   const fetchTransactions = async () => {
     setLoading(true);
@@ -82,7 +87,7 @@ export const TransactionHistory = () => {
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((tx) => {
+                  paginatedTransactions.map((tx) => {
                     const balanceBefore = tx.balanceAfter !== undefined 
                       ? (tx.type === 'deposit' && tx.status === 'approved' ? tx.balanceAfter - tx.amount : 
                          tx.type === 'deduct' ? tx.balanceAfter - tx.amount /* amount is negative */ :
@@ -139,6 +144,20 @@ export const TransactionHistory = () => {
             </tbody>
           </table>
         </div>
+        {!loading && transactions.length > 0 && (
+          <TablePagination
+            totalItems={transactions.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="transactions"
+            variant="reseller"
+          />
+        )}
       </div>
     </div>
   );

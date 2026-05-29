@@ -22,6 +22,7 @@ import { format } from 'date-fns';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
+import { paginateItems, TablePagination } from '../TablePagination';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { invoiceEligible } from '../../lib/invoiceModel';
 import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
@@ -224,6 +225,8 @@ export const AdminOrders = () => {
   const [opsAssignedAdminId, setOpsAssignedAdminId] = useState('');
   const [opsNote, setOpsNote] = useState('');
   const [opsChecklist, setOpsChecklist] = useState<ManualChecklist>(DEFAULT_MANUAL_CHECKLIST);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchOrders();
@@ -393,6 +396,15 @@ export const AdminOrders = () => {
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => orderMatchesSearch(o, orderSearchQuery));
   }, [orders, orderSearchQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, orderSearchQuery, pageSize]);
+
+  const paginatedOrders = useMemo(
+    () => paginateItems(filteredOrders, page, pageSize),
+    [filteredOrders, page, pageSize],
+  );
 
   const updateOrderStatus = async (id: string, newStatus: string, userId?: string, isPersonal?: boolean) => {
     try {
@@ -955,7 +967,7 @@ export const AdminOrders = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredOrders.map((order) => {
+                {paginatedOrders.map((order) => {
                   const pay = paymentLabel(order.payment_method, order.payment_status);
                   const shortOrderId = order.id.slice(0, 8).toUpperCase();
                   const priority = getPersonalPriority(order, personalEtaMinutes);
@@ -1282,6 +1294,20 @@ export const AdminOrders = () => {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && filteredOrders.length > 0 && (
+          <TablePagination
+            totalItems={filteredOrders.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="orders"
+            variant="admin"
+          />
         )}
       </div>
 

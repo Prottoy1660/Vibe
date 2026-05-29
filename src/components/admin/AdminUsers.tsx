@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Loader2, Users, Shield, ShieldAlert, UserX, UserCheck, Trash2, Eye, Search, RotateCcw, KeyRound, LogIn, Plus } from 'lucide-react';
 import { format } from 'date-fns';
@@ -9,6 +9,7 @@ import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
+import { paginateItems, TablePagination } from '../TablePagination';
 
 interface User {
   id: string;
@@ -40,6 +41,8 @@ export const AdminUsers = () => {
   const [addingFundsUserId, setAddingFundsUserId] = useState<string | null>(null);
   const [fundsAmount, setFundsAmount] = useState<string>('');
   const [isAddingFunds, setIsAddingFunds] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadUserNotes = async (userIds: string[]) => {
     if (!userIds.length) {
@@ -390,6 +393,15 @@ export const AdminUsers = () => {
     return matchesSearch && matchesRole && matchesStatus && matchesSignup;
   });
 
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, roleFilter, statusFilter, signupFilter, pageSize]);
+
+  const paginatedUsers = useMemo(
+    () => paginateItems(filteredUsers, page, pageSize),
+    [filteredUsers, page, pageSize],
+  );
+
   const handleAllDelete = async () => {
     const idsToDelete = filteredUsers.filter((u) => u.role !== 'admin').map((u) => u.id);
     const protectedAdmins = filteredUsers.filter((u) => u.role === 'admin');
@@ -439,8 +451,7 @@ export const AdminUsers = () => {
 
           <div className="flex items-center gap-3">
             <div className="text-xs text-gray-500 dark:text-gray-400">
-              Showing <span className="font-semibold text-gray-900 dark:text-gray-100">{filteredUsers.length}</span> /{' '}
-              {stats.total}
+              {filteredUsers.length} user{filteredUsers.length === 1 ? '' : 's'} match filters · {stats.total} total
             </div>
           </div>
         </div>
@@ -630,7 +641,7 @@ export const AdminUsers = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-white/5">
-            {filteredUsers.map((u) => (
+            {paginatedUsers.map((u) => (
               <tr
                 key={u.id}
                 className={`hover:bg-gray-50/50 dark:hover:bg-[#1c1c21]/50 transition-colors duration-300 ${
@@ -798,6 +809,20 @@ export const AdminUsers = () => {
             )}
           </tbody>
         </table>
+        {!loading && filteredUsers.length > 0 && (
+          <TablePagination
+            totalItems={filteredUsers.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="users"
+            variant="admin"
+          />
+        )}
       </div>
     </div>
   );

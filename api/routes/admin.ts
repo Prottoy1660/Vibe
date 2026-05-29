@@ -3380,4 +3380,350 @@ router.post('/redeem/mark-paid/:orderId', verifyAdmin, async (req, res) => {
   }
 });
 
+type ResellerTxRow = {
+  reseller_id: string;
+  amount: number;
+  type: string;
+  status: string;
+  created_at: string;
+};
+
+type ResellerAccessRow = {
+  reseller_id: string;
+  status: string;
+  expires_at: string;
+  activated_at: string;
+  customer_email: string;
+};
+
+function isCountedDeposit(tx: ResellerTxRow) {
+  return tx.type === 'deposit' && (tx.status === 'approved' || tx.status === 'completed');
+}
+
+function isPendingDeposit(tx: ResellerTxRow) {
+  return tx.type === 'deposit' && tx.status === 'pending';
+}
+
+type ResellerDateRange = 'all' | '30d' | 'month';
+
+function parseResellerDateRange(range: string): { key: ResellerDateRange; from: Date | null; to: Date | null } {
+  const now = new Date();
+  if (range === '30d') {
+    return { key: '30d', from: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), to: now };
+  }
+  if (range === 'month') {
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { key: 'month', from, to: now };
+  }
+  return { key: 'all', from: null, to: null };
+}
+
+function isTxInRange(tx: ResellerTxRow, from: Date | null, to: Date | null) {
+  if (!from && !to) return true;
+  const t = new Date(tx.created_at).getTime();
+  if (from && t < from.getTime()) return false;
+  if (to && t > to.getTime()) return false;
+  return true;
+}
+
+function accumulateResellerMetrics(
+  resellerId: string,
+  txs: ResellerTxRow[],
+  accessRows: ResellerAccessRow[],
+  dateFrom: Date | null = null,
+  dateTo: Date | null = null,
+) {
+  let totalDeposits = 0;
+  let pendingDeposits = 0;
+  let totalSpent = 0;
+  let lastActivityAt: string | null = null;
+
+  for (const tx of txs) {
+    if (tx.reseller_id !== resellerId) continue;
+    const ts = tx.created_at;
+    if (!lastActivityAt || ts > lastActivityAt) lastActivityAt = ts;
+
+    const inRange = isTxInRange(tx, dateFrom, dateTo);
+
+    if (inRange && isCountedDeposit(tx)) totalDeposits += Number(tx.amount) || 0;
+    if (isPendingDeposit(tx)) pendingDeposits += Number(tx.amount) || 0;
+    if (inRange && tx.type === 'deduct' && tx.status === 'completed') {
+      totalSpent += Math.abs(Number(tx.amount) || 0);
+    }
+    if (inRange && tx.type === 'refund' && tx.status === 'completed') {
+      totalSpent -= Math.abs(Number(tx.amount) || 0);
+    }
+  }
+  totalSpent = Math.max(0, totalSpent);
+
+  const customers = accessRows.filter((r) => r.reseller_id === resellerId);
+  const now = Date.now();
+  const sevenDays = now + 7 * 24 * 60 * 60 * 1000;
+
+  let activeCustomers = 0;
+  let expiredCustomers = 0;
+  let refundedCustomers = 0;
+  let expiringIn7Days = 0;
+
+  for (const row of customers) {
+    if (row.activated_at && (!lastActivityAt || row.activated_at > lastActivityAt)) {
+      lastActivityAt = row.activated_at;
+    }
+    if (row.status === 'active') {
+      activeCustomers += 1;
+      const exp = new Date(row.expires_at).getTime();
+      if (exp > now && exp <= sevenDays) expiringIn7Days += 1;
+    } else if (row.status === 'expired') {
+      expiredCustomers += 1;
+    } else if (row.status === 'refunded') {
+      refundedCustomers += 1;
+    }
+  }
+
+  return {
+    totalCustomers: customers.length,
+    activeCustomers,
+    expiredCustomers,
+    refundedCustomers,
+    expiringIn7Days,
+    totalDeposits,
+    pendingDeposits,
+    totalSpent,
+    lastActivityAt,
+  };
+}
+
+function buildMonthlyTrend(txs: ResellerTxRow[], months = 6) {
+  const now = new Date();
+  const buckets: { key: string; label: string; deposits: number; spent: number }[] = [];
+
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    buckets.push({ key, label, deposits: 0, spent: 0 });
+  }
+
+  const bucketMap = new Map(buckets.map((b) => [b.key, b]));
+
+  for (const tx of txs) {
+    const d = new Date(tx.created_at);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const bucket = bucketMap.get(key);
+    if (!bucket) continue;
+
+    if (isCountedDeposit(tx)) bucket.deposits += Number(tx.amount) || 0;
+    if (tx.type === 'deduct' && tx.status === 'completed') {
+      bucket.spent += Math.abs(Number(tx.amount) || 0);
+    }
+    if (tx.type === 'refund' && tx.status === 'completed') {
+      bucket.spent -= Math.abs(Number(tx.amount) || 0);
+    }
+  }
+
+  return buckets.map((b) => ({
+    month: b.label,
+    deposits: Math.round(b.deposits * 100) / 100,
+    spent: Math.max(0, Math.round(b.spent * 100) / 100),
+  }));
+}
+
+/** Platform-wide reseller metrics + per-reseller summary list */
+router.get('/resellers/overview', verifyAdmin, async (req, res) => {
+  try {
+    const { key: rangeKey, from, to } = parseResellerDateRange(String(req.query.range || 'all'));
+    const [{ data: resellers, error: resellersErr }, { data: txs, error: txsErr }, { data: accessRows, error: accessErr }] =
+      await Promise.all([
+        supabase
+          .from('users')
+          .select('id, name, email, phone, created_at, is_banned, wallet_balance, signup_auth_provider')
+          .eq('role', 'reseller')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('reseller_transactions')
+          .select('reseller_id, amount, type, status, created_at')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('reseller_user_access')
+          .select('reseller_id, status, expires_at, activated_at, customer_email'),
+      ]);
+
+    if (resellersErr) throw resellersErr;
+    if (txsErr) throw txsErr;
+    if (accessErr) throw accessErr;
+
+    const txRows = (txs || []) as ResellerTxRow[];
+    const access = (accessRows || []) as ResellerAccessRow[];
+    const resellerRows = resellers || [];
+
+    const summaries = resellerRows.map((r: any) => {
+      const metrics = accumulateResellerMetrics(r.id, txRows, access, from, to);
+      return {
+        id: r.id,
+        name: r.name || 'Unnamed',
+        email: r.email,
+        phone: r.phone || null,
+        createdAt: r.created_at,
+        isBanned: !!r.is_banned,
+        walletBalance: Number(r.wallet_balance) || 0,
+        signupAuthProvider: r.signup_auth_provider || null,
+        ...metrics,
+      };
+    });
+
+    const platform = summaries.reduce(
+      (acc, s) => {
+        acc.totalDepositsUsd += s.totalDeposits;
+        acc.totalSpentUsd += s.totalSpent;
+        acc.totalWalletBalanceUsd += s.walletBalance;
+        acc.pendingDepositsUsd += s.pendingDeposits;
+        acc.totalCustomers += s.totalCustomers;
+        acc.activeCustomers += s.activeCustomers;
+        if (!s.isBanned) acc.activeResellers += 1;
+        return acc;
+      },
+      {
+        totalResellers: summaries.length,
+        activeResellers: 0,
+        totalCustomers: 0,
+        activeCustomers: 0,
+        totalDepositsUsd: 0,
+        totalSpentUsd: 0,
+        totalWalletBalanceUsd: 0,
+        pendingDepositsUsd: 0,
+      },
+    );
+
+    const leaderPick = (key: 'totalCustomers' | 'totalDeposits' | 'totalSpent', limit = 3) =>
+      [...summaries]
+        .sort((a, b) => b[key] - a[key])
+        .filter((s) => s[key] > 0)
+        .slice(0, limit)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          value: s[key],
+        }));
+
+    return res.json({
+      success: true,
+      range: rangeKey,
+      monthlyTrend: buildMonthlyTrend(txRows, 6),
+      platform,
+      leaders: {
+        topByCustomers: leaderPick('totalCustomers'),
+        topByDeposits: leaderPick('totalDeposits'),
+        topBySpent: leaderPick('totalSpent'),
+      },
+      resellers: summaries,
+    });
+  } catch (error: any) {
+    console.error('admin resellers/overview:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load reseller overview' });
+  }
+});
+
+/** Single reseller profile with transactions + customers */
+router.get('/resellers/:resellerId', verifyAdmin, async (req, res) => {
+  try {
+    const resellerId = String(req.params.resellerId || '').trim();
+    const { key: rangeKey, from, to } = parseResellerDateRange(String(req.query.range || 'all'));
+    if (!resellerId) {
+      return res.status(400).json({ success: false, error: 'Missing reseller id' });
+    }
+
+    const [{ data: profile, error: profileErr }, { data: txs, error: txsErr }, { data: customers, error: customersErr }] =
+      await Promise.all([
+        supabase
+          .from('users')
+          .select('id, name, email, phone, created_at, is_banned, wallet_balance, signup_auth_provider, last_sign_in_provider')
+          .eq('id', resellerId)
+          .eq('role', 'reseller')
+          .maybeSingle(),
+        supabase
+          .from('reseller_transactions')
+          .select('id, amount, type, status, created_at, description, tx_id, balance_after')
+          .eq('reseller_id', resellerId)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('reseller_user_access')
+          .select(
+            'id, customer_email, duration_months, duration_days, status, products, activated_at, expires_at, adobe_organization_name, adobe_synced_at',
+          )
+          .eq('reseller_id', resellerId)
+          .order('activated_at', { ascending: false })
+          .limit(500),
+      ]);
+
+    if (profileErr) throw profileErr;
+    if (txsErr) throw txsErr;
+    if (customersErr) throw customersErr;
+    if (!profile) {
+      return res.status(404).json({ success: false, error: 'Reseller not found' });
+    }
+
+    const txRows = ((txs || []) as any[]).map((t) => ({
+      reseller_id: resellerId,
+      amount: t.amount,
+      type: t.type,
+      status: t.status,
+      created_at: t.created_at,
+    })) as ResellerTxRow[];
+
+    const access = ((customers || []) as any[]).map((c) => ({
+      reseller_id: resellerId,
+      status: c.status,
+      expires_at: c.expires_at,
+      activated_at: c.activated_at,
+      customer_email: c.customer_email,
+    })) as ResellerAccessRow[];
+
+    const metrics = accumulateResellerMetrics(resellerId, txRows, access, from, to);
+
+    return res.json({
+      success: true,
+      range: rangeKey,
+      monthlyTrend: buildMonthlyTrend(txRows, 6),
+      reseller: {
+        id: profile.id,
+        name: profile.name || 'Unnamed',
+        email: profile.email,
+        phone: profile.phone || null,
+        createdAt: profile.created_at,
+        isBanned: !!profile.is_banned,
+        walletBalance: Number(profile.wallet_balance) || 0,
+        signupAuthProvider: profile.signup_auth_provider || null,
+        lastSignInProvider: profile.last_sign_in_provider || null,
+        ...metrics,
+      },
+      transactions: (txs || []).map((t: any) => ({
+        id: t.id,
+        amount: Number(t.amount) || 0,
+        type: t.type,
+        status: t.status,
+        createdAt: t.created_at,
+        description: t.description || '',
+        txId: t.tx_id || null,
+        balanceAfter: t.balance_after != null ? Number(t.balance_after) : null,
+      })),
+      customers: (customers || []).map((c: any) => ({
+        id: c.id,
+        email: c.customer_email,
+        durationMonths: c.duration_months,
+        durationDays: c.duration_days,
+        status: c.status,
+        products: c.products || [],
+        activatedAt: c.activated_at,
+        expiresAt: c.expires_at,
+        organizationName: c.adobe_organization_name || null,
+      })),
+    });
+  } catch (error: any) {
+    console.error('admin resellers/:id:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load reseller profile' });
+  }
+});
+
 export default router;

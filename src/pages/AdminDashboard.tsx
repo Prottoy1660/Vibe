@@ -81,6 +81,9 @@ const AdminResellerPackages = React.lazy(() =>
 const AdminResellerDeposits = React.lazy(() =>
   import('../components/admin/AdminResellerDeposits').then((m) => ({ default: m.AdminResellerDeposits })),
 );
+const AdminResellers = React.lazy(() =>
+  import('../components/admin/AdminResellers').then((m) => ({ default: m.AdminResellers })),
+);
 const AdminSlotDemand = React.lazy(() =>
   import('../components/admin/AdminSlotDemand').then((m) => ({ default: m.AdminSlotDemand })),
 );
@@ -416,6 +419,7 @@ export const AdminDashboard = () => {
                 App downloads
               </span>
             )}
+            {activeTab === 'reseller_overview' && 'Reseller Overview'}
             {activeTab === 'reseller_packages' && 'Reseller Packages'}
             {activeTab === 'reseller_deposits' && 'Reseller Deposits'}
           </h1>
@@ -458,6 +462,7 @@ export const AdminDashboard = () => {
         {activeTab === 'push_notifications' && <AdminPushSubscriptions />}
         {activeTab === 'waitlist' && <AdminWaitlist />}
         {activeTab === 'app_downloads' && <AdminAppDownloads />}
+        {activeTab === 'reseller_overview' && <AdminResellers />}
         {activeTab === 'reseller_packages' && <AdminResellerPackages />}
         {activeTab === 'reseller_deposits' && <AdminResellerDeposits />}
         {activeTab === 'sidebar_config' && isSuperAdmin && <AdminSidebarConfig />}

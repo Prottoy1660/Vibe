@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Trash2, Clock, CheckCircle2, Loader2, Users, RefreshCw, Building2, CalendarClock, X } from 'lucide-react';
 import { ResellerApi, ResellerPackage, ResellerUser } from '../../services/reseller/resellerApi';
+import { paginateItems, TablePagination } from '../../components/reseller/TablePagination';
+import { RefundCountdownBadge } from '../../components/reseller/RefundCountdownBadge';
 
 export const MyUsers = () => {
   const [users, setUsers] = useState<ResellerUser[]>([]);
@@ -16,6 +18,8 @@ export const MyUsers = () => {
   const [extendDuration, setExtendDuration] = useState('');
   const [extendLoading, setExtendLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchUsers();
@@ -94,21 +98,22 @@ export const MyUsers = () => {
     return matchesSearch && matchesOrg;
   });
 
+  const paginatedUsers = paginateItems(filteredUsers, page, pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, orgFilter]);
+
   const getStatusBadge = (status: string, activatedAt: string) => {
     if (status === 'expired') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">Expired</span>;
     if (status === 'refunded') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">Refunded</span>;
     
-    const isWithin24h = (new Date().getTime() - new Date(activatedAt).getTime()) / (1000 * 60 * 60) <= 24;
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
         </span>
-        {isWithin24h && (
-          <span className="text-[10px] text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20" title="Refundable within 24h">
-            Refundable
-          </span>
-        )}
+        <RefundCountdownBadge activatedAt={activatedAt} />
       </div>
     );
   };
@@ -118,7 +123,7 @@ export const MyUsers = () => {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
         <div>
           <h1 className="text-3xl font-bold text-white tracking-tight">
-            My Users {users.length > 0 && <span className="text-gray-500 font-semibold">({users.length})</span>}
+            My Users {filteredUsers.length > 0 && <span className="text-gray-500 font-semibold">({filteredUsers.length})</span>}
           </h1>
           <p className="text-gray-400 mt-2">
             Organization names sync from Adobe credits-pool automatically.
@@ -207,7 +212,7 @@ export const MyUsers = () => {
                     </td>
                   </tr>
                 ) : (
-                  filteredUsers.map((user) => (
+                  paginatedUsers.map((user) => (
                     <motion.tr
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -289,6 +294,20 @@ export const MyUsers = () => {
             </tbody>
           </table>
         </div>
+        {!loading && filteredUsers.length > 0 && (
+          <TablePagination
+            totalItems={filteredUsers.length}
+            page={page}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+            itemLabel="users"
+            variant="reseller"
+          />
+        )}
       </div>
 
       <AnimatePresence>

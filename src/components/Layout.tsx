@@ -37,6 +37,7 @@ import {
   CreditCard,
   FileText,
   CalendarDays,
+  Store,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useMaintenanceMode } from '../contexts/MaintenanceModeContext';
@@ -369,6 +370,7 @@ export const Layout = () => {
         { name: 'Waitlist', href: '/admin?tab=waitlist', icon: Bell },
         { name: 'Ops Center', href: '/admin?tab=ops', icon: ShieldAlert },
         { name: 'Growth Ops', href: '/admin?tab=growth_ops', icon: TrendingUp },
+        { name: 'Reseller Overview', href: '/admin?tab=reseller_overview', icon: Store },
         { name: 'Reseller Packages', href: '/admin?tab=reseller_packages', icon: Package },
         { name: 'Reseller Deposits', href: '/admin?tab=reseller_deposits', icon: Wallet },
       ]
