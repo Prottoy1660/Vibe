@@ -44,7 +44,7 @@
         document.head.appendChild(link);
       };
 
-      if (window.location.hostname === 'superreseller.shop' || window.location.hostname.includes('superreseller')) {
+      if (window.location.hostname === 'superreseller.shop' || window.location.hostname.includes('superreseller') || window.location.pathname.startsWith('/reseller')) {
         document.title = 'Super Reseller - Premium Dashboard';
         changeFavicon('/super.png');
       } else {
