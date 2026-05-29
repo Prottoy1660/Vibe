@@ -261,6 +261,79 @@ export const ResellerApi = {
     return true;
   },
 
+  bulkExtendUsers: async (emails: string[], duration: string, costPerUser: number) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) throw new Error('Not authenticated');
+    const user = session.user;
+
+    const totalCost = costPerUser * emails.length;
+
+    // 1. Check balance
+    const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
+    const balance = profile?.wallet_balance || 0;
+
+    if (balance < totalCost) {
+      throw new Error(`Insufficient balance for bulk extension. Need $${totalCost.toFixed(2)}.`);
+    }
+
+    // 2. Call external API for each user via backend
+    const successfulEmails: string[] = [];
+    const failedEmails: string[] = [];
+    
+    let durationDays = 30;
+    const durationStr = duration.toString().toLowerCase();
+    if (durationStr.endsWith('d')) {
+      durationDays = parseInt(durationStr.replace('d', '')) || 7;
+    } else {
+      durationDays = (parseInt(durationStr) || 1) * 30;
+    }
+
+    // Process sequentially
+    for (const email of emails) {
+      try {
+        const apiRes = await fetch('/api/reseller/adobe/extend', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({ 
+            email, 
+            durationMonths: duration,
+            cost: costPerUser,
+            durationDays
+          })
+        });
+        
+        const text = await apiRes.text();
+        let apiData = {};
+        try {
+          if (text) apiData = JSON.parse(text);
+        } catch (e) {
+          // ignore
+        }
+
+        if (apiRes.ok && (apiData as any).success) {
+          successfulEmails.push(email);
+        } else {
+          failedEmails.push(email);
+        }
+      } catch (e) {
+        failedEmails.push(email);
+      }
+    }
+
+    if (successfulEmails.length === 0) {
+      throw new Error('Failed to extend any users.');
+    }
+
+    if (failedEmails.length > 0) {
+      throw new Error(`Extended ${successfulEmails.length} users. Failed: ${failedEmails.length} (${failedEmails.join(', ')}). You were only charged for successful extensions.`);
+    }
+
+    return true;
+  },
+
   deleteUser: async (id: string) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) throw new Error('Not authenticated');
