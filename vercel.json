@@ -6,6 +6,16 @@
       "destination": "/api/index"
     },
     {
+      "source": "/manifest.webmanifest",
+      "has": [{ "type": "host", "value": "superreseller.shop" }],
+      "destination": "/manifest.superreseller.webmanifest"
+    },
+    {
+      "source": "/manifest.webmanifest",
+      "has": [{ "type": "host", "value": "www.superreseller.shop" }],
+      "destination": "/manifest.superreseller.webmanifest"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

@@ -135,13 +135,114 @@ export async function grantAdobeCloudAccess(
 const PANEL_ROOT = (
   process.env.ADOBE_PANEL_ROOT || 'https://reseller.ado-besoft.com/api/credits-pool'
 ).replace(/\/$/, '');
-const PANEL_USERNAME = (process.env.ADOBE_PANEL_USERNAME || '').trim();
-const PANEL_PASSWORD = (process.env.ADOBE_PANEL_PASSWORD || '').trim();
+
+function panelCredentials() {
+  return {
+    username: (process.env.ADOBE_PANEL_USERNAME || '').trim(),
+    password: (process.env.ADOBE_PANEL_PASSWORD || '').trim(),
+  };
+}
 
 let cachedToken: { token: string; expMs: number } | null = null;
 
+export type AdobePanelUserRow = {
+  email: string;
+  organizationId?: number;
+  organizationName?: string;
+  displayProducts?: string[];
+  products?: string[];
+  status?: string;
+  expiresAt?: string;
+  activatedAt?: string;
+};
+
+export type AdobeOrgSnapshot = {
+  organizationId: number | null;
+  organizationName: string | null;
+  displayProducts: string[];
+};
+
+let panelUsersCache: { atMs: number; map: Map<string, AdobeOrgSnapshot> } | null = null;
+const PANEL_USERS_CACHE_MS = 3 * 60 * 1000;
+
+async function panelGet(path: string, token: string) {
+  const res = await fetch(`${PANEL_ROOT}${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(30000),
+  });
+  const text = await res.text();
+  let data: any;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: `Invalid non-JSON response (${res.status})`, raw: text?.slice(0, 300) };
+  }
+  return { status: res.status, data };
+}
+
+/**
+ * Full credits-pool user list (same data as reseller.ado-besoft.com → Users tab).
+ */
+export async function fetchAdobePanelUsers(
+  forceRefresh = false,
+): Promise<{ success: boolean; users?: AdobePanelUserRow[]; error?: string }> {
+  if (!forceRefresh && panelUsersCache && Date.now() - panelUsersCache.atMs < PANEL_USERS_CACHE_MS) {
+    return { success: true, users: undefined };
+  }
+
+  let auth = await getPanelToken(forceRefresh);
+  if (!auth.token) return { success: false, error: auth.error };
+
+  let out = await panelGet('/users', auth.token);
+  if (out.status === 401) {
+    auth = await getPanelToken(true);
+    if (!auth.token) return { success: false, error: auth.error };
+    out = await panelGet('/users', auth.token);
+  }
+
+  if (out.status !== 200 || !out.data?.success || !Array.isArray(out.data.users)) {
+    return {
+      success: false,
+      error: out.data?.error || out.data?.message || `Panel users fetch failed (HTTP ${out.status})`,
+    };
+  }
+
+  const users = out.data.users as AdobePanelUserRow[];
+  const map = new Map<string, AdobeOrgSnapshot>();
+  for (const row of users) {
+    const email = String(row.email || '').trim().toLowerCase();
+    if (!email) continue;
+    map.set(email, {
+      organizationId:
+        Number.isFinite(Number(row.organizationId)) && Number(row.organizationId) > 0
+          ? Number(row.organizationId)
+          : null,
+      organizationName: row.organizationName ? String(row.organizationName).trim() : null,
+      displayProducts: Array.isArray(row.displayProducts)
+        ? row.displayProducts.filter(Boolean)
+        : Array.isArray(row.products)
+          ? row.products.filter(Boolean)
+          : [],
+    });
+  }
+  panelUsersCache = { atMs: Date.now(), map };
+  return { success: true, users };
+}
+
+export function getAdobeOrgSnapshotByEmail(email: string): AdobeOrgSnapshot | null {
+  const key = String(email || '').trim().toLowerCase();
+  if (!key || !panelUsersCache) return null;
+  return panelUsersCache.map.get(key) ?? null;
+}
+
+export function getAdobeOrgMap(): Map<string, AdobeOrgSnapshot> {
+  return panelUsersCache?.map ?? new Map();
+}
+
 async function getPanelToken(force = false): Promise<{ token?: string; error?: string }> {
-  if (!PANEL_USERNAME || !PANEL_PASSWORD) {
+  const { username, password } = panelCredentials();
+  if (!username || !password) {
     return { error: 'ADOBE_PANEL_USERNAME / ADOBE_PANEL_PASSWORD not configured in .env' };
   }
   // Reuse cached token until 5 minutes before expiry.
@@ -152,7 +253,7 @@ async function getPanelToken(force = false): Promise<{ token?: string; error?: s
     const res = await fetch(`${PANEL_ROOT}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: PANEL_USERNAME, password: PANEL_PASSWORD }),
+      body: JSON.stringify({ username, password }),
       signal: AbortSignal.timeout(25000),
     });
     const text = await res.text();

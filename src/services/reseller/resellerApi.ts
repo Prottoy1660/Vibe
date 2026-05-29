@@ -10,6 +10,9 @@ export interface ResellerUser {
   expiresAt: string;
   status: 'active' | 'expired' | 'refunded';
   products: string[];
+  organizationId?: number | null;
+  organizationName?: string | null;
+  organizationSyncedAt?: string | null;
 }
 
 export interface Transaction {
@@ -95,7 +98,72 @@ export const ResellerApi = {
     return data as ResellerPackage[];
   },
 
-  getUsers: async () => {
+  syncAdobeOrganizations: async (force = false) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const apiRes = await fetch('/api/reseller/adobe/sync-organizations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ force }),
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to sync organizations from Adobe');
+    }
+    return data as { synced: number; message: string };
+  },
+
+  getUsers: async (options?: { skipSync?: boolean; forceSync?: boolean }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const mapRows = (rows: any[]) =>
+      (rows || []).map((d) => ({
+        id: d.id,
+        reseller_id: d.reseller_id,
+        email: d.customer_email,
+        durationMonths: d.duration_months,
+        durationDays: d.duration_days,
+        status: d.status,
+        products: d.products || [],
+        activatedAt: d.activated_at,
+        expiresAt: d.expires_at,
+        organizationId: d.adobe_organization_id ?? null,
+        organizationName: d.adobe_organization_name ?? null,
+        organizationSyncedAt: d.adobe_synced_at ?? null,
+      })) as ResellerUser[];
+
+    const refresh = options?.forceSync ? '1' : '0';
+
+    try {
+      const apiRes = await fetch(`/api/reseller/users?refresh=${refresh}`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      const data = await apiRes.json();
+      if (apiRes.ok && data.success) {
+        return (data.users || []) as ResellerUser[];
+      }
+      console.warn('Reseller users API unavailable, falling back to Supabase:', data.error);
+    } catch (e) {
+      console.warn('Reseller users API request failed, falling back to Supabase:', e);
+    }
+
+    // Fallback: load directly from Supabase (exclude refunded — same as My Users policy)
+    if (!options?.skipSync) {
+      try {
+        await ResellerApi.syncAdobeOrganizations(options?.forceSync);
+      } catch (e) {
+        console.warn('Adobe organization sync skipped:', e);
+      }
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('Not authenticated');
 
@@ -103,21 +171,11 @@ export const ResellerApi = {
       .from('reseller_user_access')
       .select('*')
       .eq('reseller_id', user.id)
+      .neq('status', 'refunded')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-
-    return (data || []).map(d => ({
-      id: d.id,
-      reseller_id: d.reseller_id,
-      email: d.customer_email,
-      durationMonths: d.duration_months,
-      durationDays: d.duration_days,
-      status: d.status,
-      products: d.products || [],
-      activatedAt: d.activated_at,
-      expiresAt: d.expires_at
-    })) as ResellerUser[];
+    return mapRows(data);
   },
 
   activateUser: async (email: string, duration: string, cost: number) => {
@@ -332,6 +390,10 @@ export const ResellerApi = {
     }
 
     return true;
+  },
+
+  extendUser: async (email: string, duration: string, cost: number) => {
+    return ResellerApi.bulkExtendUsers([email], duration, cost);
   },
 
   deleteUser: async (id: string) => {

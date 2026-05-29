@@ -15,7 +15,7 @@
     <meta name="theme-color" content="#09090b" />
     <meta name="description" content="Premium digital accounts management platform" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <title>VibeAccess</title>
+    <title>Vibe Access</title>
     <script type="module">
       if (import.meta.hot?.on) {
         import.meta.hot.on('vite:error', (error) => {
@@ -44,9 +44,32 @@
         document.head.appendChild(link);
       };
 
-      if (window.location.hostname === 'superreseller.shop' || window.location.hostname.includes('superreseller') || window.location.pathname.startsWith('/reseller')) {
+      const isSuperReseller =
+        window.location.hostname === 'superreseller.shop' ||
+        window.location.hostname.includes('superreseller') ||
+        window.location.pathname.startsWith('/reseller');
+
+      if (isSuperReseller) {
         document.title = 'Super Reseller - Premium Dashboard';
         changeFavicon('/super-favicon.svg');
+
+        const appleTouch = document.createElement('link');
+        appleTouch.rel = 'apple-touch-icon';
+        appleTouch.href = '/super.png';
+        document.head.appendChild(appleTouch);
+
+        const description = document.querySelector('meta[name="description"]');
+        if (description) {
+          description.setAttribute(
+            'content',
+            'Premium reseller dashboard for managing digital subscriptions',
+          );
+        }
+
+        const manifest = document.querySelector('link[rel="manifest"]');
+        if (manifest) {
+          manifest.setAttribute('href', '/manifest.superreseller.webmanifest');
+        }
       } else {
         document.title = 'Vibe Access - Digital Marketplace';
         changeFavicon('/favicon.png');

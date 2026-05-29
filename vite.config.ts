@@ -13,6 +13,20 @@ export default defineConfig({
       },
     }),
     tsconfigPaths(),
+    {
+      name: 'superreseller-pwa-manifest',
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          if (req.url?.startsWith('/manifest.webmanifest')) {
+            const host = req.headers.host ?? '';
+            if (host.includes('superreseller')) {
+              req.url = '/manifest.superreseller.webmanifest';
+            }
+          }
+          next();
+        });
+      },
+    },
     VitePWA({
       // We need a custom service worker to handle Web Push events.
       strategies: 'injectManifest',
@@ -27,6 +41,9 @@ export default defineConfig({
         'favicon-16.png',
         'apple-touch-icon.png',
         'masked-icon.svg',
+        'super.png',
+        'super-favicon.svg',
+        'manifest.superreseller.webmanifest',
       ],
       injectManifest: {
         // Keep install/update light like the previous Workbox config.

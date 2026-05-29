@@ -2,6 +2,7 @@
  * This is a API server
  */
 
+import './loadEnv.js'
 import express, {
   type Request,
   type Response,
@@ -10,7 +11,6 @@ import express, {
 import compression from 'compression'
 import cors from 'cors'
 import path from 'path'
-import dotenv from 'dotenv'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
 import { existsSync } from 'fs'
@@ -31,9 +31,6 @@ import resellerRoutes from './routes/reseller.js'
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-
-// load env
-dotenv.config()
 
 const app: express.Application = express()
 // Behind reverse proxy: default 1 hop. Use TRUST_PROXY=2 if CDN + edge both prepend X-Forwarded-For. TRUST_PROXY=true only if you intend to trust all hops (see Express docs).
@@ -206,6 +203,18 @@ if (process.env.SERVE_STATIC_SPA === '1') {
     if (existsSync(path.join(parentAsDist, 'index.html'))) return parentAsDist
     return siblingDist
   })()
+  app.get('/manifest.webmanifest', (req: Request, res: Response, next: NextFunction) => {
+    const host = (req.get('host') ?? '').toLowerCase()
+    if (!host.includes('superreseller')) return next()
+
+    const resellerManifest = path.join(distPath, 'manifest.superreseller.webmanifest')
+    if (!existsSync(resellerManifest)) return next()
+
+    res.type('application/manifest+json')
+    res.sendFile(resellerManifest, (err) => {
+      if (err) next(err)
+    })
+  })
   app.use(express.static(distPath, { index: false }))
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/api')) return next()

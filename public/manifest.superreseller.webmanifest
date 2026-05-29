@@ -1,0 +1,24 @@
+{
+  "name": "Super Reseller",
+  "short_name": "Super Reseller",
+  "description": "Premium reseller dashboard for managing digital subscriptions",
+  "theme_color": "#09090b",
+  "background_color": "#09090b",
+  "display": "standalone",
+  "start_url": "/reseller",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/super.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/super.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
