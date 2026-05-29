@@ -4,6 +4,13 @@ import { Loader2, RefreshCw, Save, Search } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getJsonWithFallback, postJsonWithFallback } from '../../lib/apiClient';
 import { paginateItems, TablePagination } from '../TablePagination';
+import { ADMIN_SMS_FETCH_PAGE_SIZE } from '../../lib/adminDataLimits';
+
+type SmsStats = {
+  total: number;
+  success: number;
+  failed: number;
+};
 
 type SmsLogRow = {
   id: string;
@@ -31,20 +38,55 @@ export const AdminSmsHistory: React.FC = () => {
   const [pricingMsg, setPricingMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [globalStats, setGlobalStats] = useState<SmsStats>({ total: 0, success: 0, failed: 0 });
+
+  const loadStats = async () => {
+    const [totalRes, successRes] = await Promise.all([
+      supabase.from('sms_send_logs').select('*', { count: 'exact', head: true }),
+      supabase
+        .from('sms_send_logs')
+        .select('*', { count: 'exact', head: true })
+        .or('provider_error_code.eq.0,provider_error_code.is.null'),
+    ]);
+
+    if (totalRes.error) throw totalRes.error;
+    if (successRes.error) throw successRes.error;
+
+    const total = totalRes.count ?? 0;
+    const success = successRes.count ?? 0;
+    setGlobalStats({ total, success, failed: Math.max(0, total - success) });
+  };
 
   const load = async (showLoader: boolean) => {
     if (showLoader) setLoading(true);
     else setRefreshing(true);
     try {
-      const { data, error } = await supabase
-        .from('sms_send_logs')
-        .select(
-          'id, batch_id, recipient_phone, message, sender_id, schedule_at, provider_request_id, provider_error_code, provider_message, recipient_mode, created_at, admins:admin_id(name, email)',
-        )
-        .order('created_at', { ascending: false })
-        .limit(1000);
-      if (error) throw error;
-      setRows((data || []) as SmsLogRow[]);
+      try {
+        await loadStats();
+      } catch (statsErr) {
+        console.error('sms history stats load failed', statsErr);
+      }
+
+      const allRows: SmsLogRow[] = [];
+      let from = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('sms_send_logs')
+          .select(
+            'id, batch_id, recipient_phone, message, sender_id, schedule_at, provider_request_id, provider_error_code, provider_message, recipient_mode, created_at, admins:admin_id(name, email)',
+          )
+          .order('created_at', { ascending: false })
+          .range(from, from + ADMIN_SMS_FETCH_PAGE_SIZE - 1);
+
+        if (error) throw error;
+        const batch = (data || []) as SmsLogRow[];
+        allRows.push(...batch);
+        if (batch.length < ADMIN_SMS_FETCH_PAGE_SIZE) break;
+        from += ADMIN_SMS_FETCH_PAGE_SIZE;
+      }
+
+      setRows(allRows);
     } catch (e) {
       console.error('sms history load failed', e);
       setRows([]);
@@ -107,8 +149,18 @@ export const AdminSmsHistory: React.FC = () => {
     return n;
   }, [costPerSms]);
 
-  const successCount = useMemo(() => filtered.filter((r) => (r.provider_error_code ?? 0) === 0).length, [filtered]);
-  const failedCount = useMemo(() => filtered.filter((r) => (r.provider_error_code ?? 0) !== 0).length, [filtered]);
+  const successCount = useMemo(
+    () => (search.trim() ? filtered.filter((r) => (r.provider_error_code ?? 0) === 0).length : globalStats.success),
+    [filtered, globalStats.success, search],
+  );
+  const failedCount = useMemo(
+    () => (search.trim() ? filtered.filter((r) => (r.provider_error_code ?? 0) !== 0).length : globalStats.failed),
+    [filtered, globalStats.failed, search],
+  );
+  const totalSmsCount = useMemo(
+    () => (search.trim() ? filtered.length : globalStats.total),
+    [filtered.length, globalStats.total, search],
+  );
   const totalCost = useMemo(() => Number((successCount * numericCost).toFixed(2)), [successCount, numericCost]);
 
   const savePricing = async () => {
@@ -164,15 +216,15 @@ export const AdminSmsHistory: React.FC = () => {
           <div className="grid gap-4 md:grid-cols-4">
             <div className="rounded-xl border border-gray-200 dark:border-[#26262d] bg-white dark:bg-[#111113] p-3">
               <p className="text-[11px] uppercase font-bold text-gray-500">Total SMS</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{filtered.length}</p>
+              <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{totalSmsCount.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-3">
               <p className="text-[11px] uppercase font-bold text-emerald-700 dark:text-emerald-300">Success</p>
-              <p className="text-xl font-bold text-emerald-800 dark:text-emerald-200">{successCount}</p>
+              <p className="text-xl font-bold text-emerald-800 dark:text-emerald-200">{successCount.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-red-200 dark:border-red-900/30 bg-red-50/60 dark:bg-red-950/20 p-3">
               <p className="text-[11px] uppercase font-bold text-red-700 dark:text-red-300">Failed</p>
-              <p className="text-xl font-bold text-red-800 dark:text-red-200">{failedCount}</p>
+              <p className="text-xl font-bold text-red-800 dark:text-red-200">{failedCount.toLocaleString()}</p>
             </div>
             <div className="rounded-xl border border-indigo-200 dark:border-indigo-900/30 bg-indigo-50/60 dark:bg-indigo-950/20 p-3">
               <p className="text-[11px] uppercase font-bold text-indigo-700 dark:text-indigo-300">Total Cost</p>
@@ -216,7 +268,9 @@ export const AdminSmsHistory: React.FC = () => {
 
         <div className="p-4 border-b border-gray-100 dark:border-[#26262d] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-gray-50/50 dark:bg-white/[0.02]">
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {filtered.length} SMS record{filtered.length === 1 ? '' : 's'} loaded
+            {search.trim()
+              ? `${filtered.length.toLocaleString()} match${filtered.length === 1 ? '' : 'es'} · ${globalStats.total.toLocaleString()} total SMS`
+              : `${globalStats.total.toLocaleString()} SMS record${globalStats.total === 1 ? '' : 's'} in database`}
           </span>
           <div className="relative w-full sm:w-96">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

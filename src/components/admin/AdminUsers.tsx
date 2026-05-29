@@ -10,6 +10,7 @@ import { toast } from '../../lib/toast';
 import { useConfirmDialog } from '../../contexts/ConfirmDialogContext';
 import { shouldPauseAdminLiveRefresh } from '../../lib/adminRealtimeGuard';
 import { paginateItems, TablePagination } from '../TablePagination';
+import { ADMIN_USERS_FETCH_PAGE_SIZE } from '../../lib/adminDataLimits';
 
 interface User {
   id: string;
@@ -73,16 +74,25 @@ export const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(200);
+      const allRows: User[] = [];
+      let from = 0;
 
-      if (error) throw error;
-      const rows = (data || []) as User[];
-      setUsers(rows);
-      await loadUserNotes(rows.map((u) => u.id));
+      while (true) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + ADMIN_USERS_FETCH_PAGE_SIZE - 1);
+
+        if (error) throw error;
+        const batch = (data || []) as User[];
+        allRows.push(...batch);
+        if (batch.length < ADMIN_USERS_FETCH_PAGE_SIZE) break;
+        from += ADMIN_USERS_FETCH_PAGE_SIZE;
+      }
+
+      setUsers(allRows);
+      await loadUserNotes(allRows.map((u) => u.id));
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
