@@ -8,6 +8,13 @@ import {
   getAdobeOrgSnapshotByEmail,
   revokeAdobeCloudAccess,
 } from '../lib/adobeApi.js';
+import {
+  buildPaymentDetailsFromMatch,
+  depositNeedsBinanceSync,
+  isBinanceConfigured,
+  lookupBinancePayment,
+  syncDepositRowFromBinance,
+} from '../lib/binancePaymentSync.js';
 
 const router = express.Router();
 
@@ -19,10 +26,6 @@ const supabase = supabaseUrl && supabaseServiceKey
 
 const ADOBE_API_KEY = process.env.ADOBE_API_KEY || '';
 const ADOBE_BASE_URL = 'https://reseller.ado-besoft.com/api/credits-pool/external';
-const BINANCE_API_KEY = process.env.BINANCE_API_KEY || '';
-const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY || '';
-const BINANCE_PAY_UID = process.env.BINANCE_PAY_UID || '1096316678';
-const STABLE_COINS = new Set(['USDT', 'BUSD', 'USDC']);
 
 /**
  * Helper function to generate HMAC signature and headers for Adobe API
@@ -391,8 +394,24 @@ router.post('/adobe/extend', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing email or durationMonths' });
     }
 
+    const durationStr = String(durationMonths).trim();
+    if (/^\d+d$/i.test(durationStr)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Day-based packages (e.g. 7d trial) cannot be used for extension. Choose a monthly package (1–12 months).',
+      });
+    }
+    const monthsNum = Number(durationStr);
+    if (!Number.isFinite(monthsNum) || monthsNum < 1 || monthsNum > 12) {
+      return res.status(400).json({
+        success: false,
+        error: 'Extension duration must be between 1 and 12 months.',
+      });
+    }
+
     const costNum = Number(cost) || 0;
-    const daysNum = Number(durationDays) || 30;
+    const daysNum = Number(durationDays) || monthsNum * 30;
 
     // Verify balance
     const { data: balanceProfile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -417,7 +436,7 @@ router.post('/adobe/extend', async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found in your account. Please activate them first.' });
     }
 
-    const adobe = await extendAdobeCloudAccess(email, durationMonths.toString());
+    const adobe = await extendAdobeCloudAccess(email, durationStr);
     if (!adobe.success) {
       return res.status(400).json({
         success: false,
@@ -436,7 +455,7 @@ router.post('/adobe/extend', async (req, res) => {
     await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', user.id);
 
     await supabase.from('reseller_user_access').update({
-      duration_months: durationMonths.toString(),
+      duration_months: durationStr,
       duration_days: daysNum,
       status: 'active',
       expires_at: newExpiresAt.toISOString(),
@@ -449,7 +468,7 @@ router.post('/adobe/extend', async (req, res) => {
       amount: -costNum,
       type: 'deduct',
       status: 'completed',
-      description: `User extended: ${email} (+${durationMonths.toString()})`,
+      description: `User extended: ${email} (+${durationStr})`,
       balance_after: newBalance
     });
 
@@ -563,64 +582,66 @@ router.post('/adobe/deactivate', async (req, res) => {
 });
 
 /**
- * Helper to generate Binance HMAC signature
+ * POST /api/reseller/binance/sync-deposits
+ * Pull payer/order details from Binance for this reseller's deposits missing metadata.
  */
-function generateBinanceSignature(queryString: string) {
-  return crypto
-    .createHmac('sha256', BINANCE_SECRET_KEY)
-    .update(queryString)
-    .digest('hex');
-}
+router.post('/binance/sync-deposits', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not initialized' });
+    }
 
-async function signedBinanceGet(
-  path: string,
-  params: Record<string, string | number> = {},
-): Promise<{ ok: boolean; data: unknown }> {
-  const query = new URLSearchParams({
-    timestamp: String(Date.now()),
-    ...Object.fromEntries(
-      Object.entries(params).map(([k, v]) => [k, String(v)]),
-    ),
-  });
-  const signature = generateBinanceSignature(query.toString());
-  const url = `https://api.binance.com${path}?${query.toString()}&signature=${signature}`;
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { 'X-MBX-APIKEY': BINANCE_API_KEY },
-  });
-  const data = await res.json();
-  return { ok: res.ok, data };
-}
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const { data: authData, error: authError } = await supabase.auth.getUser(token);
 
-type BinancePayTx = {
-  orderId?: string;
-  transactionId?: string;
-  amount?: string;
-  currency?: string;
-  uid?: number;
-  orderType?: string;
-};
+    if (authError || !authData.user) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
 
-function matchBinancePayTx(
-  rows: BinancePayTx[],
-  txId: string,
-  expectedAmount: number,
-): BinancePayTx | null {
-  const normalizedTxId = String(txId).trim();
-  const minAmount = parseFloat(String(expectedAmount));
+    if (!isBinanceConfigured()) {
+      return res.status(500).json({ success: false, error: 'Binance API keys not configured' });
+    }
 
-  return (
-    rows.find((row) => {
-      const idMatch =
-        String(row.orderId) === normalizedTxId ||
-        String(row.transactionId) === normalizedTxId;
-      const amountOk = parseFloat(row.amount || '0') >= minAmount;
-      const coinOk = STABLE_COINS.has(String(row.currency || '').toUpperCase());
-      const receiverOk = String(row.uid) === BINANCE_PAY_UID;
-      return idMatch && amountOk && coinOk && receiverOk;
-    }) ?? null
-  );
-}
+    const { data: rows, error } = await supabase
+      .from('reseller_transactions')
+      .select('id, tx_id, amount, created_at, payer_binance_id, payment_channel, binance_transaction_id')
+      .eq('reseller_id', authData.user.id)
+      .eq('type', 'deposit')
+      .not('tx_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    const toSync = (rows || []).filter((row) => depositNeedsBinanceSync(row));
+    let synced = 0;
+
+    for (const row of toSync) {
+      const result = await syncDepositRowFromBinance(row, async (id, patch) => {
+        const { error: updateError } = await supabase
+          .from('reseller_transactions')
+          .update(patch)
+          .eq('id', id)
+          .eq('reseller_id', authData.user.id);
+        if (updateError) throw updateError;
+      });
+      if (result.synced) synced += 1;
+    }
+
+    return res.status(200).json({
+      success: true,
+      synced,
+      attempted: toSync.length,
+    });
+  } catch (error: any) {
+    console.error('Binance sync-deposits error:', error);
+    return res.status(500).json({ success: false, error: 'Internal Server Error' });
+  }
+});
 
 /**
  * POST /api/reseller/binance/verify
@@ -650,7 +671,7 @@ router.post('/binance/verify', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Transaction ID and amount are required' });
     }
 
-    if (!BINANCE_API_KEY || !BINANCE_SECRET_KEY) {
+    if (!isBinanceConfigured()) {
       return res.status(500).json({ success: false, error: 'Binance API keys not configured' });
     }
 
@@ -666,44 +687,13 @@ router.post('/binance/verify', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Transaction already processed' });
     }
 
-    // 2. Binance Pay C2C (what resellers use) — then on-chain crypto deposits as fallback
-    let verifiedAmount: number | null = null;
+    const lookup = await lookupBinancePayment(String(txId), {
+      minAmount: parseFloat(String(expectedAmount)),
+      strict: true,
+    });
 
-    const payRes = await signedBinanceGet('/sapi/v1/pay/transactions', { limit: 100 });
-    if (!payRes.ok) {
-      console.error('Binance Pay API Error:', payRes.data);
-      return res.status(400).json({ success: false, error: 'Failed to connect to Binance Pay' });
-    }
-
-    const payRows = (payRes.data as { data?: BinancePayTx[] })?.data;
-    if (Array.isArray(payRows)) {
-      const payMatch = matchBinancePayTx(payRows, txId, expectedAmount);
-      if (payMatch) {
-        verifiedAmount = parseFloat(payMatch.amount || '0');
-      }
-    }
-
-    if (verifiedAmount === null) {
-      const depRes = await signedBinanceGet('/sapi/v1/capital/deposit/hisrec', { limit: 100 });
-      if (!depRes.ok) {
-        console.error('Binance deposit API Error:', depRes.data);
-        return res.status(400).json({ success: false, error: 'Failed to connect to Binance' });
-      }
-
-      const deposits = depRes.data;
-      if (Array.isArray(deposits)) {
-        const cryptoMatch = deposits.find(
-          (d: { txId?: string; id?: string; status?: number; amount?: string; coin?: string }) =>
-            (d.txId === txId || String(d.id) === txId) &&
-            d.status === 1 &&
-            parseFloat(d.amount || '0') >= parseFloat(String(expectedAmount)) &&
-            STABLE_COINS.has(String(d.coin || '').toUpperCase()),
-        );
-        if (cryptoMatch) {
-          verifiedAmount = parseFloat(cryptoMatch.amount || '0');
-        }
-      }
-    }
+    const verifiedAmount = lookup?.verifiedAmount ?? null;
+    const paymentMatch = lookup?.match ?? null;
 
     if (verifiedAmount === null) {
       const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -728,6 +718,7 @@ router.post('/binance/verify', async (req, res) => {
     }
 
     // 3. Transaction verified — credit wallet
+    const paymentDetails = paymentMatch ? buildPaymentDetailsFromMatch(paymentMatch) : {};
     
     // Add balance to user
     const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -744,6 +735,7 @@ router.post('/binance/verify', async (req, res) => {
           status: 'completed',
           description: 'Binance Pay Auto-Verified',
           balance_after: newBalance,
+          ...paymentDetails,
         })
         .eq('id', existingTx.id);
     } else {
@@ -755,6 +747,7 @@ router.post('/binance/verify', async (req, res) => {
         tx_id: txId,
         description: 'Binance Pay Auto-Verified',
         balance_after: newBalance,
+        ...paymentDetails,
       });
     }
 

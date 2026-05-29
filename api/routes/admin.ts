@@ -49,6 +49,13 @@ import { runSubscriptionExpiryReminders } from '../lib/subscriptionExpiryReminde
 import { sendSubscriptionReminderTestToAdmin } from '../lib/subscriptionReminderAdminTest.js';
 import { attachAdminActivityLogging } from '../lib/adminActivityLog.js';
 import {
+  buildPaymentDetailsFromMatch,
+  depositNeedsBinanceSync,
+  isBinanceConfigured,
+  lookupBinancePayment,
+  syncDepositRowFromBinance,
+} from '../lib/binancePaymentSync.js';
+import {
   seizeRedeemOrderForUnpaid,
   restoreRedeemOrderAfterSeize,
 } from '../lib/redeemSeizeUnpaid.js';
@@ -3723,6 +3730,131 @@ router.get('/resellers/:resellerId', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('admin resellers/:id:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to load reseller profile' });
+  }
+});
+
+/** Sync Binance payer/order metadata for deposit rows missing details */
+router.post('/reseller/deposits/sync-missing', verifyAdmin, async (req, res) => {
+  try {
+    if (!isBinanceConfigured()) {
+      return res.status(500).json({ success: false, error: 'Binance API keys not configured' });
+    }
+
+    const ids = Array.isArray(req.body?.ids)
+      ? (req.body.ids as unknown[]).map((id) => String(id)).filter(Boolean)
+      : [];
+
+    let query = supabase
+      .from('reseller_transactions')
+      .select('id, tx_id, amount, created_at, payer_binance_id, payment_channel, binance_transaction_id')
+      .eq('type', 'deposit')
+      .not('tx_id', 'is', null)
+      .order('created_at', { ascending: false });
+
+    if (ids.length > 0) {
+      query = query.in('id', ids);
+    } else {
+      query = query.limit(100);
+    }
+
+    const { data: rows, error } = await query;
+    if (error) throw error;
+
+    const toSync = (rows || []).filter((row) => depositNeedsBinanceSync(row));
+    let synced = 0;
+
+    for (const row of toSync) {
+      const result = await syncDepositRowFromBinance(row, async (id, patch) => {
+        const { error: updateError } = await supabase
+          .from('reseller_transactions')
+          .update(patch)
+          .eq('id', id);
+        if (updateError) throw updateError;
+      });
+      if (result.synced) synced += 1;
+    }
+
+    return res.status(200).json({ success: true, synced, attempted: toSync.length });
+  } catch (error: any) {
+    console.error('admin deposits sync-missing:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to sync deposits' });
+  }
+});
+
+/** Approve/reject a pending reseller deposit; syncs Binance metadata when available */
+router.post('/reseller/deposits/:id/review', verifyAdmin, async (req, res) => {
+  try {
+    const depositId = String(req.params.id || '').trim();
+    const status = String(req.body?.status || '').trim();
+
+    if (!depositId) {
+      return res.status(400).json({ success: false, error: 'Missing deposit id' });
+    }
+    if (status !== 'approved' && status !== 'rejected') {
+      return res.status(400).json({ success: false, error: 'Status must be approved or rejected' });
+    }
+
+    const { data: tx, error: fetchError } = await supabase
+      .from('reseller_transactions')
+      .select('*')
+      .eq('id', depositId)
+      .single();
+
+    if (fetchError || !tx) {
+      return res.status(404).json({ success: false, error: 'Transaction not found' });
+    }
+    if (tx.type !== 'deposit') {
+      return res.status(400).json({ success: false, error: 'Not a deposit transaction' });
+    }
+    if (tx.status !== 'pending') {
+      return res.status(400).json({ success: false, error: 'Already processed' });
+    }
+
+    let paymentDetails: Record<string, string | null> = {};
+    if (tx.tx_id && isBinanceConfigured()) {
+      const lookup = await lookupBinancePayment(String(tx.tx_id), {
+        minAmount: Number(tx.amount) || 0,
+        aroundTime: tx.created_at ? new Date(tx.created_at) : undefined,
+        strict: false,
+      });
+      if (lookup) {
+        paymentDetails = buildPaymentDetailsFromMatch(lookup.match);
+      }
+    }
+
+    if (status === 'approved') {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('wallet_balance')
+        .eq('id', tx.reseller_id)
+        .single();
+      const newBalance = (profile?.wallet_balance || 0) + Number(tx.amount || 0);
+
+      await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', tx.reseller_id);
+      await supabase
+        .from('reseller_transactions')
+        .update({
+          status: 'approved',
+          description: 'Binance Deposit Approved',
+          balance_after: newBalance,
+          ...paymentDetails,
+        })
+        .eq('id', depositId);
+    } else {
+      await supabase
+        .from('reseller_transactions')
+        .update({
+          status: 'rejected',
+          description: 'Binance Deposit Rejected',
+          ...paymentDetails,
+        })
+        .eq('id', depositId);
+    }
+
+    return res.status(200).json({ success: true, status, paymentDetails });
+  } catch (error: any) {
+    console.error('admin deposits review:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to review deposit' });
   }
 });
 

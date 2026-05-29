@@ -42,8 +42,8 @@ export const TransactionHistory = () => {
     <div className="space-y-6 lg:space-y-8 pb-10">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h1 className="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Transaction History</h1>
-          <p className="text-gray-400 mt-1 lg:mt-2 text-base lg:text-lg">View all your deposits, deductions, and refunds.</p>
+          <h1 className="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Activity Log</h1>
+          <p className="text-gray-400 mt-1 lg:mt-2 text-base lg:text-lg">Deposits, user activations, extensions, refunds, and balance changes.</p>
         </div>
         <button
           onClick={fetchTransactions}
@@ -73,7 +73,7 @@ export const TransactionHistory = () => {
                   <tr>
                     <td colSpan={5} className="p-12 text-center">
                       <Loader2 className="h-8 w-8 animate-spin text-indigo-500 mx-auto" />
-                      <p className="text-gray-500 mt-4 font-medium">Loading transactions...</p>
+                      <p className="text-gray-500 mt-4 font-medium">Loading activity...</p>
                     </td>
                   </tr>
                 ) : transactions.length === 0 ? (
@@ -82,8 +82,8 @@ export const TransactionHistory = () => {
                       <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                         <History className="h-6 w-6 text-gray-500" />
                       </div>
-                      <p className="font-medium text-lg text-gray-400">No transactions found</p>
-                      <p className="text-sm mt-1">Your payment and usage history will appear here.</p>
+                      <p className="font-medium text-lg text-gray-400">No activity yet</p>
+                      <p className="text-sm mt-1">Your wallet and user actions will show up here.</p>
                     </td>
                   </tr>
                 ) : (
@@ -154,7 +154,7 @@ export const TransactionHistory = () => {
               setPageSize(size);
               setPage(1);
             }}
-            itemLabel="transactions"
+            itemLabel="activities"
             variant="reseller"
           />
         )}

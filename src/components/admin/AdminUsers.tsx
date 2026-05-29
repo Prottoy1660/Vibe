@@ -363,45 +363,26 @@ export const AdminUsers = () => {
     }
   };
 
-  if (loading) {
-    return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
-  }
-
-  if (selectedUserId) {
-    return <AdminUserDetails userId={selectedUserId} onBack={() => setSelectedUserId(null)} />;
-  }
-
-  const stats = {
-    total: users.length,
-    active: users.filter((u) => !u.is_banned).length,
-    banned: users.filter((u) => u.is_banned).length,
-  };
-
-  const signupBreakdown = {
-    email: users.filter((u) => (u.signup_auth_provider || 'email') === 'email').length,
-    google: users.filter((u) => u.signup_auth_provider === 'google').length,
-    facebook: users.filter((u) => u.signup_auth_provider === 'facebook').length,
-    azure: users.filter((u) => u.signup_auth_provider === 'azure').length,
-  };
-
-  const filteredUsers = users.filter((u) => {
+  const filteredUsers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matchesSearch =
-      !q ||
-      u.name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) ||
-      (u.phone || '').toLowerCase().includes(q);
+    return users.filter((u) => {
+      const matchesSearch =
+        !q ||
+        (u.name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.phone || '').toLowerCase().includes(q);
 
-    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
-    const matchesStatus =
-      statusFilter === 'all' || (statusFilter === 'banned' ? u.is_banned : !u.is_banned);
-    const sp = (u.signup_auth_provider || 'email').toLowerCase();
-    const matchesSignup =
-      signupFilter === 'all' ||
-      (signupFilter === 'email' ? sp === 'email' : sp === signupFilter);
+      const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+      const matchesStatus =
+        statusFilter === 'all' || (statusFilter === 'banned' ? u.is_banned : !u.is_banned);
+      const sp = (u.signup_auth_provider || 'email').toLowerCase();
+      const matchesSignup =
+        signupFilter === 'all' ||
+        (signupFilter === 'email' ? sp === 'email' : sp === signupFilter);
 
-    return matchesSearch && matchesRole && matchesStatus && matchesSignup;
-  });
+      return matchesSearch && matchesRole && matchesStatus && matchesSignup;
+    });
+  }, [users, searchQuery, roleFilter, statusFilter, signupFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -411,6 +392,33 @@ export const AdminUsers = () => {
     () => paginateItems(filteredUsers, page, pageSize),
     [filteredUsers, page, pageSize],
   );
+
+  const stats = useMemo(
+    () => ({
+      total: users.length,
+      active: users.filter((u) => !u.is_banned).length,
+      banned: users.filter((u) => u.is_banned).length,
+    }),
+    [users],
+  );
+
+  const signupBreakdown = useMemo(
+    () => ({
+      email: users.filter((u) => (u.signup_auth_provider || 'email') === 'email').length,
+      google: users.filter((u) => u.signup_auth_provider === 'google').length,
+      facebook: users.filter((u) => u.signup_auth_provider === 'facebook').length,
+      azure: users.filter((u) => u.signup_auth_provider === 'azure').length,
+    }),
+    [users],
+  );
+
+  if (loading) {
+    return <div className="flex justify-center p-8"><Loader2 className="animate-spin w-8 h-8 text-primary" /></div>;
+  }
+
+  if (selectedUserId) {
+    return <AdminUserDetails userId={selectedUserId} onBack={() => setSelectedUserId(null)} />;
+  }
 
   const handleAllDelete = async () => {
     const idsToDelete = filteredUsers.filter((u) => u.role !== 'admin').map((u) => u.id);

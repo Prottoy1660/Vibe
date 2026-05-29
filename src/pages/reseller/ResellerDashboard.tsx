@@ -103,7 +103,7 @@ export const ResellerDashboard = () => {
           className="lg:col-span-2 bg-[#111111] border border-white/5 rounded-3xl p-5 lg:p-8"
         >
           <div className="flex items-center justify-between mb-8">
-            <h2 className="text-2xl font-bold text-white tracking-tight">Recent Transactions</h2>
+            <h2 className="text-2xl font-bold text-white tracking-tight">Recent Activity</h2>
             <Link to="/reseller/transactions" className="text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors">View all &rarr;</Link>
           </div>
           
@@ -117,8 +117,8 @@ export const ResellerDashboard = () => {
                 <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CreditCard className="h-6 w-6 text-gray-500" />
                 </div>
-                <p className="text-gray-400 font-medium">No recent transactions</p>
-                <p className="text-sm text-gray-500 mt-1">Your transaction history will appear here.</p>
+                <p className="text-gray-400 font-medium">No recent activity</p>
+                <p className="text-sm text-gray-500 mt-1">Your activity log will appear here.</p>
               </div>
             ) : (
               transactions.map((tx) => (

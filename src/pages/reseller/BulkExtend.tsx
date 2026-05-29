@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { CalendarClock, CheckCircle2, AlertCircle, ListPlus, Clock } from 'lucide-react';
 import { ResellerApi, ResellerPackage } from '../../services/reseller/resellerApi';
 import { useNavigate } from 'react-router-dom';
+import { filterExtendPackages } from '../../lib/resellerPackageUtils';
 
 export const BulkExtend = () => {
   const navigate = useNavigate();
@@ -19,7 +20,8 @@ export const BulkExtend = () => {
     ResellerApi.getDashboardData().then(d => setBalance(d.balance));
     ResellerApi.getPackages().then(pkgs => {
       setPackages(pkgs);
-      if (pkgs.length > 0) setDuration(pkgs[0].value);
+      const extendPkgs = filterExtendPackages(pkgs);
+      if (extendPkgs.length > 0) setDuration(extendPkgs[0].value);
       setFetchingPkgs(false);
     });
   }, []);
@@ -30,7 +32,8 @@ export const BulkExtend = () => {
     .map(e => e.trim())
     .filter(e => e.length > 0 && e.includes('@')); // basic validation
 
-  const selectedDuration = packages.find(d => d.value === duration);
+  const extendPackages = filterExtendPackages(packages);
+  const selectedDuration = extendPackages.find(d => d.value === duration);
   const costPerUser = selectedDuration?.cost || 0;
   const totalCost = costPerUser * parsedEmails.length;
   const hasEnoughBalance = balance >= totalCost;
@@ -155,10 +158,10 @@ export const BulkExtend = () => {
                   >
                     {fetchingPkgs ? (
                       <option>Loading packages...</option>
-                    ) : packages.length === 0 ? (
-                      <option>No packages available</option>
+                    ) : extendPackages.length === 0 ? (
+                      <option>No monthly packages available</option>
                     ) : (
-                      packages.map(d => (
+                      extendPackages.map(d => (
                         <option key={d.id} value={d.value} className="bg-[#1a1a1a]">{d.label} - ${d.cost.toFixed(2)} per user</option>
                       ))
                     )}
@@ -167,6 +170,9 @@ export const BulkExtend = () => {
                     <div className="h-1.5 w-1.5 lg:h-2 lg:w-2 border-r-2 border-b-2 border-gray-400 rotate-45 transform -translate-y-1 group-focus-within:border-white transition-colors" />
                   </div>
                 </div>
+                <p className="text-xs text-gray-500 ml-1 mt-1">
+                  Only monthly packages (1–12 months) can be used for extension. Day trials are for new activations only.
+                </p>
               </div>
             </div>
 
@@ -207,7 +213,7 @@ export const BulkExtend = () => {
 
             <button
               type="submit"
-              disabled={!hasEnoughBalance || loading || parsedEmails.length === 0}
+              disabled={!hasEnoughBalance || loading || parsedEmails.length === 0 || extendPackages.length === 0}
               className={`w-full py-3.5 lg:py-4 rounded-xl lg:rounded-2xl font-bold flex items-center justify-center gap-2 transition-all duration-300 text-sm lg:text-base ${
                 !hasEnoughBalance || parsedEmails.length === 0
                   ? 'bg-white/5 text-gray-500 cursor-not-allowed'

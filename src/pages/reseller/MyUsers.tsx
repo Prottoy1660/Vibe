@@ -4,6 +4,7 @@ import { Search, Trash2, Clock, CheckCircle2, Loader2, Users, RefreshCw, Buildin
 import { ResellerApi, ResellerPackage, ResellerUser } from '../../services/reseller/resellerApi';
 import { paginateItems, TablePagination } from '../../components/reseller/TablePagination';
 import { RefundCountdownBadge } from '../../components/reseller/RefundCountdownBadge';
+import { filterExtendPackages } from '../../lib/resellerPackageUtils';
 
 export const MyUsers = () => {
   const [users, setUsers] = useState<ResellerUser[]>([]);
@@ -25,7 +26,8 @@ export const MyUsers = () => {
     fetchUsers();
     ResellerApi.getPackages().then((pkgs) => {
       setPackages(pkgs);
-      if (pkgs.length > 0) setExtendDuration(pkgs[0].value);
+      const extendPkgs = filterExtendPackages(pkgs);
+      if (extendPkgs.length > 0) setExtendDuration(extendPkgs[0].value);
     });
   }, []);
 
@@ -48,8 +50,11 @@ export const MyUsers = () => {
   const handleExtend = async () => {
     if (!extendTarget || !extendDuration) return;
 
-    const selected = packages.find((p) => p.value === extendDuration);
-    if (!selected) return;
+    const selected = extendPackages.find((p) => p.value === extendDuration);
+    if (!selected) {
+      alert('Please choose a monthly extension package (1–12 months). Trial packages cannot extend users.');
+      return;
+    }
 
     setExtendLoading(true);
     setExtendingId(extendTarget.id);
@@ -67,7 +72,8 @@ export const MyUsers = () => {
     }
   };
 
-  const selectedExtendPackage = packages.find((p) => p.value === extendDuration);
+  const extendPackages = filterExtendPackages(packages);
+  const selectedExtendPackage = extendPackages.find((p) => p.value === extendDuration);
   const extendCost = selectedExtendPackage?.cost ?? 0;
 
   const handleDelete = async (id: string) => {
@@ -346,15 +352,23 @@ export const MyUsers = () => {
                   <select
                     value={extendDuration}
                     onChange={(e) => setExtendDuration(e.target.value)}
-                    disabled={extendLoading || packages.length === 0}
+                    disabled={extendLoading || extendPackages.length === 0}
                     className="block w-full px-4 py-3 bg-[#111111] border border-white/10 rounded-xl text-white focus:ring-2 focus:ring-amber-500/40 appearance-none"
                   >
-                    {packages.map((pkg) => (
+                    {extendPackages.map((pkg) => (
                       <option key={pkg.id} value={pkg.value} className="bg-[#1a1a1a]">
                         {pkg.label} — ${pkg.cost.toFixed(2)}
                       </option>
                     ))}
                   </select>
+                  {extendPackages.length === 0 && (
+                    <p className="text-xs text-amber-400/90">
+                      No monthly packages available for extension. Trial packages (7d/14d) only work for new activations.
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    Extension adds 1–12 months on Adobe. Day trials cannot be used to extend.
+                  </p>
                 </div>
 
                 <div className="rounded-2xl bg-[#111111] border border-white/5 p-4 text-sm space-y-2">
@@ -380,7 +394,7 @@ export const MyUsers = () => {
                 <button
                   type="button"
                   onClick={handleExtend}
-                  disabled={extendLoading || packages.length === 0}
+                  disabled={extendLoading || extendPackages.length === 0}
                   className="w-full py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 bg-amber-400 hover:bg-amber-300 text-black transition-all disabled:opacity-50"
                 >
                   {extendLoading ? (

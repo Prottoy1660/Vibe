@@ -1,4 +1,6 @@
 import { supabase } from '../../lib/supabase';
+import { getApiBaseUrl } from '../../lib/apiBase';
+import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 
 export interface ResellerUser {
   id: string;
@@ -25,6 +27,51 @@ export interface Transaction {
   description: string;
   txId?: string;
   balanceAfter?: number;
+  binanceOrderId?: string;
+  binanceTransactionId?: string;
+  payerBinanceId?: string;
+  payerName?: string;
+  payerType?: string;
+  paymentChannel?: 'pay' | 'crypto';
+  paymentCurrency?: string;
+  binanceTransactionTime?: string;
+  resellerName?: string;
+  resellerEmail?: string;
+}
+
+export type AdminDepositsQuery = {
+  page?: number;
+  pageSize?: number;
+  status?: 'all' | Transaction['status'];
+  search?: string;
+};
+
+export type AdminDepositsResult = {
+  deposits: Transaction[];
+  total: number;
+  pendingCount: number;
+};
+
+function mapResellerTransactionRow(t: Record<string, unknown>): Transaction {
+  return {
+    id: String(t.id),
+    reseller_id: t.reseller_id ? String(t.reseller_id) : undefined,
+    amount: Number(t.amount) || 0,
+    type: t.type as Transaction['type'],
+    status: t.status as Transaction['status'],
+    createdAt: String(t.created_at),
+    description: String(t.description || ''),
+    txId: t.tx_id ? String(t.tx_id) : undefined,
+    balanceAfter: t.balance_after != null ? Number(t.balance_after) : undefined,
+    binanceOrderId: t.binance_order_id ? String(t.binance_order_id) : undefined,
+    binanceTransactionId: t.binance_transaction_id ? String(t.binance_transaction_id) : undefined,
+    payerBinanceId: t.payer_binance_id ? String(t.payer_binance_id) : undefined,
+    payerName: t.payer_name ? String(t.payer_name) : undefined,
+    payerType: t.payer_type ? String(t.payer_type) : undefined,
+    paymentChannel: t.payment_channel as Transaction['paymentChannel'],
+    paymentCurrency: t.payment_currency ? String(t.payment_currency) : undefined,
+    binanceTransactionTime: t.binance_transaction_time ? String(t.binance_transaction_time) : undefined,
+  };
 }
 
 export interface ResellerPackage {
@@ -347,6 +394,7 @@ export const ResellerApi = {
     }
 
     // Process sequentially
+    let lastError = '';
     for (const email of emails) {
       try {
         const apiRes = await fetch('/api/reseller/adobe/extend', {
@@ -364,25 +412,27 @@ export const ResellerApi = {
         });
         
         const text = await apiRes.text();
-        let apiData = {};
+        let apiData: { success?: boolean; error?: string; message?: string } = {};
         try {
           if (text) apiData = JSON.parse(text);
-        } catch (e) {
+        } catch {
           // ignore
         }
 
-        if (apiRes.ok && (apiData as any).success) {
+        if (apiRes.ok && apiData.success) {
           successfulEmails.push(email);
         } else {
+          lastError = apiData.error || apiData.message || `Extend failed (HTTP ${apiRes.status})`;
           failedEmails.push(email);
         }
-      } catch (e) {
+      } catch (e: any) {
+        lastError = e?.message || 'Network error while extending user';
         failedEmails.push(email);
       }
     }
 
     if (successfulEmails.length === 0) {
-      throw new Error('Failed to extend any users.');
+      throw new Error(lastError || 'Failed to extend any users.');
     }
 
     if (failedEmails.length > 0) {
@@ -592,16 +642,40 @@ export const ResellerApi = {
 
     if (error) throw error;
 
-    return (data || []).map(t => ({
-      id: t.id,
-      amount: t.amount,
-      type: t.type,
-      status: t.status,
-      createdAt: t.created_at,
-      description: t.description,
-      txId: t.tx_id,
-      balanceAfter: t.balance_after
-    })) as Transaction[];
+    return (data || []).map((t) => mapResellerTransactionRow(t)) as Transaction[];
+  },
+
+  getPaymentHistory: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('reseller_transactions')
+      .select('*')
+      .eq('reseller_id', user.id)
+      .eq('type', 'deposit')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((t) => mapResellerTransactionRow(t)) as Transaction[];
+  },
+
+  syncPaymentDetailsFromBinance: async () => {
+    const token = await getAccessTokenForApi();
+    if (!token) throw new Error('Not authenticated');
+
+    const apiRes = await fetch(`${getApiBaseUrl()}/api/reseller/binance/sync-deposits`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to sync payment details from Binance');
+    }
+    return data as { synced: number; attempted: number };
   },
 
   // --- Admin Methods ---
@@ -632,58 +706,106 @@ export const ResellerApi = {
     if (error) throw error;
   },
 
-  adminGetDeposits: async () => {
-    const { data, error } = await supabase
+  adminGetDeposits: async (query: AdminDepositsQuery = {}): Promise<AdminDepositsResult> => {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 10;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const search = query.search?.trim() || '';
+
+    const { count: pendingCount } = await supabase
       .from('reseller_transactions')
-      .select('*, users(email)')
+      .select('*', { count: 'exact', head: true })
+      .eq('type', 'deposit')
+      .eq('status', 'pending');
+
+    let dbQuery = supabase
+      .from('reseller_transactions')
+      .select('*, users!reseller_id(name, email)', { count: 'exact' })
       .eq('type', 'deposit')
       .order('created_at', { ascending: false });
-    
+
+    if (query.status && query.status !== 'all') {
+      dbQuery = dbQuery.eq('status', query.status);
+    }
+
+    if (search) {
+      const { data: matchedUsers } = await supabase
+        .from('users')
+        .select('id')
+        .or(`email.ilike.%${search}%,name.ilike.%${search}%`);
+
+      const resellerIds = (matchedUsers || []).map((u) => u.id);
+      if (resellerIds.length > 0) {
+        dbQuery = dbQuery.in('reseller_id', resellerIds);
+      } else {
+        dbQuery = dbQuery.or(
+          [
+            `tx_id.ilike.%${search}%`,
+            `payer_binance_id.ilike.%${search}%`,
+            `payer_name.ilike.%${search}%`,
+            `binance_transaction_id.ilike.%${search}%`,
+            `binance_order_id.ilike.%${search}%`,
+          ].join(','),
+        );
+      }
+    }
+
+    const { data, error, count } = await dbQuery.range(from, to);
+
     if (error) throw error;
 
-    return (data || []).map((t: any) => ({
-      id: t.id,
-      reseller_id: t.reseller_id,
-      amount: t.amount,
-      type: t.type,
-      status: t.status,
-      createdAt: t.created_at,
-      description: t.description + (t.users?.email ? ` (from ${t.users.email})` : ''),
-      txId: t.tx_id,
-      balanceAfter: t.balance_after
-    })) as Transaction[];
+    const deposits = (data || []).map(
+      (t: Record<string, unknown> & { users?: { name?: string; email?: string } | null }) => {
+        const mapped = mapResellerTransactionRow(t);
+        mapped.resellerName = t.users?.name ? String(t.users.name) : undefined;
+        mapped.resellerEmail = t.users?.email ? String(t.users.email) : undefined;
+        return mapped;
+      },
+    ) as Transaction[];
+
+    return {
+      deposits,
+      total: count ?? 0,
+      pendingCount: pendingCount ?? 0,
+    };
+  },
+
+  adminSyncDepositsFromBinance: async (ids?: string[]) => {
+    const token = await getAccessTokenForApi();
+    if (!token) throw new Error('Not authenticated');
+
+    const apiRes = await fetch(`${getApiBaseUrl()}/api/admin/reseller/deposits/sync-missing`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(ids?.length ? { ids } : {}),
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to sync deposits from Binance');
+    }
+    return data as { synced: number; attempted: number };
   },
 
   adminUpdateDepositStatus: async (id: string, status: 'approved' | 'rejected') => {
-    // 1. Get the transaction
-    const { data: tx, error: fetchError } = await supabase
-      .from('reseller_transactions')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const token = await getAccessTokenForApi();
+    if (!token) throw new Error('Not authenticated');
 
-    if (fetchError || !tx) throw new Error('Transaction not found');
-    if (tx.status !== 'pending') throw new Error('Already processed');
-
-    // 2. If approved, add balance to the user
-    if (status === 'approved') {
-      const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', tx.reseller_id).single();
-      const newBalance = (profile?.wallet_balance || 0) + tx.amount;
-
-      await supabase.from('users').update({ wallet_balance: newBalance }).eq('id', tx.reseller_id);
-      
-      await supabase.from('reseller_transactions').update({ 
-        status, 
-        description: 'Binance Deposit Approved',
-        balance_after: newBalance
-      }).eq('id', id);
-    } else {
-      await supabase.from('reseller_transactions').update({ 
-        status, 
-        description: 'Binance Deposit Rejected'
-      }).eq('id', id);
+    const apiRes = await fetch(`${getApiBaseUrl()}/api/admin/reseller/deposits/${id}/review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status }),
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to update deposit status');
     }
-
     return true;
-  }
+  },
 };

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, UserPlus, Wallet, LogOut, Hexagon, History, ListPlus, UserMinus, Menu, X, CalendarClock } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, Wallet, LogOut, Hexagon, History, ListPlus, UserMinus, Menu, X, CalendarClock, Receipt } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -52,7 +52,8 @@ export const ResellerLayout = () => {
     { name: 'Bulk Remove', icon: UserMinus, path: '/reseller/bulk-remove' },
     { name: 'My Users', icon: Users, path: '/reseller/users' },
     { name: 'Add Funds', icon: Wallet, path: '/reseller/add-funds' },
-    { name: 'Transactions', icon: History, path: '/reseller/transactions' },
+    { name: 'Payment History', icon: Receipt, path: '/reseller/payment-history' },
+    { name: 'Activity Log', icon: History, path: '/reseller/transactions' },
   ];
 
   return (

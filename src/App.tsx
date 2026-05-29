@@ -19,6 +19,7 @@ const BulkRemove = React.lazy(() => import('./pages/reseller/BulkRemove').then(m
 const MyUsers = React.lazy(() => import('./pages/reseller/MyUsers').then(m => ({ default: m.MyUsers })));
 const AddFunds = React.lazy(() => import('./pages/reseller/AddFunds').then(m => ({ default: m.AddFunds })));
 const TransactionHistory = React.lazy(() => import('./pages/reseller/TransactionHistory').then(m => ({ default: m.TransactionHistory })));
+const PaymentHistory = React.lazy(() => import('./pages/reseller/PaymentHistory').then(m => ({ default: m.PaymentHistory })));
 const ResellerLogin = React.lazy(() => import('./pages/reseller/ResellerLogin').then(m => ({ default: m.ResellerLogin })));
 const ResellerSignup = React.lazy(() => import('./pages/reseller/ResellerSignup').then(m => ({ default: m.ResellerSignup })));
 const ResellerForgotPassword = React.lazy(() => import('./pages/reseller/ResellerForgotPassword').then(m => ({ default: m.ResellerForgotPassword })));
@@ -167,6 +168,7 @@ function AppRoutes() {
           <Route path="bulk-remove" element={<BulkRemove />} />
           <Route path="users" element={<MyUsers />} />
           <Route path="add-funds" element={<AddFunds />} />
+          <Route path="payment-history" element={<PaymentHistory />} />
           <Route path="transactions" element={<TransactionHistory />} />
         </Route>
 
