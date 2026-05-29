@@ -25,7 +25,7 @@ export const ResellerDashboard = () => {
           ResellerApi.getTransactions()
         ]);
         setData(dashboardData);
-        setTransactions(txData.slice(0, 5)); // Show only latest 5
+        setTransactions(txData.slice(0, 3)); // Show only latest 3
       } catch (error) {
         console.error(error);
       } finally {
