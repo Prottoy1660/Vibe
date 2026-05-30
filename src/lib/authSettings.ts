@@ -6,6 +6,8 @@ export type AuthSettingsValue = {
   facebook_login_under_maintenance?: boolean;
   microsoft_login_under_maintenance?: boolean;
   require_reseller_email_verification?: boolean;
+  /** When false, Super Reseller forgot-password is hidden and reset emails are blocked in UI. Default: true. */
+  enable_reseller_password_reset?: boolean;
 };
 
 export function parseAuthSettings(raw: unknown): AuthSettingsValue {
@@ -16,9 +18,14 @@ export function parseAuthSettings(raw: unknown): AuthSettingsValue {
     enable_facebook_login: v.enable_facebook_login !== false,
     enable_microsoft_login: v.enable_microsoft_login !== false,
     require_reseller_email_verification: v.require_reseller_email_verification !== false,
+    enable_reseller_password_reset: v.enable_reseller_password_reset !== false,
   };
 }
 
 export function isResellerEmailVerificationRequired(settings: AuthSettingsValue): boolean {
   return settings.require_reseller_email_verification !== false;
+}
+
+export function isResellerPasswordResetEnabled(settings: AuthSettingsValue): boolean {
+  return settings.enable_reseller_password_reset !== false;
 }

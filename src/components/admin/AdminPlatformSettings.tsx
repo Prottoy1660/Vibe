@@ -44,6 +44,7 @@ export const AdminPlatformSettings: React.FC = () => {
     facebook_login_under_maintenance: false,
     microsoft_login_under_maintenance: false,
     require_reseller_email_verification: true,
+    enable_reseller_password_reset: true,
   });
   const [authSaving, setAuthSaving] = useState(false);
   const [authMessage, setAuthMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -181,6 +182,7 @@ export const AdminPlatformSettings: React.FC = () => {
         facebook_login_under_maintenance: authForm.facebook_login_under_maintenance === true,
         microsoft_login_under_maintenance: authForm.microsoft_login_under_maintenance === true,
         require_reseller_email_verification: authForm.require_reseller_email_verification !== false,
+        enable_reseller_password_reset: authForm.enable_reseller_password_reset !== false,
       };
       // Prefer UPDATE so we don't require insert permissions (common with RLS).
       // If the row is missing, give a clear actionable message.
@@ -197,7 +199,7 @@ export const AdminPlatformSettings: React.FC = () => {
       }
       setAuthMessage({
         type: 'ok',
-        text: 'Auth settings saved (login maintenance + Super Reseller email verification).',
+        text: 'Auth settings saved (login maintenance + Super Reseller sign-in options).',
       });
     } catch (e: unknown) {
       const msg =
@@ -497,36 +499,56 @@ export const AdminPlatformSettings: React.FC = () => {
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">
         <div className="flex items-center gap-2 mb-3">
           <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Super Reseller email verification</h2>
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Super Reseller sign-in options</h2>
         </div>
         <div className="mb-4 space-y-3">
           <div className="flex gap-2.5 items-start">
             <Info className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" aria-hidden />
             <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
-              When on, new reseller sign-ups must confirm their email before signing in. When off, accounts are
-              activated immediately — no verification email is sent.
+              Control email verification on sign-up and the forgot-password reset link on superreseller.shop.
             </p>
           </div>
-          <HelpDetails summary="What happens when you turn this off">
+          <HelpDetails summary="Email verification off">
             <p>
               Sign-up creates an active account right away. Existing unverified reseller accounts are auto-activated
               when they try to sign in or use &quot;Resend verification&quot;. Google sign-up is unchanged.
             </p>
           </HelpDetails>
+          <HelpDetails summary="Password reset off">
+            <p>
+              The &quot;Forgot password?&quot; link is hidden on the reseller login page and the reset form is
+              disabled. Resellers must contact you to reset passwords manually.
+            </p>
+          </HelpDetails>
         </div>
-        <label className="flex items-start gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={authForm.require_reseller_email_verification !== false}
-            onChange={(e) =>
-              setAuthForm((f) => ({ ...f, require_reseller_email_verification: e.target.checked }))
-            }
-            className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-          />
-          <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
-            Require email verification for Super Reseller sign-up
-          </span>
-        </label>
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={authForm.require_reseller_email_verification !== false}
+              onChange={(e) =>
+                setAuthForm((f) => ({ ...f, require_reseller_email_verification: e.target.checked }))
+              }
+              className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Require email verification for Super Reseller sign-up
+            </span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={authForm.enable_reseller_password_reset !== false}
+              onChange={(e) =>
+                setAuthForm((f) => ({ ...f, enable_reseller_password_reset: e.target.checked }))
+              }
+              className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+            />
+            <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+              Allow password reset link on Super Reseller login
+            </span>
+          </label>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">

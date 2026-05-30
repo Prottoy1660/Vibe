@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 import { getApiBaseUrl } from '../../lib/apiBase';
-import { isResellerEmailVerificationRequired, parseAuthSettings } from '../../lib/authSettings';
+import { isResellerEmailVerificationRequired, isResellerPasswordResetEnabled, parseAuthSettings } from '../../lib/authSettings';
 import { syncResellerProfileViaApi } from '../../lib/ensureResellerRole';
 
 export const ResellerLogin = () => {
@@ -20,6 +20,7 @@ export const ResellerLogin = () => {
   const [resendLoading, setResendLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(verifyEmailSent);
   const [requireEmailVerification, setRequireEmailVerification] = useState(true);
+  const [passwordResetEnabled, setPasswordResetEnabled] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +33,7 @@ export const ResellerLogin = () => {
         if (cancelled) return;
         const settings = parseAuthSettings(data?.value);
         setRequireEmailVerification(isResellerEmailVerificationRequired(settings));
+        setPasswordResetEnabled(isResellerPasswordResetEnabled(settings));
       });
     return () => {
       cancelled = true;
@@ -274,9 +276,11 @@ export const ResellerLogin = () => {
             <div>
               <div className="flex items-center justify-between ml-1">
                 <label className="block text-sm font-semibold text-gray-300">Password</label>
-                <Link to="/reseller/forgot-password" className="text-xs font-medium text-gray-400 hover:text-white transition-colors">
-                  Forgot password?
-                </Link>
+                {passwordResetEnabled ? (
+                  <Link to="/reseller/forgot-password" className="text-xs font-medium text-gray-400 hover:text-white transition-colors">
+                    Forgot password?
+                  </Link>
+                ) : null}
               </div>
               <div className="mt-2 relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
