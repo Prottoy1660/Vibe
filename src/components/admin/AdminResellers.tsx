@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
+import { AdminResellerSignInSettings } from './AdminResellerSignInSettings';
 import {
   Crown,
   DollarSign,
@@ -220,6 +221,8 @@ export const AdminResellers = () => {
 
   return (
     <div className="space-y-6">
+      <AdminResellerSignInSettings />
+
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
