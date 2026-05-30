@@ -8,8 +8,9 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import {
   applyResellerRedirectToConfirmationUrl,
+  authUserNeedsEmailVerification,
+  deliverResellerVerificationEmail,
   findAuthUserByEmail,
-  generateResellerVerificationLink,
   getResellerAuthRedirectUrl,
   sendResellerVerificationEmail,
 } from '../lib/resellerAuthEmail.js'
@@ -197,13 +198,23 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
       if (/already|registered|exists/i.test(msg)) {
         try {
           const existing = await findAuthUserByEmail(supabase, email)
-          if (existing && !existing.email_confirmed_at) {
-            res.status(409).json({
+          if (existing && authUserNeedsEmailVerification(existing)) {
+            const delivered = await deliverResellerVerificationEmail(supabase, email, {
+              subject: 'Super Reseller — verify your email',
+            })
+            if (delivered.ok) {
+              res.status(200).json({
+                success: true,
+                needsVerification: true,
+                message: delivered.message || 'Verification email sent from Super Reseller.',
+              })
+              return
+            }
+            res.status(503).json({
               success: false,
               needsVerification: true,
               canResend: true,
-              error:
-                'This email is registered but not verified yet. Use “Resend verification email” on the login page.',
+              error: delivered.error || 'Account exists but verification email could not be sent.',
             })
             return
           }
@@ -274,57 +285,43 @@ router.post('/reseller-resend-verification', resendVerificationLimiter, async (r
   try {
     const user = await findAuthUserByEmail(supabase, email)
 
-    if (!user) {
-      res.status(200).json({
-        success: true,
-        message: 'If an unverified Super Reseller account exists for this email, we sent a new link.',
-      })
-      return
-    }
-
-    if (user.email_confirmed_at) {
-      res.status(400).json({
-        success: false,
-        alreadyVerified: true,
-        error: 'This email is already verified. Please sign in with your password.',
-      })
-      return
-    }
-
-    const redirectTo = getResellerAuthRedirectUrl('/reseller/login')
-
-    const generated = await generateResellerVerificationLink(supabase, email, redirectTo)
-    if (!generated.link) {
-      console.error('[reseller-resend-verification] generateLink', generated.error)
-      const msg = generated.error || 'Could not create verification link.'
-      if (/already|registered|exists/i.test(msg) && !user.email_confirmed_at) {
-        res.status(400).json({
-          success: false,
-          error:
-            'Could not resend verification for this account. Try forgot password or contact support with your email.',
-        })
-        return
-      }
-      res.status(400).json({ success: false, error: msg })
-      return
-    }
-
-    const confirmationUrl = applyResellerRedirectToConfirmationUrl(generated.link, redirectTo)
-
-    const sent = await sendResellerVerificationEmail({
-      to: email,
-      confirmationUrl,
+    const delivered = await deliverResellerVerificationEmail(supabase, email, {
       subject: 'Super Reseller — verify your email (resent)',
     })
 
-    if (!sent.ok) {
-      res.status(503).json({ success: false, error: sent.error || 'Could not send email.' })
+    if (delivered.ok) {
+      res.status(200).json({
+        success: true,
+        message: delivered.message,
+      })
       return
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'A new verification link was sent from Super Reseller. Check your inbox and spam folder.',
+    console.error('[reseller-resend-verification]', delivered.error)
+
+    if (user && !authUserNeedsEmailVerification(user)) {
+      res.status(400).json({
+        success: false,
+        alreadyVerified: true,
+        error: 'This email is already verified. Sign in with your password or use Forgot password.',
+      })
+      return
+    }
+
+    if (!user) {
+      res.status(200).json({
+        success: true,
+        message:
+          'If an unverified Super Reseller account exists for this email, we sent a new link. Check inbox and spam.',
+      })
+      return
+    }
+
+    res.status(400).json({
+      success: false,
+      error:
+        delivered.error ||
+        'Could not send verification email. Try Forgot password on the login page, or contact support.',
     })
   } catch (e) {
     console.error('[reseller-resend-verification]', e)

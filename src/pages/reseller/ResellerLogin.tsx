@@ -43,7 +43,11 @@ export const ResellerLogin = () => {
         }
         throw new Error(payload.error || 'Could not resend verification email');
       }
-      toast.success(payload.message || 'Verification email sent. Check inbox and spam.', { duration: 8000 });
+      toast.success(
+        payload.message ||
+          'Check your inbox and spam for an email from Super Reseller (verification or activation link).',
+        { duration: 10000 },
+      );
       setNeedsVerification(true);
     } catch (err: any) {
       toast.error(err.message || 'Failed to resend verification email');
@@ -66,7 +70,7 @@ export const ResellerLogin = () => {
         if (/email not confirmed/i.test(error.message)) {
           setNeedsVerification(true);
           throw new Error(
-            'Your email is not verified yet. Use “Resend verification email” below, then open the link from Super Reseller.',
+            'Your email is not verified yet. Tap “Resend verification email” below — we will send a new Super Reseller link (or an activation link to set your password).',
           );
         }
         throw error;

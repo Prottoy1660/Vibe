@@ -13,16 +13,33 @@ function resellerFromAddress(): string {
  * Send Super Reseller verification email via Resend using the main API server's RESEND_API_KEY.
  * This bypasses Supabase SMTP / edge hooks (which still send VibeAccess if the hook is off).
  */
-/** Look up auth user by email (admin API has no direct get-by-email). */
+/** True when the user still cannot sign in with email/password (unverified). */
+export function authUserNeedsEmailVerification(user: User | null | undefined): boolean {
+  if (!user) return true;
+  return !user.email_confirmed_at;
+}
+
+/** Look up auth user by email — prefer public.users id, then paginate auth admin list. */
 export async function findAuthUserByEmail(
   supabase: SupabaseClient,
   email: string,
 ): Promise<User | null> {
   const normalized = email.trim().toLowerCase();
-  let page = 1;
-  const perPage = 200;
 
-  for (let i = 0; i < 20; i += 1) {
+  try {
+    const { data: row } = await supabase.from('users').select('id').eq('email', normalized).maybeSingle();
+    if (row?.id) {
+      const { data, error } = await supabase.auth.admin.getUserById(row.id);
+      if (!error && data?.user) return data.user;
+    }
+  } catch {
+    // fall through
+  }
+
+  let page = 1;
+  const perPage = 1000;
+
+  for (let i = 0; i < 50; i += 1) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
     if (error) throw error;
     const found = data.users.find((u: User) => u.email?.toLowerCase() === normalized);
@@ -37,6 +54,8 @@ export async function sendResellerVerificationEmail(args: {
   to: string;
   confirmationUrl: string;
   subject?: string;
+  /** recovery = password reset link that also unlocks login when email was never confirmed */
+  variant?: 'verify' | 'recovery';
 }): Promise<{ ok: boolean; error?: string }> {
   const apiKey = (process.env.RESEND_API_KEY || '').trim();
   if (!apiKey) {
@@ -47,15 +66,18 @@ export async function sendResellerVerificationEmail(args: {
   if (!to) return { ok: false, error: 'Missing recipient email.' };
 
   try {
+    const isRecovery = args.variant === 'recovery';
     const html = buildResellerEmailHtml(
       {
-        pageTitle: 'Verify your email',
-        title: 'Verify your email',
-        body: 'Welcome to Super Reseller! Tap the button below to confirm your email address and activate your account.',
-        ctaLabel: 'Verify email address',
+        pageTitle: isRecovery ? 'Activate your account' : 'Verify your email',
+        title: isRecovery ? 'Activate your Super Reseller account' : 'Verify your email',
+        body: isRecovery
+          ? 'Your account is registered but not active yet. Tap the button below to confirm your email and choose a password, then sign in.'
+          : 'Welcome to Super Reseller! Tap the button below to confirm your email address and activate your account.',
+        ctaLabel: isRecovery ? 'Activate account' : 'Verify email address',
         ctaHref: args.confirmationUrl,
         footerNote: "If you didn't create a Super Reseller account, you can safely ignore this email.",
-        expiryNote: 'This link expires in 24 hours.',
+        expiryNote: isRecovery ? 'This link expires in 1 hour.' : 'This link expires in 24 hours.',
       },
       RESELLER_SITE,
     );
@@ -119,7 +141,7 @@ export async function generateResellerVerificationLink(
   supabase: SupabaseClient,
   email: string,
   redirectTo = getResellerAuthRedirectUrl('/reseller/login'),
-): Promise<{ link?: string; error?: string }> {
+): Promise<{ link?: string; error?: string; variant?: 'verify' | 'recovery' }> {
   const normalized = email.trim().toLowerCase();
   const options = { redirectTo, data: { role: 'reseller' } };
   let lastError = '';
@@ -130,7 +152,7 @@ export async function generateResellerVerificationLink(
     options,
   });
   const inviteLink = actionLinkFromGenerateResult(invite.data);
-  if (inviteLink) return { link: inviteLink };
+  if (inviteLink) return { link: inviteLink, variant: 'verify' };
   lastError = invite.error?.message || lastError;
   if (invite.error && /rate|too many/i.test(invite.error.message)) {
     return { error: lastError };
@@ -142,8 +164,49 @@ export async function generateResellerVerificationLink(
     options,
   });
   const magicLink = actionLinkFromGenerateResult(magic.data);
-  if (magicLink) return { link: magicLink };
+  if (magicLink) return { link: magicLink, variant: 'verify' };
   lastError = magic.error?.message || lastError;
 
+  const recovery = await supabase.auth.admin.generateLink({
+    type: 'recovery',
+    email: normalized,
+    options: { redirectTo: getResellerAuthRedirectUrl('/reseller/login?verified=1') },
+  });
+  const recoveryLink = actionLinkFromGenerateResult(recovery.data);
+  if (recoveryLink) return { link: recoveryLink, variant: 'recovery' };
+  lastError = recovery.error?.message || lastError;
+
   return { error: lastError || 'Could not create verification link.' };
+}
+
+/** Create link + send Super Reseller verification (signup or resend). */
+export async function deliverResellerVerificationEmail(
+  supabase: SupabaseClient,
+  email: string,
+  opts?: { subject?: string; redirectTo?: string },
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const redirectTo = opts?.redirectTo ?? getResellerAuthRedirectUrl('/reseller/login');
+  const generated = await generateResellerVerificationLink(supabase, email, redirectTo);
+  if (!generated.link) {
+    return { ok: false, error: generated.error || 'Could not create verification link.' };
+  }
+
+  const confirmationUrl = applyResellerRedirectToConfirmationUrl(generated.link, redirectTo);
+  const sent = await sendResellerVerificationEmail({
+    to: email,
+    confirmationUrl,
+    subject: opts?.subject,
+    variant: generated.variant,
+  });
+
+  if (!sent.ok) {
+    return { ok: false, error: sent.error || 'Could not send email.' };
+  }
+
+  const message =
+    generated.variant === 'recovery'
+      ? 'We sent an activation link from Super Reseller. Open it to confirm your email and set your password.'
+      : 'A verification link was sent from Super Reseller. Check your inbox and spam folder.';
+
+  return { ok: true, message };
 }
