@@ -162,7 +162,11 @@ export type AdobeOrgSnapshot = {
   displayProducts: string[];
 };
 
-let panelUsersCache: { atMs: number; map: Map<string, AdobeOrgSnapshot> } | null = null;
+let panelUsersCache: {
+  atMs: number;
+  map: Map<string, AdobeOrgSnapshot>;
+  fullByEmail: Map<string, AdobePanelUserRow>;
+} | null = null;
 const PANEL_USERS_CACHE_MS = 3 * 60 * 1000;
 
 async function panelGet(path: string, token: string) {
@@ -210,9 +214,11 @@ export async function fetchAdobePanelUsers(
 
   const users = out.data.users as AdobePanelUserRow[];
   const map = new Map<string, AdobeOrgSnapshot>();
+  const fullByEmail = new Map<string, AdobePanelUserRow>();
   for (const row of users) {
     const email = String(row.email || '').trim().toLowerCase();
     if (!email) continue;
+    fullByEmail.set(email, row);
     map.set(email, {
       organizationId:
         Number.isFinite(Number(row.organizationId)) && Number(row.organizationId) > 0
@@ -226,8 +232,14 @@ export async function fetchAdobePanelUsers(
           : [],
     });
   }
-  panelUsersCache = { atMs: Date.now(), map };
+  panelUsersCache = { atMs: Date.now(), map, fullByEmail };
   return { success: true, users };
+}
+
+export function getAdobePanelUserByEmail(email: string): AdobePanelUserRow | null {
+  const key = String(email || '').trim().toLowerCase();
+  if (!key || !panelUsersCache) return null;
+  return panelUsersCache.fullByEmail.get(key) ?? null;
 }
 
 export function getAdobeOrgSnapshotByEmail(email: string): AdobeOrgSnapshot | null {

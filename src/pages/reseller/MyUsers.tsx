@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Trash2, Clock, CheckCircle2, Loader2, Users, RefreshCw, Building2, CalendarClock, X } from 'lucide-react';
+import { Search, Trash2, Clock, Loader2, Users, RefreshCw, Building2, CalendarClock, X, Activity } from 'lucide-react';
+import { UserStatusModal } from '../../components/reseller/UserStatusModal';
 import { ResellerApi, ResellerPackage, ResellerUser } from '../../services/reseller/resellerApi';
 import { paginateItems, TablePagination } from '../../components/reseller/TablePagination';
 import { RefundCountdownBadge } from '../../components/reseller/RefundCountdownBadge';
@@ -15,6 +16,7 @@ export const MyUsers = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [extendingId, setExtendingId] = useState<string | null>(null);
   const [extendTarget, setExtendTarget] = useState<ResellerUser | null>(null);
+  const [statusTarget, setStatusTarget] = useState<ResellerUser | null>(null);
   const [packages, setPackages] = useState<ResellerPackage[]>([]);
   const [extendDuration, setExtendDuration] = useState('');
   const [extendLoading, setExtendLoading] = useState(false);
@@ -110,19 +112,41 @@ export const MyUsers = () => {
     setPage(1);
   }, [search, orgFilter]);
 
-  const getStatusBadge = (status: string, activatedAt: string) => {
-    if (status === 'expired') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">Expired</span>;
-    if (status === 'refunded') return <span className="px-3 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">Refunded</span>;
-    
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Active
+  const formatExpiry = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  const formatDuration = (months: string) =>
+    months.endsWith('d') ? months.replace('d', ' days') : `${months} mo`;
+
+  const getStatusCell = (status: string, activatedAt: string) => {
+    if (status === 'expired') {
+      return (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+          Expired
         </span>
-        <RefundCountdownBadge activatedAt={activatedAt} />
+      );
+    }
+    if (status === 'refunded') {
+      return (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium bg-orange-500/10 text-orange-400 border border-orange-500/20">
+          Refunded
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex flex-row flex-nowrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          Active
+        </span>
+        <RefundCountdownBadge activatedAt={activatedAt} variant="compact" />
       </div>
     );
   };
+
+  const actionBtn =
+    'inline-flex items-center justify-center h-9 w-9 rounded-xl transition-all disabled:opacity-50 active:scale-95 shrink-0';
 
   return (
     <div className="space-y-6">
@@ -186,16 +210,25 @@ export const MyUsers = () => {
 
       <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
         <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left border-collapse min-w-[960px]">
+          <table className="w-full text-left border-collapse table-fixed min-w-[1180px]">
+            <colgroup>
+              <col className="w-[24%]" />
+              <col className="w-[17%]" />
+              <col className="w-[14%]" />
+              <col className="w-[8%]" />
+              <col className="w-[17%]" />
+              <col className="w-[11%]" />
+              <col className="w-[9%]" />
+            </colgroup>
             <thead>
-              <tr className="bg-white/[0.02] border-b border-white/5 text-xs uppercase tracking-widest text-gray-500">
-                <th className="p-4 lg:p-6 font-bold">Customer Email</th>
-                <th className="p-4 lg:p-6 font-bold">Organization</th>
-                <th className="p-4 lg:p-6 font-bold">Products</th>
-                <th className="p-4 lg:p-6 font-bold">Duration</th>
-                <th className="p-4 lg:p-6 font-bold">Status</th>
-                <th className="p-4 lg:p-6 font-bold">Expires</th>
-                <th className="p-4 lg:p-6 font-bold text-right">Actions</th>
+              <tr className="bg-white/[0.02] border-b border-white/5 text-[10px] uppercase tracking-widest text-gray-500">
+                <th className="px-5 py-4 font-bold align-bottom">Customer Email</th>
+                <th className="px-5 py-4 font-bold align-bottom">Organization</th>
+                <th className="px-5 py-4 font-bold align-bottom">Products</th>
+                <th className="px-5 py-4 font-bold align-bottom">Duration</th>
+                <th className="px-5 py-4 font-bold align-bottom">Status</th>
+                <th className="px-5 py-4 font-bold align-bottom whitespace-nowrap">Expires</th>
+                <th className="px-5 py-4 font-bold text-right align-bottom whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-sm">
@@ -225,73 +258,97 @@ export const MyUsers = () => {
                       exit={{ opacity: 0, x: -10 }}
                       transition={{ duration: 0.2 }}
                       key={user.id}
-                      className="hover:bg-white/[0.02] transition-colors group"
+                      className="hover:bg-white/[0.02] transition-colors group align-middle"
                     >
-                      <td className="p-4 lg:p-6">
-                        <div className="font-semibold text-gray-200 group-hover:text-white transition-colors">{user.email}</div>
+                      <td className="px-5 py-5 align-middle">
+                        <div
+                          className="font-semibold text-gray-200 group-hover:text-white transition-colors truncate pr-2"
+                          title={user.email}
+                        >
+                          {user.email}
+                        </div>
                       </td>
-                      <td className="p-4 lg:p-6">
+                      <td className="px-5 py-5 align-middle">
                         {user.organizationName ? (
-                          <div className="flex items-center gap-2 text-indigo-300 font-medium">
+                          <div className="flex items-center gap-2 text-indigo-300 font-medium min-w-0">
                             <Building2 className="h-4 w-4 shrink-0 opacity-70" />
-                            <span className="max-w-[220px] truncate" title={user.organizationName}>
+                            <span className="truncate" title={user.organizationName}>
                               {user.organizationName}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-gray-600 text-xs italic">Not synced yet</span>
+                          <span className="text-gray-600 text-xs italic whitespace-nowrap">Not synced</span>
                         )}
                       </td>
-                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
-                        {user.products.join(', ')}
+                      <td className="px-5 py-5 align-middle">
+                        <span
+                          className="block text-gray-400 font-medium truncate"
+                          title={user.products.join(', ')}
+                        >
+                          {user.products.join(', ') || '—'}
+                        </span>
                       </td>
-                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
-                        {user.durationMonths} {user.durationMonths.endsWith('d') ? '' : 'Month(s)'}
+                      <td className="px-5 py-5 align-middle whitespace-nowrap">
+                        <span className="text-gray-400 font-medium tabular-nums">{formatDuration(user.durationMonths)}</span>
                       </td>
-                      <td className="p-4 lg:p-6">
-                        {getStatusBadge(user.status, user.activatedAt)}
-                      </td>
-                      <td className="p-4 lg:p-6 text-gray-400 font-medium">
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2 text-gray-300">
-                            <Clock className="h-4 w-4 opacity-50" />
-                            {new Date(user.expiresAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </div>
+                      <td className="px-5 py-5 align-middle">{getStatusCell(user.status, user.activatedAt)}</td>
+                      <td className="px-5 py-5 align-middle whitespace-nowrap">
+                        <div className="inline-flex flex-col gap-0.5">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">Expires</span>
+                          <span className="inline-flex items-center gap-1.5 text-gray-200 font-semibold tabular-nums">
+                            <Clock className="h-3.5 w-3.5 text-gray-500 shrink-0" />
+                            {formatExpiry(user.expiresAt)}
+                          </span>
                         </div>
                       </td>
-                      <td className="p-4 lg:p-6 text-right">
-                        {(user.status === 'active' || user.status === 'expired') && (
-                          <div className="inline-flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setExtendTarget(user)}
-                              disabled={extendingId === user.id || deletingId === user.id}
-                              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-amber-300 font-semibold hover:text-black hover:bg-amber-400 transition-all disabled:opacity-50 active:scale-95 text-xs lg:text-sm bg-amber-500/10 border border-amber-500/20"
-                            >
-                              {extendingId === user.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <CalendarClock className="h-4 w-4" />
-                              )}
-                              <span>Extend</span>
-                            </button>
-                            {user.status === 'active' && (
+                      <td className="px-5 py-5 align-middle">
+                        <div
+                          className="flex items-center justify-end gap-1.5 flex-nowrap"
+                          role="group"
+                          aria-label={`Actions for ${user.email}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setStatusTarget(user)}
+                            disabled={deletingId === user.id || extendingId === user.id}
+                            title="Check subscription status"
+                            className={`${actionBtn} text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 hover:text-white hover:bg-indigo-500`}
+                          >
+                            <Activity className="h-4 w-4" />
+                          </button>
+                          {(user.status === 'active' || user.status === 'expired') && (
+                            <>
                               <button
                                 type="button"
-                                onClick={() => handleDelete(user.id)}
-                                disabled={deletingId === user.id || extendingId === user.id}
-                                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-rose-400 font-semibold hover:text-white hover:bg-rose-500 transition-all disabled:opacity-50 active:scale-95 text-xs lg:text-sm bg-rose-500/10 hover:shadow-lg hover:shadow-rose-500/20"
+                                onClick={() => setExtendTarget(user)}
+                                disabled={extendingId === user.id || deletingId === user.id}
+                                title="Extend subscription"
+                                className={`${actionBtn} text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:text-black hover:bg-amber-400`}
                               >
-                                {deletingId === user.id ? (
+                                {extendingId === user.id ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
                                 ) : (
-                                  <Trash2 className="h-4 w-4" />
+                                  <CalendarClock className="h-4 w-4" />
                                 )}
-                                <span>Remove</span>
                               </button>
-                            )}
-                          </div>
-                        )}
+                              {user.status === 'active' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(user.id)}
+                                  disabled={deletingId === user.id || extendingId === user.id}
+                                  title="Remove user"
+                                  className={`${actionBtn} text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:text-white hover:bg-rose-500`}
+                                >
+                                  {deletingId === user.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   ))
@@ -315,6 +372,12 @@ export const MyUsers = () => {
           />
         )}
       </div>
+
+      <AnimatePresence>
+        {statusTarget && (
+          <UserStatusModal user={statusTarget} onClose={() => setStatusTarget(null)} />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {extendTarget && (

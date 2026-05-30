@@ -171,7 +171,7 @@ export const BulkExtend = () => {
                   </div>
                 </div>
                 <p className="text-xs text-gray-500 ml-1 mt-1">
-                  Only monthly packages (1–12 months) can be used for extension. Day trials are for new activations only.
+                  Only monthly packages (1–12 months) can be used for extension.
                 </p>
               </div>
             </div>

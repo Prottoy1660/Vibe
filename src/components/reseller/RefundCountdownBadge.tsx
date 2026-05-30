@@ -57,9 +57,15 @@ function toneForProgress(progress: number) {
 type RefundCountdownBadgeProps = {
   activatedAt: string;
   onExpired?: () => void;
+  /** `compact` = single-line badge for dense table rows */
+  variant?: 'default' | 'compact';
 };
 
-export const RefundCountdownBadge: React.FC<RefundCountdownBadgeProps> = ({ activatedAt, onExpired }) => {
+export const RefundCountdownBadge: React.FC<RefundCountdownBadgeProps> = ({
+  activatedAt,
+  onExpired,
+  variant = 'default',
+}) => {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -84,6 +90,49 @@ export const RefundCountdownBadge: React.FC<RefundCountdownBadgeProps> = ({ acti
   const circumference = 2 * Math.PI * 7;
   const dashOffset = circumference * (1 - progress);
 
+  const ring = (
+    <span className="relative flex h-[16px] w-[16px] shrink-0 items-center justify-center">
+      <svg className="h-[16px] w-[16px] -rotate-90" viewBox="0 0 18 18" aria-hidden>
+        <circle cx="9" cy="9" r="7" fill="none" className="stroke-white/10" strokeWidth="2" />
+        <motion.circle
+          cx="9"
+          cy="9"
+          r="7"
+          fill="none"
+          className={tone.ring}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          animate={{ strokeDashoffset: dashOffset }}
+          transition={{ duration: 0.85, ease: 'linear' }}
+        />
+      </svg>
+      {urgent && (
+        <motion.span
+          className={`absolute inset-0 rounded-full ${tone.bg}`}
+          animate={{ opacity: [0.35, 0.75, 0.35], scale: [1, 1.15, 1] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      )}
+    </span>
+  );
+
+  if (variant === 'compact') {
+    return (
+      <motion.span
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        title="Full refund if removed before this timer ends"
+        className={`inline-flex items-center gap-1.5 whitespace-nowrap pl-1 pr-2 py-0.5 rounded-full border text-[10px] font-medium ${tone.bg} ${tone.border} ${tone.text}`}
+      >
+        {ring}
+        <span className="font-mono tabular-nums">
+          Refund <span className="opacity-60">·</span> {label}
+        </span>
+      </motion.span>
+    );
+  }
+
   return (
     <motion.span
       initial={{ opacity: 0, scale: 0.92, y: 4 }}
@@ -94,14 +143,7 @@ export const RefundCountdownBadge: React.FC<RefundCountdownBadgeProps> = ({ acti
     >
       <span className="relative flex h-[18px] w-[18px] shrink-0 items-center justify-center">
         <svg className="h-[18px] w-[18px] -rotate-90" viewBox="0 0 18 18" aria-hidden>
-          <circle
-            cx="9"
-            cy="9"
-            r="7"
-            fill="none"
-            className="stroke-white/10"
-            strokeWidth="2"
-          />
+          <circle cx="9" cy="9" r="7" fill="none" className="stroke-white/10" strokeWidth="2" />
           <motion.circle
             cx="9"
             cy="9"

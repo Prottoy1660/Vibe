@@ -81,6 +81,27 @@ export interface ResellerPackage {
   cost: number;
 }
 
+export interface ResellerUserStatus {
+  id: string;
+  email: string;
+  overallStatus: 'active' | 'expired' | 'refunded';
+  teamStatus: 'normal' | 'attention' | 'unknown';
+  teamMessage: string;
+  organizationName: string | null;
+  organizationId: number | null;
+  products: string[];
+  planDuration: string;
+  activatedAt: string | null;
+  expiresAt: string | null;
+  daysLeft: number;
+  progressPercent: number;
+  adobeLive: boolean;
+  organizationSyncedAt: string | null;
+  refundEligible: boolean;
+  refundRemainingMs: number | null;
+  adobeStatus: string | null;
+}
+
 export const ResellerApi = {
   getDashboardData: async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -162,6 +183,24 @@ export const ResellerApi = {
       throw new Error(data.error || 'Failed to sync organizations from Adobe');
     }
     return data as { synced: number; message: string };
+  },
+
+  getUserStatus: async (userId: string, options?: { forceRefresh?: boolean }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const refresh = options?.forceRefresh ? '1' : '0';
+    const apiRes = await fetch(`/api/reseller/users/${encodeURIComponent(userId)}/status?refresh=${refresh}`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to load subscription status');
+    }
+    return data.status as ResellerUserStatus;
   },
 
   getUsers: async (options?: { skipSync?: boolean; forceSync?: boolean }) => {
