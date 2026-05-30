@@ -38,6 +38,9 @@ export const ResellerLogin = () => {
       });
       const payload = await apiRes.json().catch(() => ({}));
       if (!apiRes.ok || !payload.success) {
+        if (payload.alreadyVerified) {
+          throw new Error('This email is already verified. Sign in with your password below.');
+        }
         throw new Error(payload.error || 'Could not resend verification email');
       }
       toast.success(payload.message || 'Verification email sent. Check inbox and spam.', { duration: 8000 });

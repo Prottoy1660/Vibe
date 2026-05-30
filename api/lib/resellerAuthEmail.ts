@@ -105,3 +105,35 @@ export function applyResellerRedirectToConfirmationUrl(
     return actionLink;
   }
 }
+
+/**
+ * Build a verification link for an existing auth user (resend flow).
+ * magiclink often returns "already registered" for signup-pending users — try invite/signup first.
+ */
+export async function generateResellerVerificationLink(
+  supabase: SupabaseClient,
+  email: string,
+  redirectTo = getResellerAuthRedirectUrl('/reseller/login'),
+): Promise<{ link?: string; error?: string }> {
+  const normalized = email.trim().toLowerCase();
+  const options = { redirectTo, data: { role: 'reseller' } };
+  const types = ['invite', 'signup', 'magiclink'] as const;
+  let lastError = '';
+
+  for (const type of types) {
+    const { data, error } = await supabase.auth.admin.generateLink({
+      type,
+      email: normalized,
+      options,
+    });
+
+    const raw = data?.properties?.action_link;
+    if (!error && typeof raw === 'string' && raw) {
+      return { link: raw };
+    }
+    lastError = error?.message || lastError;
+    if (error && /rate|too many/i.test(error.message)) break;
+  }
+
+  return { error: lastError || 'Could not create verification link.' };
+}

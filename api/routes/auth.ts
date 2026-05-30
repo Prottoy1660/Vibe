@@ -9,6 +9,7 @@ import path from 'path'
 import {
   applyResellerRedirectToConfirmationUrl,
   findAuthUserByEmail,
+  generateResellerVerificationLink,
   getResellerAuthRedirectUrl,
   sendResellerVerificationEmail,
 } from '../lib/resellerAuthEmail.js'
@@ -292,25 +293,23 @@ router.post('/reseller-resend-verification', resendVerificationLimiter, async (r
 
     const redirectTo = getResellerAuthRedirectUrl('/reseller/login')
 
-    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
-      options: { redirectTo },
-    })
-
-    if (linkError) {
-      console.error('[reseller-resend-verification] generateLink', linkError)
-      res.status(400).json({ success: false, error: linkError.message || 'Could not create verification link.' })
+    const generated = await generateResellerVerificationLink(supabase, email, redirectTo)
+    if (!generated.link) {
+      console.error('[reseller-resend-verification] generateLink', generated.error)
+      const msg = generated.error || 'Could not create verification link.'
+      if (/already|registered|exists/i.test(msg) && !user.email_confirmed_at) {
+        res.status(400).json({
+          success: false,
+          error:
+            'Could not resend verification for this account. Try forgot password or contact support with your email.',
+        })
+        return
+      }
+      res.status(400).json({ success: false, error: msg })
       return
     }
 
-    const rawLink = linkData?.properties?.action_link
-    if (!rawLink || typeof rawLink !== 'string') {
-      res.status(500).json({ success: false, error: 'Could not build verification link.' })
-      return
-    }
-
-    const confirmationUrl = applyResellerRedirectToConfirmationUrl(rawLink, redirectTo)
+    const confirmationUrl = applyResellerRedirectToConfirmationUrl(generated.link, redirectTo)
 
     const sent = await sendResellerVerificationEmail({
       to: email,
