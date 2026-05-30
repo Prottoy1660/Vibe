@@ -12,9 +12,14 @@ type EmailData = {
   site_url?: string;
 };
 
-function isResellerUser(user: { user_metadata?: Record<string, unknown>; raw_user_meta_data?: Record<string, unknown> }) {
+function isResellerUser(
+  user: { user_metadata?: Record<string, unknown>; raw_user_meta_data?: Record<string, unknown> },
+  emailData?: EmailData,
+) {
   const meta = user.user_metadata || user.raw_user_meta_data || {};
-  return String(meta.role || '').trim().toLowerCase() === 'reseller';
+  if (String(meta.role || '').trim().toLowerCase() === 'reseller') return true;
+  const redirect = String(emailData?.redirect_to || '');
+  return redirect.includes('superreseller.shop');
 }
 
 function buildConfirmationUrl(emailData: EmailData): string | null {
@@ -73,7 +78,7 @@ serve(async (req) => {
     const user = payload.user;
     const emailData: EmailData = payload.email_data || {};
 
-    if (!isResellerUser(user)) {
+    if (!isResellerUser(user, emailData)) {
       // Fail so Supabase Auth falls back to default VibeAccess SMTP/templates.
       return new Response(JSON.stringify({ error: 'not_reseller_use_default_provider' }), {
         status: 500,

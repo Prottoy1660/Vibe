@@ -6,6 +6,11 @@ import { createClient } from '@supabase/supabase-js'
 import rateLimit from 'express-rate-limit'
 import { promises as fs } from 'fs'
 import path from 'path'
+import {
+  findAuthUserByEmail,
+  getResellerAuthRedirectUrl,
+  sendResellerVerificationEmail,
+} from '../lib/resellerAuthEmail.js'
 
 const router = Router()
 
@@ -26,6 +31,17 @@ const signupIntentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many signup checks from this IP. Please wait and try again.' },
+})
+
+const resendVerificationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Too many verification emails requested. Please wait an hour and try again.',
+  },
 })
 
 const authTemplateFileByKey: Record<string, string> = {
@@ -98,6 +114,217 @@ router.post('/signup-intent', signupIntentLimiter, async (req: Request, res: Res
   } catch (e) {
     console.error('[signup-intent]', e)
     res.status(500).json({ success: false, error: 'Signup check failed.' })
+  }
+})
+
+/**
+ * Super Reseller sign-up: create auth user + send verification via main server Resend (RESEND_API_KEY).
+ * Avoids Supabase default VibeAccess SMTP when the Send Email hook is not configured.
+ * POST /api/auth/reseller-signup
+ */
+router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: Response): Promise<void> => {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Signup unavailable (server configuration).' })
+    return
+  }
+
+  const email = String(req.body?.email || '')
+    .trim()
+    .toLowerCase()
+  const password = String(req.body?.password || '')
+  const name = String(req.body?.name || '').trim()
+  const phone = String(req.body?.phone || '').trim()
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ success: false, error: 'Valid email is required.' })
+    return
+  }
+  if (!password || password.length < 6) {
+    res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' })
+    return
+  }
+  if (!name) {
+    res.status(400).json({ success: false, error: 'Full name is required.' })
+    return
+  }
+
+  const ip = clientIp(req)
+  const since = new Date(Date.now() - SIGNUP_WINDOW_MS).toISOString()
+
+  try {
+    const { count, error: countErr } = await supabase
+      .from('signup_ip_attempts')
+      .select('*', { count: 'exact', head: true })
+      .eq('ip', ip)
+      .gte('created_at', since)
+
+    if (countErr) {
+      console.error('[reseller-signup] count error', countErr)
+      res.status(500).json({ success: false, error: 'Could not verify signup eligibility.' })
+      return
+    }
+
+    if ((count ?? 0) >= SIGNUP_MAX_PER_IP) {
+      res.status(429).json({
+        success: false,
+        error: 'Too many sign-up attempts from this network. Please try again after 24 hours.',
+      })
+      return
+    }
+
+    await supabase.from('signup_ip_attempts').insert({ ip })
+
+    const redirectTo = getResellerAuthRedirectUrl('/reseller/login')
+
+    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+      type: 'signup',
+      email,
+      password,
+      options: {
+        redirectTo,
+        data: {
+          full_name: name,
+          phone,
+          role: 'reseller',
+        },
+      },
+    })
+
+    if (linkError) {
+      const msg = linkError.message || 'Could not create account.'
+      if (/already|registered|exists/i.test(msg)) {
+        try {
+          const existing = await findAuthUserByEmail(supabase, email)
+          if (existing && !existing.email_confirmed_at) {
+            res.status(409).json({
+              success: false,
+              needsVerification: true,
+              canResend: true,
+              error:
+                'This email is registered but not verified yet. Use “Resend verification email” on the login page.',
+            })
+            return
+          }
+        } catch (lookupErr) {
+          console.error('[reseller-signup] existing user lookup', lookupErr)
+        }
+        res.status(409).json({
+          success: false,
+          error: 'An account with this email already exists. Sign in or use forgot password.',
+        })
+        return
+      }
+      console.error('[reseller-signup] generateLink', linkError)
+      res.status(400).json({ success: false, error: msg })
+      return
+    }
+
+    const confirmationUrl = linkData?.properties?.action_link
+
+    if (!confirmationUrl || typeof confirmationUrl !== 'string') {
+      console.error('[reseller-signup] missing action_link', linkData)
+      res.status(500).json({ success: false, error: 'Could not build verification link.' })
+      return
+    }
+
+    const sent = await sendResellerVerificationEmail({ to: email, confirmationUrl })
+    if (!sent.ok) {
+      console.error('[reseller-signup] Resend failed', sent.error)
+      res.status(503).json({
+        success: false,
+        error: sent.error || 'Verification email could not be sent. Check RESEND_API_KEY and domain.',
+      })
+      return
+    }
+
+    res.status(200).json({
+      success: true,
+      needsVerification: true,
+      message: 'Verification email sent from Super Reseller.',
+    })
+  } catch (e) {
+    console.error('[reseller-signup]', e)
+    res.status(500).json({ success: false, error: 'Signup failed.' })
+  }
+})
+
+/**
+ * Resend Super Reseller verification / magic link for an existing unconfirmed account.
+ * POST /api/auth/reseller-resend-verification
+ */
+router.post('/reseller-resend-verification', resendVerificationLimiter, async (req: Request, res: Response): Promise<void> => {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Service unavailable.' })
+    return
+  }
+
+  const email = String(req.body?.email || '')
+    .trim()
+    .toLowerCase()
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ success: false, error: 'Valid email is required.' })
+    return
+  }
+
+  try {
+    const user = await findAuthUserByEmail(supabase, email)
+
+    if (!user) {
+      res.status(200).json({
+        success: true,
+        message: 'If an unverified Super Reseller account exists for this email, we sent a new link.',
+      })
+      return
+    }
+
+    if (user.email_confirmed_at) {
+      res.status(400).json({
+        success: false,
+        alreadyVerified: true,
+        error: 'This email is already verified. Please sign in with your password.',
+      })
+      return
+    }
+
+    const redirectTo = getResellerAuthRedirectUrl('/reseller/login')
+
+    const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+      options: { redirectTo },
+    })
+
+    if (linkError) {
+      console.error('[reseller-resend-verification] generateLink', linkError)
+      res.status(400).json({ success: false, error: linkError.message || 'Could not create verification link.' })
+      return
+    }
+
+    const confirmationUrl = linkData?.properties?.action_link
+    if (!confirmationUrl || typeof confirmationUrl !== 'string') {
+      res.status(500).json({ success: false, error: 'Could not build verification link.' })
+      return
+    }
+
+    const sent = await sendResellerVerificationEmail({
+      to: email,
+      confirmationUrl,
+      subject: 'Super Reseller — verify your email (resent)',
+    })
+
+    if (!sent.ok) {
+      res.status(503).json({ success: false, error: sent.error || 'Could not send email.' })
+      return
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'A new verification link was sent from Super Reseller. Check your inbox and spam folder.',
+    })
+  } catch (e) {
+    console.error('[reseller-resend-verification]', e)
+    res.status(500).json({ success: false, error: 'Could not resend verification email.' })
   }
 })
 

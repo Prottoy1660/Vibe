@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 export const ResellerSignup = () => {
   const [formData, setFormData] = useState({
@@ -22,33 +23,35 @@ export const ResellerSignup = () => {
     setLoading(true);
     
     try {
-      const emailRedirectTo = getResellerAuthRedirectUrl('/reseller/login');
-
-      const { data, error } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          emailRedirectTo,
-          data: {
-            full_name: formData.name,
-            phone: formData.phone,
-            role: 'reseller',
-          },
-        },
+      const apiRes = await fetch(`${getApiBaseUrl()}/api/auth/reseller-signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          name: formData.name,
+          phone: formData.phone,
+        }),
       });
 
-      if (error) throw error;
+      const payload = await apiRes.json().catch(() => ({}));
 
-      if (data.session) {
-        toast.success('Account created! Welcome to Super Reseller.');
-        navigate('/reseller/dashboard');
-      } else {
-        toast.success(
-          'Check your inbox — we sent a verification link from Super Reseller (superreseller.shop).',
-          { duration: 8000 },
-        );
-        navigate('/reseller/login?verify=sent');
+      if (!apiRes.ok || !payload.success) {
+        if (apiRes.status === 409 && payload.canResend) {
+          toast.error(payload.error || 'Account exists but is not verified.', { duration: 10000 });
+          navigate(
+            `/reseller/login?verify=sent&email=${encodeURIComponent(formData.email)}`,
+          );
+          return;
+        }
+        throw new Error(payload.error || 'Failed to sign up');
       }
+
+      toast.success(
+        'Check your inbox — verification email sent from Super Reseller (noreply@superreseller.shop).',
+        { duration: 8000 },
+      );
+      navigate('/reseller/login?verify=sent');
     } catch (error: any) {
       toast.error(error.message || 'Failed to sign up');
     } finally {

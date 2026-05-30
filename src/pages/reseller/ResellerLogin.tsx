@@ -1,19 +1,53 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Lock, ArrowRight, Loader2, Hexagon, ShieldCheck } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
+import { getApiBaseUrl } from '../../lib/apiBase';
 
 export const ResellerLogin = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const verifyEmailSent = searchParams.get('verify') === 'sent';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const verifyEmailSent = searchParams.get('verify') === 'sent';
+  const [resendLoading, setResendLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(verifyEmailSent);
+
+  useEffect(() => {
+    const fromQuery = searchParams.get('email');
+    if (fromQuery) setEmail(fromQuery);
+    if (searchParams.get('verify') === 'sent') setNeedsVerification(true);
+  }, [searchParams]);
+
+  const handleResendVerification = async () => {
+    if (!email) {
+      toast.error('Enter your email address first.');
+      return;
+    }
+    setResendLoading(true);
+    try {
+      const apiRes = await fetch(`${getApiBaseUrl()}/api/auth/reseller-resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const payload = await apiRes.json().catch(() => ({}));
+      if (!apiRes.ok || !payload.success) {
+        throw new Error(payload.error || 'Could not resend verification email');
+      }
+      toast.success(payload.message || 'Verification email sent. Check inbox and spam.', { duration: 8000 });
+      setNeedsVerification(true);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to resend verification email');
+    } finally {
+      setResendLoading(false);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,12 +61,15 @@ export const ResellerLogin = () => {
 
       if (error) {
         if (/email not confirmed/i.test(error.message)) {
+          setNeedsVerification(true);
           throw new Error(
-            'Please verify your email first — check your inbox for a message from Super Reseller (superreseller.shop).',
+            'Your email is not verified yet. Use “Resend verification email” below, then open the link from Super Reseller.',
           );
         }
         throw error;
       }
+
+      setNeedsVerification(false);
 
       // Ensure the user actually has the reseller role
       const { data: profileData } = await supabase
@@ -116,10 +153,21 @@ export const ResellerLogin = () => {
         className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10"
       >
         <div className="bg-[#0a0a0a]/80 backdrop-blur-3xl py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-white/10">
-          {verifyEmailSent && (
-            <div className="mb-6 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              Verification email sent from <span className="font-semibold text-white">Super Reseller</span>. Open the
-              link in your inbox, then sign in here.
+          {(verifyEmailSent || needsVerification) && (
+            <div className="mb-6 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 space-y-3">
+              <p>
+                {verifyEmailSent
+                  ? 'We sent a verification link from Super Reseller. Open it in your inbox (check spam), then sign in.'
+                  : 'Your account exists but email is not verified yet. Request a new link below.'}
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleResendVerification()}
+                disabled={resendLoading || !email}
+                className="w-full py-2.5 rounded-lg text-sm font-bold bg-white text-black hover:bg-gray-200 disabled:opacity-50 transition-colors"
+              >
+                {resendLoading ? 'Sending…' : 'Resend verification email'}
+              </button>
             </div>
           )}
           <form className="space-y-6" onSubmit={handleLogin}>
@@ -172,6 +220,20 @@ export const ResellerLogin = () => {
               </button>
             </div>
           </form>
+
+          {!verifyEmailSent && !needsVerification && (
+            <p className="mt-4 text-center text-xs text-gray-500">
+              Didn&apos;t receive the verification email?{' '}
+              <button
+                type="button"
+                onClick={() => void handleResendVerification()}
+                disabled={resendLoading || !email}
+                className="text-indigo-300 hover:text-white font-semibold underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                Resend link
+              </button>
+            </p>
+          )}
 
           <div className="mt-8">
             <div className="relative">
