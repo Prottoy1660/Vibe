@@ -1,0 +1,123 @@
+/** Super Reseller brand mark (same as login/signup). Not favicon-32 — that is Vibe Access. */
+const LOGO_WIDTH = 52;
+const LOGO_HEIGHT = 106; // super.png is 492×1000
+
+function resellerLogoUrl(siteUrl: string): string {
+  const base = (siteUrl || 'https://superreseller.shop').replace(/\/$/, '');
+  return `${base}/super.png`;
+}
+
+export type ResellerEmailContent = {
+  title: string;
+  body: string;
+  ctaLabel: string;
+  ctaHref: string;
+  footerNote: string;
+  expiryNote?: string;
+  pageTitle?: string;
+};
+
+/**
+ * Light transactional layout — blends with Gmail/Outlook white inbox (no dark letterboxing).
+ */
+export function buildResellerEmailHtml(content: ResellerEmailContent, siteUrl: string): string {
+  const logoUrl = resellerLogoUrl(siteUrl);
+  const pageTitle = content.pageTitle || content.title;
+  const expiryBlock = content.expiryNote
+    ? `<tr><td align="center" style="padding:14px 32px 0;">
+  <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">${content.expiryNote}</p>
+</td></tr>`
+    : '';
+
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="color-scheme" content="light" />
+<meta name="supported-color-schemes" content="light" />
+<title>${pageTitle}</title>
+<style type="text/css">
+  body { margin:0 !important; padding:0 !important; background-color:#f4f4f5 !important; }
+  table { border-collapse:collapse; }
+  img { border:0; outline:none; text-decoration:none; -ms-interpolation-mode:bicubic; }
+  a { text-decoration:none; }
+  @media only screen and (max-width: 620px) {
+    .email-card { width:100% !important; }
+    .email-pad { padding-left:22px !important; padding-right:22px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;width:100% !important;background-color:#f4f4f5 !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f4f4f5" style="background-color:#f4f4f5;">
+<tr>
+<td align="center" valign="top" style="padding:28px 16px;background-color:#f4f4f5;">
+<table role="presentation" class="email-card" width="520" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:100%;max-width:520px;background-color:#ffffff;border:1px solid #e4e4e7;border-radius:12px;">
+<tr>
+<td style="height:3px;background-color:#6366f1;font-size:0;line-height:0;border-radius:12px 12px 0 0;">&nbsp;</td>
+</tr>
+<tr>
+<td align="center" class="email-pad" style="padding:28px 28px 12px;background-color:#ffffff;">
+<a href="${siteUrl}" target="_blank" style="text-decoration:none;display:inline-block;line-height:0;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;">
+<tr>
+<td align="center" valign="middle" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" style="width:${LOGO_WIDTH}px;height:${LOGO_HEIGHT}px;line-height:0;font-size:0;">
+<img src="${logoUrl}" width="${LOGO_WIDTH}" height="${LOGO_HEIGHT}" alt="Super Reseller" style="display:block;width:${LOGO_WIDTH}px;height:${LOGO_HEIGHT}px;max-width:${LOGO_WIDTH}px;border:0;outline:none;-ms-interpolation-mode:bicubic;" />
+</td>
+</tr>
+</table>
+</a>
+</td>
+</tr>
+<tr>
+<td align="center" class="email-pad" style="padding:0 28px 8px;background-color:#ffffff;">
+<h1 style="margin:0;font-size:20px;line-height:1.35;font-weight:700;color:#18181b;letter-spacing:-0.25px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">${content.title}</h1>
+</td>
+</tr>
+<tr>
+<td class="email-pad" style="padding:0 28px 8px;background-color:#ffffff;">
+<p style="margin:0;font-size:14px;line-height:1.6;color:#52525b;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">${content.body}</p>
+</td>
+</tr>
+<tr>
+<td align="center" style="padding:22px 28px 8px;background-color:#ffffff;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td align="center" bgcolor="#6366f1" style="background-color:#6366f1;border-radius:10px;">
+<a href="${content.ctaHref}" target="_blank" style="display:inline-block;padding:12px 32px;font-size:14px;font-weight:600;color:#ffffff !important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;mso-line-height-rule:exactly;line-height:14px;">${content.ctaLabel}</a>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+${expiryBlock}
+<tr>
+<td class="email-pad" style="padding:20px 28px 8px;background-color:#ffffff;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="height:1px;background-color:#e4e4e7;font-size:0;line-height:0;">&nbsp;</td></tr>
+</table>
+</td>
+</tr>
+<tr>
+<td align="center" class="email-pad" style="padding:8px 28px 28px;background-color:#ffffff;border-radius:0 0 12px 12px;">
+<p style="margin:0;font-size:12px;line-height:1.65;color:#a1a1aa;text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+${content.footerNote}<br />
+&copy; 2026 Super Reseller &middot; <a href="${siteUrl}" target="_blank" style="color:#4f46e5;font-weight:600;text-decoration:none;">superreseller.shop</a>
+</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+}
+
+/** Replace Supabase GoTrue template variables in static HTML files. */
+export function applySupabaseEmailVars(html: string, siteUrl: string, confirmationUrl = '{{ .ConfirmationURL }}'): string {
+  return html
+    .replace(/\{\{\s*\.ConfirmationURL\s*\}\}/g, confirmationUrl)
+    .replace(/\{\{\s*\.SiteURL\s*\}\}/g, siteUrl);
+}

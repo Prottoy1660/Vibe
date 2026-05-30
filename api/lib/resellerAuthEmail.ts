@@ -1,6 +1,5 @@
-import { promises as fs } from 'fs';
-import path from 'path';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { buildResellerEmailHtml } from './resellerEmailLayout.js';
 
 const RESELLER_SITE = (process.env.RESELLER_SITE_URL || 'https://superreseller.shop').replace(/\/$/, '');
 
@@ -8,17 +7,6 @@ function resellerFromAddress(): string {
   const from = (process.env.RESELLER_AUTH_FROM_EMAIL || '').trim();
   if (from) return from;
   return 'Super Reseller <noreply@superreseller.shop>';
-}
-
-async function loadConfirmSignupHtml(): Promise<string> {
-  const filePath = path.resolve(process.cwd(), 'supabase', 'reseller-email-templates', 'confirm-signup.html');
-  return fs.readFile(filePath, 'utf8');
-}
-
-function applyTemplateVars(html: string, confirmationUrl: string): string {
-  return html
-    .replace(/\{\{\s*\.ConfirmationURL\s*\}\}/g, confirmationUrl)
-    .replace(/\{\{\s*\.SiteURL\s*\}\}/g, RESELLER_SITE);
 }
 
 /**
@@ -59,8 +47,18 @@ export async function sendResellerVerificationEmail(args: {
   if (!to) return { ok: false, error: 'Missing recipient email.' };
 
   try {
-    const raw = await loadConfirmSignupHtml();
-    const html = applyTemplateVars(raw, args.confirmationUrl);
+    const html = buildResellerEmailHtml(
+      {
+        pageTitle: 'Verify your email',
+        title: 'Verify your email',
+        body: 'Welcome to Super Reseller! Tap the button below to confirm your email address and activate your account.',
+        ctaLabel: 'Verify email address',
+        ctaHref: args.confirmationUrl,
+        footerNote: "If you didn't create a Super Reseller account, you can safely ignore this email.",
+        expiryNote: 'This link expires in 24 hours.',
+      },
+      RESELLER_SITE,
+    );
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
