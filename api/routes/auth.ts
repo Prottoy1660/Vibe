@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { isResellerEmailVerificationRequired, loadAuthSettings } from '../lib/authSettings.js'
+import { ensureResellerPublicProfile } from '../lib/ensureResellerProfile.js'
 import {
   applyResellerRedirectToConfirmationUrl,
   authUserNeedsEmailVerification,
@@ -211,6 +212,16 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
                 res.status(503).json({ success: false, error: confirmed.error || 'Could not activate account.' })
                 return
               }
+              const ensured = await ensureResellerPublicProfile(supabase, {
+                userId: existing.id,
+                email,
+                name,
+                phone,
+              })
+              if (!ensured.ok) {
+                res.status(503).json({ success: false, error: ensured.error || 'Could not set reseller role.' })
+                return
+              }
               res.status(200).json({
                 success: true,
                 needsVerification: false,
@@ -233,10 +244,16 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
       }
 
       if (created.user?.id) {
-        await supabase
-          .from('users')
-          .update({ role: 'reseller', name, phone: phone || null })
-          .eq('id', created.user.id)
+        const ensured = await ensureResellerPublicProfile(supabase, {
+          userId: created.user.id,
+          email,
+          name,
+          phone,
+        })
+        if (!ensured.ok) {
+          res.status(503).json({ success: false, error: ensured.error || 'Account created but reseller profile failed.' })
+          return
+        }
       }
 
       res.status(200).json({
@@ -334,6 +351,81 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
 })
 
 /**
+ * Ensure public.users has reseller role after Super Reseller login (service role).
+ * POST /api/auth/reseller-sync-profile
+ */
+router.post('/reseller-sync-profile', async (req: Request, res: Response): Promise<void> => {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Service unavailable.' })
+    return
+  }
+
+  const authHeader = req.headers.authorization
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ success: false, error: 'Missing authorization.' })
+    return
+  }
+
+  const token = authHeader.slice(7).trim()
+  const { data: authData, error: authError } = await supabase.auth.getUser(token)
+  const user = authData.user
+  if (authError || !user?.id || !user.email) {
+    res.status(401).json({ success: false, error: 'Invalid session.' })
+    return
+  }
+
+  try {
+    const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle()
+
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') {
+      res.status(403).json({
+        success: false,
+        error: 'Unauthorized. This account does not have reseller privileges.',
+      })
+      return
+    }
+
+    if (profile?.role === 'reseller') {
+      res.status(200).json({ success: true, role: 'reseller' })
+      return
+    }
+
+    const meta = user.user_metadata || {}
+    const metaReseller = String(meta.role ?? '').trim().toLowerCase() === 'reseller'
+    const canSync =
+      metaReseller || !profile || profile.role === 'user' || profile.role === 'customer'
+
+    if (!canSync) {
+      res.status(403).json({
+        success: false,
+        error: 'Unauthorized. This account does not have reseller privileges.',
+      })
+      return
+    }
+
+    const name = String(meta.full_name || user.email.split('@')[0] || 'Reseller').trim()
+    const phone = typeof meta.phone === 'string' ? meta.phone : undefined
+
+    const ensured = await ensureResellerPublicProfile(supabase, {
+      userId: user.id,
+      email: user.email.trim().toLowerCase(),
+      name,
+      phone,
+    })
+
+    if (!ensured.ok) {
+      res.status(503).json({ success: false, error: ensured.error || 'Could not sync reseller profile.' })
+      return
+    }
+
+    res.status(200).json({ success: true, role: 'reseller' })
+  } catch (e) {
+    console.error('[reseller-sync-profile]', e)
+    res.status(500).json({ success: false, error: 'Could not sync reseller profile.' })
+  }
+})
+
+/**
  * Resend Super Reseller verification / magic link for an existing unconfirmed account.
  * POST /api/auth/reseller-resend-verification
  */
@@ -362,6 +454,16 @@ router.post('/reseller-resend-verification', resendVerificationLimiter, async (r
         const confirmed = await confirmResellerAuthEmail(user.id)
         if (!confirmed.ok) {
           res.status(503).json({ success: false, error: confirmed.error || 'Could not activate account.' })
+          return
+        }
+        const ensured = await ensureResellerPublicProfile(supabase, {
+          userId: user.id,
+          email,
+          name: String(user.user_metadata?.full_name || email).trim(),
+          phone: typeof user.user_metadata?.phone === 'string' ? user.user_metadata.phone : undefined,
+        })
+        if (!ensured.ok) {
+          res.status(503).json({ success: false, error: ensured.error || 'Could not set reseller role.' })
           return
         }
         res.status(200).json({

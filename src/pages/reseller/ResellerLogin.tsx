@@ -7,6 +7,7 @@ import { toast } from '../../lib/toast';
 import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { isResellerEmailVerificationRequired, parseAuthSettings } from '../../lib/authSettings';
+import { syncResellerProfileViaApi } from '../../lib/ensureResellerRole';
 
 export const ResellerLogin = () => {
   const navigate = useNavigate();
@@ -47,29 +48,32 @@ export const ResellerLogin = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const finishResellerSession = async (userId: string) => {
-      const { data: profile } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+    const finishResellerSession = async (accessToken: string, userId: string) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled || !session?.user || session.user.id !== userId) return;
+
+      const synced = await syncResellerProfileViaApi(accessToken);
       if (cancelled) return;
-      if (profile?.role === 'reseller') {
-        toast.success('Email verified — welcome to Super Reseller!');
-        navigate('/reseller/dashboard', { replace: true });
+      if (!synced.ok) {
+        await supabase.auth.signOut();
+        toast.error(synced.error || 'This account does not have reseller privileges.');
         return;
       }
-      if (profile) {
-        await supabase.auth.signOut();
-        toast.error('This account does not have reseller privileges.');
-      }
+      toast.success('Email verified — welcome to Super Reseller!');
+      navigate('/reseller/dashboard', { replace: true });
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) void finishResellerSession(session.user.id);
+      if (session?.user && session.access_token) {
+        void finishResellerSession(session.access_token, session.user.id);
+      }
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
-        void finishResellerSession(session.user.id);
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user && session.access_token) {
+        void finishResellerSession(session.access_token, session.user.id);
       }
     });
 
@@ -152,22 +156,15 @@ export const ResellerLogin = () => {
       }
 
       if (error) throw error;
+      if (!data?.user || !data.session?.access_token) throw new Error('Sign in failed.');
 
       setNeedsVerification(false);
 
-      // Ensure the user actually has the reseller role
-      const { data: profileData } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', data.user.id)
-        .single();
-
-      if (profileData?.role !== 'reseller') {
+      const synced = await syncResellerProfileViaApi(data.session.access_token);
+      if (!synced.ok) {
         await supabase.auth.signOut();
-        throw new Error('Unauthorized. This account does not have reseller privileges.');
+        throw new Error(synced.error || 'Unauthorized. This account does not have reseller privileges.');
       }
-
-      if (!data?.user) throw new Error('Sign in failed.');
 
       toast.success('Welcome back to Super Reseller!');
       navigate('/reseller/dashboard');
