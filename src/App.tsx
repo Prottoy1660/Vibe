@@ -7,6 +7,7 @@ import { ConfirmDialogProvider } from './contexts/ConfirmDialogContext';
 import { Layout } from './components/Layout';
 import { AppToaster } from './components/AppToaster';
 import { HttpErrorNavBridge } from './components/HttpErrorNavBridge';
+import { CustomerSiteRoleEnforcer } from './components/CustomerSiteRoleEnforcer';
 import { NetworkStatusToasts } from './components/NetworkStatusToasts';
 import { Loader2, Sparkles } from 'lucide-react';
 
@@ -217,6 +218,7 @@ function App() {
           <MaintenanceModeProvider>
             <Router>
               <DomainRouter />
+              <CustomerSiteRoleEnforcer />
               <NetworkStatusToasts />
               <AppRoutes />
               <AppToaster />

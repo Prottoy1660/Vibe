@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Loader2, Save, Settings, Info, Mail, UserCircle, ChevronRight } from 'lucide-react';
+import { Loader2, Save, Settings, Info, Mail, UserCircle, ChevronRight, ShieldCheck } from 'lucide-react';
 import { DEFAULT_PLATFORM_STATUS, parsePlatformStatus, type PlatformLevel, type PlatformStatusValue } from '../../lib/platformStatus';
+import { type AuthSettingsValue, parseAuthSettings } from '../../lib/authSettings';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
 import { getApiBaseUrl } from '../../lib/apiBase';
 
@@ -18,15 +19,6 @@ function HelpDetails({ summary, children }: { summary: string; children: React.R
     </details>
   );
 }
-
-type AuthSettingsValue = {
-  enable_google_login?: boolean;
-  enable_facebook_login?: boolean;
-  enable_microsoft_login?: boolean;
-  google_login_under_maintenance?: boolean;
-  facebook_login_under_maintenance?: boolean;
-  microsoft_login_under_maintenance?: boolean;
-};
 
 type AdminActivityLoggingValue = {
   enabled?: boolean;
@@ -51,6 +43,7 @@ export const AdminPlatformSettings: React.FC = () => {
     google_login_under_maintenance: false,
     facebook_login_under_maintenance: false,
     microsoft_login_under_maintenance: false,
+    require_reseller_email_verification: true,
   });
   const [authSaving, setAuthSaving] = useState(false);
   const [authMessage, setAuthMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -79,12 +72,9 @@ export const AdminPlatformSettings: React.FC = () => {
         setSlotEmergency(v.emergency_unlock === true);
         const pv = (personal.data?.value || {}) as { enabled?: boolean };
         setPersonalSubsEnabled(pv.enabled !== false);
-        const av = (auth.data?.value || {}) as AuthSettingsValue;
+        const av = parseAuthSettings(auth.data?.value);
         setAuthForm({
           ...av,
-          enable_google_login: av.enable_google_login !== false,
-          enable_facebook_login: av.enable_facebook_login !== false,
-          enable_microsoft_login: av.enable_microsoft_login !== false,
           google_login_under_maintenance: av.google_login_under_maintenance === true,
           facebook_login_under_maintenance: av.facebook_login_under_maintenance === true,
           microsoft_login_under_maintenance: av.microsoft_login_under_maintenance === true,
@@ -190,6 +180,7 @@ export const AdminPlatformSettings: React.FC = () => {
         google_login_under_maintenance: authForm.google_login_under_maintenance === true,
         facebook_login_under_maintenance: authForm.facebook_login_under_maintenance === true,
         microsoft_login_under_maintenance: authForm.microsoft_login_under_maintenance === true,
+        require_reseller_email_verification: authForm.require_reseller_email_verification !== false,
       };
       // Prefer UPDATE so we don't require insert permissions (common with RLS).
       // If the row is missing, give a clear actionable message.
@@ -206,7 +197,7 @@ export const AdminPlatformSettings: React.FC = () => {
       }
       setAuthMessage({
         type: 'ok',
-        text: 'Login provider maintenance saved. Clicks will show toast and block OAuth.',
+        text: 'Auth settings saved (login maintenance + Super Reseller email verification).',
       });
     } catch (e: unknown) {
       const msg =
@@ -505,6 +496,41 @@ export const AdminPlatformSettings: React.FC = () => {
 
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">
         <div className="flex items-center gap-2 mb-3">
+          <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Super Reseller email verification</h2>
+        </div>
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2.5 items-start">
+            <Info className="w-4 h-4 shrink-0 text-gray-400 mt-0.5" aria-hidden />
+            <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed min-w-0">
+              When on, new reseller sign-ups must confirm their email before signing in. When off, accounts are
+              activated immediately — no verification email is sent.
+            </p>
+          </div>
+          <HelpDetails summary="What happens when you turn this off">
+            <p>
+              Sign-up creates an active account right away. Existing unverified reseller accounts are auto-activated
+              when they try to sign in or use &quot;Resend verification&quot;. Google sign-up is unchanged.
+            </p>
+          </HelpDetails>
+        </div>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={authForm.require_reseller_email_verification !== false}
+            onChange={(e) =>
+              setAuthForm((f) => ({ ...f, require_reseller_email_verification: e.target.checked }))
+            }
+            className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+          />
+          <span className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-snug min-w-0">
+            Require email verification for Super Reseller sign-up
+          </span>
+        </label>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] p-5 sm:p-6 shadow-sm dark:shadow-none lg:col-span-2">
+        <div className="flex items-center gap-2 mb-3">
           <Info className="w-5 h-5 text-indigo-500 shrink-0" />
           <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Login providers maintenance (toast)</h2>
         </div>
@@ -565,7 +591,7 @@ export const AdminPlatformSettings: React.FC = () => {
           className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3.5 py-2 text-sm disabled:opacity-60"
         >
           {authSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Save login maintenance
+          Save auth settings
         </button>
       </div>
 

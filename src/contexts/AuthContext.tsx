@@ -5,6 +5,13 @@ import { useFingerprint } from '../hooks/useFingerprint';
 import { postJsonWithFallback } from '../lib/apiClient';
 import { hasMinimumPhone } from '../lib/phoneRequired';
 import { toast } from '../lib/toast';
+import {
+  getJwtUserMetadata,
+  isMainCustomerSite,
+  isResellerAuthMetadata,
+  isResellerRole,
+  redirectToResellerPortal,
+} from '../lib/resellerAuth';
 
 interface AuthContextType {
   user: User | null;
@@ -117,6 +124,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
         const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
         if (!accessToken || !refreshToken) return;
+
+        // GoTrue falls back to Site URL when redirect_to is not allow-listed — forward reseller
+        // verification tokens to superreseller.shop before creating a session on the main site.
+        if (isMainCustomerSite()) {
+          const meta = getJwtUserMetadata(accessToken);
+          if (isResellerAuthMetadata(meta)) {
+            const forwardHash =
+              window.location.hash ||
+              `#access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}&token_type=bearer`;
+            redirectToResellerPortal('/reseller/login', forwardHash);
+            return;
+          }
+        }
 
         await supabase.auth.setSession({
           access_token: accessToken,
@@ -232,7 +252,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const isAdminUser = role === 'admin' || role === 'super_admin';
   const needsMandatoryPhone = Boolean(
-    user && role !== null && !isAdminUser && !hasMinimumPhone(profilePhone),
+    user &&
+      role !== null &&
+      !isAdminUser &&
+      !isResellerRole(role) &&
+      !hasMinimumPhone(profilePhone),
   );
 
   const value = {

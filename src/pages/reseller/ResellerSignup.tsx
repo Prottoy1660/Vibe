@@ -47,6 +47,12 @@ export const ResellerSignup = () => {
         throw new Error(payload.error || 'Failed to sign up');
       }
 
+      if (payload.needsVerification === false) {
+        toast.success(payload.message || 'Account created. You can sign in now.', { duration: 8000 });
+        navigate(`/reseller/login?email=${encodeURIComponent(formData.email)}`);
+        return;
+      }
+
       toast.success(
         'Check your inbox — verification email sent from Super Reseller (noreply@superreseller.shop).',
         { duration: 8000 },

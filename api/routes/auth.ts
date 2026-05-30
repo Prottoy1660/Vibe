@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import rateLimit from 'express-rate-limit'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { isResellerEmailVerificationRequired, loadAuthSettings } from '../lib/authSettings.js'
 import {
   applyResellerRedirectToConfirmationUrl,
   authUserNeedsEmailVerification,
@@ -46,6 +47,13 @@ const resendVerificationLimiter = rateLimit({
     error: 'Too many verification emails requested. Please wait an hour and try again.',
   },
 })
+
+async function confirmResellerAuthEmail(userId: string): Promise<{ ok: boolean; error?: string }> {
+  if (!supabase) return { ok: false, error: 'Server configuration error.' }
+  const { error } = await supabase.auth.admin.updateUserById(userId, { email_confirm: true })
+  if (error) return { ok: false, error: error.message }
+  return { ok: true }
+}
 
 const authTemplateFileByKey: Record<string, string> = {
   confirmation: 'confirm-signup.html',
@@ -177,6 +185,68 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
 
     await supabase.from('signup_ip_attempts').insert({ ip })
 
+    const authSettings = await loadAuthSettings(supabase)
+    const requireVerification = isResellerEmailVerificationRequired(authSettings)
+
+    if (!requireVerification) {
+      const { data: created, error: createError } = await supabase.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: name,
+          phone,
+          role: 'reseller',
+        },
+      })
+
+      if (createError) {
+        const msg = createError.message || 'Could not create account.'
+        if (/already|registered|exists/i.test(msg)) {
+          try {
+            const existing = await findAuthUserByEmail(supabase, email)
+            if (existing && authUserNeedsEmailVerification(existing)) {
+              const confirmed = await confirmResellerAuthEmail(existing.id)
+              if (!confirmed.ok) {
+                res.status(503).json({ success: false, error: confirmed.error || 'Could not activate account.' })
+                return
+              }
+              res.status(200).json({
+                success: true,
+                needsVerification: false,
+                message: 'Account activated. Sign in with your password.',
+              })
+              return
+            }
+          } catch (lookupErr) {
+            console.error('[reseller-signup] existing user lookup', lookupErr)
+          }
+          res.status(409).json({
+            success: false,
+            error: 'An account with this email already exists. Sign in or use forgot password.',
+          })
+          return
+        }
+        console.error('[reseller-signup] createUser', createError)
+        res.status(400).json({ success: false, error: msg })
+        return
+      }
+
+      if (created.user?.id) {
+        await supabase
+          .from('users')
+          .update({ role: 'reseller', name, phone: phone || null })
+          .eq('id', created.user.id)
+      }
+
+      res.status(200).json({
+        success: true,
+        needsVerification: false,
+        message: 'Account created. You can sign in now.',
+      })
+      return
+    }
+
     const redirectTo = getResellerAuthRedirectUrl('/reseller/login')
 
     const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
@@ -283,7 +353,39 @@ router.post('/reseller-resend-verification', resendVerificationLimiter, async (r
   }
 
   try {
+    const authSettings = await loadAuthSettings(supabase)
+    const requireVerification = isResellerEmailVerificationRequired(authSettings)
     const user = await findAuthUserByEmail(supabase, email)
+
+    if (!requireVerification) {
+      if (user && authUserNeedsEmailVerification(user)) {
+        const confirmed = await confirmResellerAuthEmail(user.id)
+        if (!confirmed.ok) {
+          res.status(503).json({ success: false, error: confirmed.error || 'Could not activate account.' })
+          return
+        }
+        res.status(200).json({
+          success: true,
+          verificationDisabled: true,
+          message: 'Email verification is off — your account is active. Sign in with your password.',
+        })
+        return
+      }
+      if (user && !authUserNeedsEmailVerification(user)) {
+        res.status(400).json({
+          success: false,
+          alreadyVerified: true,
+          error: 'This email is already active. Sign in with your password.',
+        })
+        return
+      }
+      res.status(200).json({
+        success: true,
+        verificationDisabled: true,
+        message: 'Email verification is disabled. If an account exists for this email, sign in with your password.',
+      })
+      return
+    }
 
     const delivered = await deliverResellerVerificationEmail(supabase, email, {
       subject: 'Super Reseller — verify your email (resent)',

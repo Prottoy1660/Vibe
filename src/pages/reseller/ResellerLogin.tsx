@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
 import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 import { getApiBaseUrl } from '../../lib/apiBase';
+import { isResellerEmailVerificationRequired, parseAuthSettings } from '../../lib/authSettings';
 
 export const ResellerLogin = () => {
   const navigate = useNavigate();
@@ -17,12 +18,66 @@ export const ResellerLogin = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(verifyEmailSent);
+  const [requireEmailVerification, setRequireEmailVerification] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'auth_settings')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const settings = parseAuthSettings(data?.value);
+        setRequireEmailVerification(isResellerEmailVerificationRequired(settings));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const fromQuery = searchParams.get('email');
     if (fromQuery) setEmail(fromQuery);
     if (searchParams.get('verify') === 'sent') setNeedsVerification(true);
   }, [searchParams]);
+
+  // After email verification (magic link), tokens land here — send straight to dashboard.
+  useEffect(() => {
+    let cancelled = false;
+
+    const finishResellerSession = async (userId: string) => {
+      const { data: profile } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+      if (cancelled) return;
+      if (profile?.role === 'reseller') {
+        toast.success('Email verified — welcome to Super Reseller!');
+        navigate('/reseller/dashboard', { replace: true });
+        return;
+      }
+      if (profile) {
+        await supabase.auth.signOut();
+        toast.error('This account does not have reseller privileges.');
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) void finishResellerSession(session.user.id);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        void finishResellerSession(session.user.id);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [navigate]);
 
   const handleResendVerification = async () => {
     if (!email) {
@@ -56,25 +111,47 @@ export const ResellerLogin = () => {
     }
   };
 
+  const tryActivateWhenVerificationOff = async (): Promise<boolean> => {
+    if (requireEmailVerification || !email) return false;
+    const apiRes = await fetch(`${getApiBaseUrl()}/api/auth/reseller-resend-verification`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const payload = await apiRes.json().catch(() => ({}));
+    return Boolean(apiRes.ok && payload.success && payload.verificationDisabled);
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      let { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) {
-        if (/email not confirmed/i.test(error.message)) {
+      if (error && /email not confirmed/i.test(error.message)) {
+        if (!requireEmailVerification) {
+          const activated = await tryActivateWhenVerificationOff();
+          if (activated) {
+            const retry = await supabase.auth.signInWithPassword({ email, password });
+            data = retry.data;
+            error = retry.error;
+          }
+        }
+        if (error && /email not confirmed/i.test(error.message)) {
           setNeedsVerification(true);
           throw new Error(
-            'Your email is not verified yet. Tap “Resend verification email” below — we will send a new Super Reseller link (or an activation link to set your password).',
+            requireEmailVerification
+              ? 'Your email is not verified yet. Tap “Resend verification email” below — we will send a new Super Reseller link (or an activation link to set your password).'
+              : 'Could not activate your account. Please contact support.',
           );
         }
-        throw error;
       }
+
+      if (error) throw error;
 
       setNeedsVerification(false);
 
@@ -89,6 +166,8 @@ export const ResellerLogin = () => {
         await supabase.auth.signOut();
         throw new Error('Unauthorized. This account does not have reseller privileges.');
       }
+
+      if (!data?.user) throw new Error('Sign in failed.');
 
       toast.success('Welcome back to Super Reseller!');
       navigate('/reseller/dashboard');
@@ -160,7 +239,7 @@ export const ResellerLogin = () => {
         className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10"
       >
         <div className="bg-[#0a0a0a]/80 backdrop-blur-3xl py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-white/10">
-          {(verifyEmailSent || needsVerification) && (
+          {requireEmailVerification && (verifyEmailSent || needsVerification) && (
             <div className="mb-6 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 space-y-3">
               <p>
                 {verifyEmailSent
@@ -228,7 +307,7 @@ export const ResellerLogin = () => {
             </div>
           </form>
 
-          {!verifyEmailSent && !needsVerification && (
+          {requireEmailVerification && !verifyEmailSent && !needsVerification && (
             <p className="mt-4 text-center text-xs text-gray-500">
               Didn&apos;t receive the verification email?{' '}
               <button
