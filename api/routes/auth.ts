@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit'
 import { promises as fs } from 'fs'
 import path from 'path'
 import {
+  applyResellerRedirectToConfirmationUrl,
   findAuthUserByEmail,
   getResellerAuthRedirectUrl,
   sendResellerVerificationEmail,
@@ -219,13 +220,15 @@ router.post('/reseller-signup', signupIntentLimiter, async (req: Request, res: R
       return
     }
 
-    const confirmationUrl = linkData?.properties?.action_link
+    const rawLink = linkData?.properties?.action_link
 
-    if (!confirmationUrl || typeof confirmationUrl !== 'string') {
+    if (!rawLink || typeof rawLink !== 'string') {
       console.error('[reseller-signup] missing action_link', linkData)
       res.status(500).json({ success: false, error: 'Could not build verification link.' })
       return
     }
+
+    const confirmationUrl = applyResellerRedirectToConfirmationUrl(rawLink, redirectTo)
 
     const sent = await sendResellerVerificationEmail({ to: email, confirmationUrl })
     if (!sent.ok) {
@@ -301,11 +304,13 @@ router.post('/reseller-resend-verification', resendVerificationLimiter, async (r
       return
     }
 
-    const confirmationUrl = linkData?.properties?.action_link
-    if (!confirmationUrl || typeof confirmationUrl !== 'string') {
+    const rawLink = linkData?.properties?.action_link
+    if (!rawLink || typeof rawLink !== 'string') {
       res.status(500).json({ success: false, error: 'Could not build verification link.' })
       return
     }
+
+    const confirmationUrl = applyResellerRedirectToConfirmationUrl(rawLink, redirectTo)
 
     const sent = await sendResellerVerificationEmail({
       to: email,

@@ -88,3 +88,20 @@ export function getResellerAuthRedirectUrl(path = '/reseller/login'): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   return `${RESELLER_SITE}${normalized}`;
 }
+
+/**
+ * GoTrue often embeds the project Site URL (vibeaccessbd.com) in action_link when
+ * redirectTo is missing from the allow list. Force Super Reseller redirect before sending.
+ */
+export function applyResellerRedirectToConfirmationUrl(
+  actionLink: string,
+  redirectTo = getResellerAuthRedirectUrl('/reseller/login'),
+): string {
+  try {
+    const url = new URL(actionLink);
+    url.searchParams.set('redirect_to', redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
