@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, ArrowLeft, Loader2, Hexagon, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 
 export const ResellerForgotPassword = () => {
   const [email, setEmail] = useState('');
@@ -23,7 +24,7 @@ export const ResellerForgotPassword = () => {
     
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reseller/profile`, // Or wherever they reset their password
+        redirectTo: getResellerAuthRedirectUrl('/reseller/profile'),
       });
       
       if (error) throw error;

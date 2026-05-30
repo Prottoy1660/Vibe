@@ -36,6 +36,10 @@ export const ResellerOauthCallback = () => {
         // We only allow updating to 'reseller' if they are a standard 'user' or 'customer'.
         // If they are an 'admin', we shouldn't demote them.
         if (profile?.role !== 'reseller' && profile?.role !== 'admin' && profile?.role !== 'super_admin') {
+           await supabase.auth.updateUser({
+             data: { role: 'reseller', full_name: session.user.user_metadata?.full_name },
+           });
+
            const { error: updateError } = await supabase
              .from('users')
              .update({ role: 'reseller' })

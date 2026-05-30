@@ -4,6 +4,7 @@ import { Mail, Lock, ArrowLeft, Loader2, Hexagon, User, Phone } from 'lucide-rea
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
+import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 
 export const ResellerSignup = () => {
   const [formData, setFormData] = useState({
@@ -21,22 +22,33 @@ export const ResellerSignup = () => {
     setLoading(true);
     
     try {
+      const emailRedirectTo = getResellerAuthRedirectUrl('/reseller/login');
+
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
+          emailRedirectTo,
           data: {
             full_name: formData.name,
             phone: formData.phone,
-            role: 'reseller' // Assign role on signup. Note: In production, you might want this to be 'pending_reseller' and require admin approval.
-          }
-        }
+            role: 'reseller',
+          },
+        },
       });
 
       if (error) throw error;
 
-      toast.success('Application submitted! You can now log in.');
-      navigate('/reseller/login');
+      if (data.session) {
+        toast.success('Account created! Welcome to Super Reseller.');
+        navigate('/reseller/dashboard');
+      } else {
+        toast.success(
+          'Check your inbox — we sent a verification link from Super Reseller (superreseller.shop).',
+          { duration: 8000 },
+        );
+        navigate('/reseller/login?verify=sent');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Failed to sign up');
     } finally {
@@ -48,11 +60,14 @@ export const ResellerSignup = () => {
     setGoogleLoading(true);
     try {
       // Create a specific callback URL for reseller google signup
-      const redirectUrl = new URL(window.location.origin + '/reseller/oauth/callback');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl.toString(),
+          redirectTo: getResellerAuthRedirectUrl('/reseller/oauth/callback'),
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
         },
       });
 

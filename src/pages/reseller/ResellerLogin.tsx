@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Lock, ArrowRight, Loader2, Hexagon, ShieldCheck } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
+import { getResellerAuthRedirectUrl } from '../../lib/resellerAuth';
 
 export const ResellerLogin = () => {
   const [email, setEmail] = useState('');
@@ -11,6 +12,8 @@ export const ResellerLogin = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const verifyEmailSent = searchParams.get('verify') === 'sent';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +25,14 @@ export const ResellerLogin = () => {
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        if (/email not confirmed/i.test(error.message)) {
+          throw new Error(
+            'Please verify your email first — check your inbox for a message from Super Reseller (superreseller.shop).',
+          );
+        }
+        throw error;
+      }
 
       // Ensure the user actually has the reseller role
       const { data: profileData } = await supabase
@@ -49,11 +59,10 @@ export const ResellerLogin = () => {
     setGoogleLoading(true);
     try {
       // Create a specific callback URL for reseller google login
-      const redirectUrl = new URL(window.location.origin + '/reseller/oauth/callback');
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: redirectUrl.toString(),
+          redirectTo: getResellerAuthRedirectUrl('/reseller/oauth/callback'),
         },
       });
 
@@ -107,6 +116,12 @@ export const ResellerLogin = () => {
         className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10"
       >
         <div className="bg-[#0a0a0a]/80 backdrop-blur-3xl py-8 px-4 shadow-2xl sm:rounded-3xl sm:px-10 border border-white/10">
+          {verifyEmailSent && (
+            <div className="mb-6 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+              Verification email sent from <span className="font-semibold text-white">Super Reseller</span>. Open the
+              link in your inbox, then sign in here.
+            </div>
+          )}
           <form className="space-y-6" onSubmit={handleLogin}>
             <div>
               <label className="block text-sm font-semibold text-gray-300 ml-1">Email address</label>
