@@ -110,6 +110,11 @@ export function applyResellerRedirectToConfirmationUrl(
  * Build a verification link for an existing auth user (resend flow).
  * magiclink often returns "already registered" for signup-pending users — try invite/signup first.
  */
+function actionLinkFromGenerateResult(data: { properties?: { action_link?: string } } | null): string | undefined {
+  const raw = data?.properties?.action_link;
+  return typeof raw === 'string' && raw ? raw : undefined;
+}
+
 export async function generateResellerVerificationLink(
   supabase: SupabaseClient,
   email: string,
@@ -117,23 +122,28 @@ export async function generateResellerVerificationLink(
 ): Promise<{ link?: string; error?: string }> {
   const normalized = email.trim().toLowerCase();
   const options = { redirectTo, data: { role: 'reseller' } };
-  const types = ['invite', 'signup', 'magiclink'] as const;
   let lastError = '';
 
-  for (const type of types) {
-    const { data, error } = await supabase.auth.admin.generateLink({
-      type,
-      email: normalized,
-      options,
-    });
-
-    const raw = data?.properties?.action_link;
-    if (!error && typeof raw === 'string' && raw) {
-      return { link: raw };
-    }
-    lastError = error?.message || lastError;
-    if (error && /rate|too many/i.test(error.message)) break;
+  const invite = await supabase.auth.admin.generateLink({
+    type: 'invite',
+    email: normalized,
+    options,
+  });
+  const inviteLink = actionLinkFromGenerateResult(invite.data);
+  if (inviteLink) return { link: inviteLink };
+  lastError = invite.error?.message || lastError;
+  if (invite.error && /rate|too many/i.test(invite.error.message)) {
+    return { error: lastError };
   }
+
+  const magic = await supabase.auth.admin.generateLink({
+    type: 'magiclink',
+    email: normalized,
+    options,
+  });
+  const magicLink = actionLinkFromGenerateResult(magic.data);
+  if (magicLink) return { link: magicLink };
+  lastError = magic.error?.message || lastError;
 
   return { error: lastError || 'Could not create verification link.' };
 }
