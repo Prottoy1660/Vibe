@@ -149,7 +149,7 @@ export const PublicSubscriptionStatusCard: React.FC<Props> = ({ status }) => {
                 {status.adobeLive && (
                   <p className="text-xs text-emerald-600 dark:text-emerald-500/80 mt-1 flex items-center gap-1">
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    Verified on Adobe
+                    Verified on Super Reseller
                   </p>
                 )}
               </div>
@@ -241,7 +241,7 @@ export const PublicSubscriptionStatusCard: React.FC<Props> = ({ status }) => {
         {status.teamStatus === 'attention' && !status.adobeLive && (
           <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 flex items-start gap-3 text-sm text-amber-800 dark:text-amber-200">
             <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
-            <span>Adobe panel data may still be syncing. Search again in a few minutes for the latest status.</span>
+            <span>Super Reseller data may still be syncing. Search again in a few minutes for the latest status.</span>
           </div>
         )}
       </div>

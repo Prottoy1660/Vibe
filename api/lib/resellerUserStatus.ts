@@ -1,5 +1,7 @@
 import { getAdobeOrgSnapshotByEmail, getAdobePanelUserByEmail } from './adobeApi.js'
 
+export const SUPER_RESELLER_BRAND = 'Super Reseller'
+
 export function formatPlanDurationLabel(durationMonths: string, durationDays: number): string {
   const raw = String(durationMonths || '').trim()
   if (raw.endsWith('d')) {
@@ -93,13 +95,13 @@ export function buildResellerUserStatusFromRow(row: Record<string, unknown>): Re
     teamMessage = 'This subscription has expired.'
   } else if (adobeLive && organizationName) {
     teamStatus = 'normal'
-    teamMessage = 'This team is operating normally on Adobe credits-pool.'
+    teamMessage = `This team is operating normally on ${SUPER_RESELLER_BRAND}.`
   } else if (adobeLive) {
     teamStatus = 'attention'
-    teamMessage = 'Account is active on Adobe but organization name is pending sync.'
+    teamMessage = `Account is active on ${SUPER_RESELLER_BRAND} but organization name is pending sync.`
   } else if (localStatus === 'active') {
     teamStatus = 'attention'
-    teamMessage = 'Not found on Adobe credits-pool yet — try refreshing status.'
+    teamMessage = `Not found on ${SUPER_RESELLER_BRAND} yet — try refreshing status.`
   }
 
   const refundWindowMs = 24 * 60 * 60 * 1000

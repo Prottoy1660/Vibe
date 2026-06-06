@@ -151,7 +151,7 @@ export const UserStatusModal: React.FC<Props> = ({ user, onClose }) => {
               onClick={() => void load(true)}
               disabled={loading || refreshing}
               className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
-              title="Refresh from Adobe"
+              title="Refresh from Super Reseller"
             >
               <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
@@ -224,7 +224,7 @@ export const UserStatusModal: React.FC<Props> = ({ user, onClose }) => {
                       {status.adobeLive && (
                         <p className="text-xs text-emerald-500/80 mt-1 flex items-center gap-1">
                           <ShieldCheck className="h-3.5 w-3.5" />
-                          Verified on Adobe
+                          Verified on Super Reseller
                         </p>
                       )}
                     </div>
@@ -318,8 +318,7 @@ export const UserStatusModal: React.FC<Props> = ({ user, onClose }) => {
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 flex items-start gap-3 text-sm text-amber-200">
                   <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
                   <span>
-                    Use <span className="font-semibold">Refresh</span> on My Users or here to pull the latest Adobe
-                    panel data.
+                    Use <span className="font-semibold">Refresh</span> on My Users or here to pull the latest status from Super Reseller.
                   </span>
                 </div>
               )}

@@ -156,7 +156,7 @@ export const MyUsers = () => {
             My Users {filteredUsers.length > 0 && <span className="text-gray-500 font-semibold">({filteredUsers.length})</span>}
           </h1>
           <p className="text-gray-400 mt-2">
-            Organization names sync from Adobe credits-pool automatically.
+            Organization names sync from Super Reseller automatically.
           </p>
         </div>
 

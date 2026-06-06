@@ -336,13 +336,13 @@ router.get('/users/:id/status', async (req, res) => {
       teamMessage = 'This subscription has expired.';
     } else if (adobeLive && organizationName) {
       teamStatus = 'normal';
-      teamMessage = 'This team is operating normally on Adobe credits-pool.';
+      teamMessage = 'This team is operating normally on Super Reseller.';
     } else if (adobeLive) {
       teamStatus = 'attention';
-      teamMessage = 'Account is active on Adobe but organization name is pending sync.';
+      teamMessage = 'Account is active on Super Reseller but organization name is pending sync.';
     } else if (localStatus === 'active') {
       teamStatus = 'attention';
-      teamMessage = 'Not found on Adobe credits-pool yet — try Refresh on My Users.';
+      teamMessage = 'Not found on Super Reseller yet — try Refresh on My Users.';
     }
 
     const refundWindowMs = 24 * 60 * 60 * 1000;
