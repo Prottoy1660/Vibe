@@ -16,6 +16,7 @@ import {
   lookupBinancePayment,
   syncDepositRowFromBinance,
 } from '../lib/binancePaymentSync.js';
+import { MIN_RESELLER_DEPOSIT_USD } from '../lib/resellerDepositLimits.js';
 
 const router = express.Router();
 
@@ -848,6 +849,14 @@ router.post('/binance/verify', async (req, res) => {
 
     if (!txId || !expectedAmount) {
       return res.status(400).json({ success: false, error: 'Transaction ID and amount are required' });
+    }
+
+    const amountNum = parseFloat(String(expectedAmount));
+    if (!Number.isFinite(amountNum) || amountNum < MIN_RESELLER_DEPOSIT_USD) {
+      return res.status(400).json({
+        success: false,
+        error: `Minimum deposit is $${MIN_RESELLER_DEPOSIT_USD}.`,
+      });
     }
 
     if (!isBinanceConfigured()) {

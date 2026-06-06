@@ -3,19 +3,28 @@ import { motion } from 'framer-motion';
 import { Wallet, QrCode, ArrowRight, Loader2, CheckCircle2, Copy } from 'lucide-react';
 import { ResellerApi } from '../../services/reseller/resellerApi';
 import { useNavigate } from 'react-router-dom';
+import { MIN_RESELLER_DEPOSIT_USD } from '../../lib/resellerDepositLimits';
+import { toast } from '../../lib/toast';
 
 export const AddFunds = () => {
   const navigate = useNavigate();
-  const [amount, setAmount] = useState('10');
+  const [amount, setAmount] = useState(String(MIN_RESELLER_DEPOSIT_USD));
   const [step, setStep] = useState<'input' | 'qr' | 'success'>('input');
   const [loading, setLoading] = useState(false);
   const [txId, setTxId] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const predefinedAmounts = ['1', '5', '10', '50', '100'];
+  const predefinedAmounts = ['10', '50', '100'];
   const binancePayId = import.meta.env.VITE_BINANCE_PAY_UID || '1115056911';
 
+  const parsedAmount = parseFloat(amount);
+  const amountValid = Number.isFinite(parsedAmount) && parsedAmount >= MIN_RESELLER_DEPOSIT_USD;
+
   const handleGenerateQR = async () => {
+    if (!amountValid) {
+      toast.error(`Minimum deposit is $${MIN_RESELLER_DEPOSIT_USD}.`);
+      return;
+    }
     setLoading(true);
     // Simulate Binance API call
     await new Promise(r => setTimeout(r, 800));
@@ -26,10 +35,14 @@ export const AddFunds = () => {
   const handleSubmitVerification = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!txId) return;
+    if (!amountValid) {
+      toast.error(`Minimum deposit is $${MIN_RESELLER_DEPOSIT_USD}.`);
+      return;
+    }
 
     setLoading(true);
     try {
-      const result = await ResellerApi.addFunds(parseFloat(amount), txId);
+      const result = await ResellerApi.addFunds(parsedAmount, txId);
       if (result.status === 'completed') {
         alert(result.message || 'Payment verified automatically!');
       } else {
@@ -92,7 +105,7 @@ export const AddFunds = () => {
           <div className="p-8 lg:p-12">
             {step === 'input' && (
               <div className="space-y-8">
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+                <div className="grid grid-cols-3 gap-3">
                   {predefinedAmounts.map((amt) => (
                     <button
                       key={amt}
@@ -116,19 +129,22 @@ export const AddFunds = () => {
                     </div>
                     <input
                       type="number"
-                      min="1"
+                      min={MIN_RESELLER_DEPOSIT_USD}
                       step="1"
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       className="block w-full pl-12 pr-6 py-5 bg-[#111111] border border-white/10 rounded-2xl text-white text-3xl font-black focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 transition-all placeholder:text-gray-700 shadow-inner"
-                      placeholder="0.00"
+                      placeholder="10.00"
                     />
                   </div>
+                  <p className="text-xs text-gray-500 ml-1">
+                    Minimum deposit: ${MIN_RESELLER_DEPOSIT_USD} USD
+                  </p>
                 </div>
 
                 <button
                   onClick={handleGenerateQR}
-                  disabled={loading || !amount || parseFloat(amount) < 1}
+                  disabled={loading || !amountValid}
                   className="w-full py-5 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all duration-300 bg-white hover:bg-gray-200 text-black shadow-xl shadow-white/10 disabled:opacity-50 disabled:cursor-not-allowed text-lg mt-8"
                 >
                   {loading ? (
@@ -159,7 +175,7 @@ export const AddFunds = () => {
                       {copied ? <CheckCircle2 className="h-6 w-6 text-emerald-400" /> : <Copy className="h-6 w-6" />}
                     </button>
                   </div>
-                  <p className="text-3xl font-black text-yellow-500">${parseFloat(amount).toFixed(2)}</p>
+                  <p className="text-3xl font-black text-yellow-500">${parsedAmount.toFixed(2)}</p>
                 </div>
 
                 <div className="w-full h-px bg-white/5 my-4" />
@@ -209,7 +225,7 @@ export const AddFunds = () => {
                 </div>
                 <h2 className="text-3xl font-black text-white">Request Submitted!</h2>
                 <p className="text-gray-400 text-center max-w-md text-lg leading-relaxed">
-                  Your deposit request for <span className="text-white font-bold">${parseFloat(amount).toFixed(2)}</span> is pending verification. The balance will be added once an admin approves it.
+                  Your deposit request for <span className="text-white font-bold">${parsedAmount.toFixed(2)}</span> is pending verification. The balance will be added once an admin approves it.
                 </p>
                 <div className="mt-8 flex items-center gap-3 px-6 py-3 bg-white/5 rounded-full text-yellow-500/80 text-sm font-medium animate-pulse border border-white/5">
                   <Loader2 className="h-4 w-4 animate-spin" />

@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, Search, UserRound } from 'lucide-react';
+import { ArrowLeft, Loader2, Search } from 'lucide-react';
 import { getApiBaseUrl } from '../lib/apiBase';
 import { isMainCustomerSite, RESELLER_SITE_URL } from '../lib/resellerAuth';
 import {
   searchPublicAccountStatus,
   type PublicAccountSearchResult,
 } from '../lib/publicAccountStatus';
-import { PublicAdobeAccessStatus } from '../components/public/PublicAdobeAccessStatus';
 import { PublicSubscriptionStatusCard } from '../components/public/PublicSubscriptionStatusCard';
 
 export const AccountSearch: React.FC = () => {
@@ -95,7 +94,7 @@ export const AccountSearch: React.FC = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Customer status search</h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              Enter a customer email to view subscription status on Super Reseller — no login required.
+              Live status from the activation panel — any active email can be checked here.
             </p>
           </div>
         </div>
@@ -126,9 +125,6 @@ export const AccountSearch: React.FC = () => {
               Search
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-3">
-            Looks up Adobe subscription status for emails activated through Super Reseller.
-          </p>
         </form>
 
         {error && (
@@ -143,40 +139,12 @@ export const AccountSearch: React.FC = () => {
           </div>
         )}
 
-        {result && (
-          <div className="space-y-8">
-            {result.account && (
-              <div className="rounded-2xl border border-white/10 bg-[#0a0a0a]/80 p-5 flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-300">
-                  <UserRound className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Account</p>
-                  <p className="font-semibold text-white mt-0.5">{result.account.name || 'Customer'}</p>
-                  <p className="text-sm text-gray-400 break-all">{result.account.email}</p>
-                </div>
-              </div>
-            )}
-
-            {result.vibe &&
-              (result.vibe.sharedPlans.length > 0 || result.vibe.personalPlans.length > 0) && (
-                <PublicAdobeAccessStatus
-                  sharedPlans={result.vibe.sharedPlans}
-                  personalPlans={result.vibe.personalPlans}
-                />
-              )}
-
-            {result.resellerSubscriptions.length > 0 && (
-              <section className="space-y-4">
-                {result.resellerSubscriptions.length > 1 && (
-                  <h2 className="text-lg font-semibold text-white">Subscriptions</h2>
-                )}
-                {result.resellerSubscriptions.map((status) => (
-                  <PublicSubscriptionStatusCard key={status.id} status={status} />
-                ))}
-              </section>
-            )}
-          </div>
+        {result && result.resellerSubscriptions.length > 0 && (
+          <section className="space-y-4">
+            {result.resellerSubscriptions.map((status) => (
+              <PublicSubscriptionStatusCard key={status.id} status={status} />
+            ))}
+          </section>
         )}
 
         <p className="text-xs text-gray-500 mt-10 text-center">

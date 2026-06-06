@@ -1,4 +1,4 @@
-import { getAdobeOrgSnapshotByEmail, getAdobePanelUserByEmail } from './adobeApi.js'
+import { getAdobeOrgSnapshotByEmail, getAdobePanelUserByEmail, type AdobePanelUserRow } from './adobeApi.js'
 
 export const SUPER_RESELLER_BRAND = 'Super Reseller'
 
@@ -39,16 +39,7 @@ export type ResellerUserStatusPayload = {
   adobeStatus: string | null
 }
 
-export function buildResellerUserStatusFromRow(row: Record<string, unknown>): ResellerUserStatusPayload {
-  const email = String(row.customer_email || '').trim().toLowerCase()
-  const live = getAdobePanelUserByEmail(email)
-  const orgSnap = getAdobeOrgSnapshotByEmail(email)
-
-  const activatedAt = row.activated_at ? String(row.activated_at) : ''
-  const expiresAt =
-    (live?.expiresAt ? String(live.expiresAt) : null) ||
-    (row.expires_at ? String(row.expires_at) : '')
-
+function computeStatusTiming(activatedAt: string, expiresAt: string) {
   const activatedMs = activatedAt ? new Date(activatedAt).getTime() : NaN
   const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN
   const nowMs = Date.now()
@@ -63,6 +54,160 @@ export function buildResellerUserStatusFromRow(row: Record<string, unknown>): Re
     const elapsed = Math.min(total, Math.max(0, nowMs - activatedMs))
     progressPercent = Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)))
   }
+
+  return { activatedMs, expiresMs, nowMs, daysLeft, progressPercent }
+}
+
+function inferPlanDurationLabel(activatedAt: string | null, expiresAt: string | null): string {
+  if (!activatedAt || !expiresAt) return '—'
+  const activatedMs = new Date(activatedAt).getTime()
+  const expiresMs = new Date(expiresAt).getTime()
+  if (!Number.isFinite(activatedMs) || !Number.isFinite(expiresMs) || expiresMs <= activatedMs) return '—'
+  const days = Math.ceil((expiresMs - activatedMs) / (24 * 60 * 60 * 1000))
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'}`
+  const months = Math.max(1, Math.round(days / 30))
+  return months === 1 ? '1 month' : `${months} months`
+}
+
+function buildTeamStatus(
+  isExpired: boolean,
+  adobeLive: boolean,
+  organizationName: string | null,
+  localStatus: string,
+): { teamStatus: ResellerUserStatusPayload['teamStatus']; teamMessage: string } {
+  if (isExpired) {
+    return { teamStatus: 'attention', teamMessage: 'This subscription has expired.' }
+  }
+  if (adobeLive && organizationName) {
+    return {
+      teamStatus: 'normal',
+      teamMessage: `This team is operating normally on ${SUPER_RESELLER_BRAND}.`,
+    }
+  }
+  if (adobeLive) {
+    return {
+      teamStatus: 'attention',
+      teamMessage: `Account is active on ${SUPER_RESELLER_BRAND} but organization name is pending sync.`,
+    }
+  }
+  if (localStatus === 'active') {
+    return {
+      teamStatus: 'attention',
+      teamMessage: `Not found on ${SUPER_RESELLER_BRAND} yet — try refreshing status.`,
+    }
+  }
+  return { teamStatus: 'unknown', teamMessage: 'Organization data has not been synced yet.' }
+}
+
+/** Status from Adobe credits-pool panel (live API). Local row optional for refund/extra fields. */
+export function buildResellerUserStatusFromPanel(
+  email: string,
+  live: AdobePanelUserRow,
+  localRow?: Record<string, unknown> | null,
+): ResellerUserStatusPayload {
+  const normalizedEmail = email.trim().toLowerCase()
+  const orgSnap = getAdobeOrgSnapshotByEmail(normalizedEmail)
+
+  const activatedAt =
+    (live.activatedAt ? String(live.activatedAt) : '') ||
+    (localRow?.activated_at ? String(localRow.activated_at) : '')
+  const expiresAt =
+    (live.expiresAt ? String(live.expiresAt) : '') ||
+    (localRow?.expires_at ? String(localRow.expires_at) : '')
+
+  const { activatedMs, expiresMs, nowMs, daysLeft, progressPercent } = computeStatusTiming(
+    activatedAt,
+    expiresAt,
+  )
+
+  const localStatus = localRow ? String(localRow.status || 'active') : 'active'
+  const isExpired =
+    localStatus === 'expired' ||
+    (Number.isFinite(expiresMs) && expiresMs <= nowMs) ||
+    String(live.status || '').toLowerCase() === 'expired'
+
+  const organizationName =
+    live.organizationName ||
+    orgSnap?.organizationName ||
+    (localRow?.adobe_organization_name as string | null | undefined) ||
+    null
+
+  const products =
+    live.displayProducts?.length
+      ? live.displayProducts
+      : live.products?.length
+        ? live.products
+        : orgSnap?.displayProducts?.length
+          ? orgSnap.displayProducts
+          : Array.isArray(localRow?.products) && localRow.products.length > 0
+            ? (localRow.products as string[])
+            : []
+
+  const { teamStatus, teamMessage } = buildTeamStatus(isExpired, true, organizationName, localStatus)
+
+  const refundWindowMs = 24 * 60 * 60 * 1000
+  let refundEligible = false
+  let refundRemainingMs: number | null = null
+  if (localRow && localStatus === 'active' && Number.isFinite(activatedMs)) {
+    const deadline = activatedMs + refundWindowMs
+    const remaining = deadline - nowMs
+    if (remaining > 0) {
+      refundEligible = true
+      refundRemainingMs = remaining
+    }
+  }
+
+  const overallStatus =
+    localStatus === 'refunded'
+      ? 'refunded'
+      : isExpired
+        ? 'expired'
+        : 'active'
+
+  return {
+    id: localRow?.id ? String(localRow.id) : `panel:${normalizedEmail}`,
+    email: normalizedEmail,
+    overallStatus,
+    teamStatus,
+    teamMessage,
+    organizationName,
+    organizationId:
+      (Number.isFinite(Number(live.organizationId)) && Number(live.organizationId) > 0
+        ? Number(live.organizationId)
+        : null) ??
+      orgSnap?.organizationId ??
+      (localRow?.adobe_organization_id as number | null | undefined) ??
+      null,
+    products,
+    planDuration: localRow
+      ? formatPlanDurationLabel(String(localRow.duration_months || ''), Number(localRow.duration_days) || 0)
+      : inferPlanDurationLabel(activatedAt || null, expiresAt || null),
+    activatedAt: activatedAt || null,
+    expiresAt: expiresAt || null,
+    daysLeft,
+    progressPercent,
+    adobeLive: true,
+    organizationSyncedAt: (localRow?.adobe_synced_at as string | null | undefined) ?? null,
+    refundEligible,
+    refundRemainingMs,
+    adobeStatus: live.status ?? null,
+  }
+}
+
+export function buildResellerUserStatusFromRow(row: Record<string, unknown>): ResellerUserStatusPayload {
+  const email = String(row.customer_email || '').trim().toLowerCase()
+  const live = getAdobePanelUserByEmail(email)
+  const orgSnap = getAdobeOrgSnapshotByEmail(email)
+
+  const activatedAt = row.activated_at ? String(row.activated_at) : ''
+  const expiresAt =
+    (live?.expiresAt ? String(live.expiresAt) : null) ||
+    (row.expires_at ? String(row.expires_at) : '')
+
+  const { activatedMs, expiresMs, nowMs, daysLeft, progressPercent } = computeStatusTiming(
+    activatedAt,
+    expiresAt,
+  )
 
   const localStatus = String(row.status || 'active')
   const isExpired =
@@ -88,21 +233,7 @@ export function buildResellerUserStatusFromRow(row: Record<string, unknown>): Re
             ? orgSnap.displayProducts
             : []
 
-  let teamStatus: 'normal' | 'attention' | 'unknown' = 'unknown'
-  let teamMessage = 'Organization data has not been synced yet.'
-  if (isExpired) {
-    teamStatus = 'attention'
-    teamMessage = 'This subscription has expired.'
-  } else if (adobeLive && organizationName) {
-    teamStatus = 'normal'
-    teamMessage = `This team is operating normally on ${SUPER_RESELLER_BRAND}.`
-  } else if (adobeLive) {
-    teamStatus = 'attention'
-    teamMessage = `Account is active on ${SUPER_RESELLER_BRAND} but organization name is pending sync.`
-  } else if (localStatus === 'active') {
-    teamStatus = 'attention'
-    teamMessage = `Not found on ${SUPER_RESELLER_BRAND} yet — try refreshing status.`
-  }
+  const { teamStatus, teamMessage } = buildTeamStatus(isExpired, adobeLive, organizationName, localStatus)
 
   const refundWindowMs = 24 * 60 * 60 * 1000
   let refundEligible = false
