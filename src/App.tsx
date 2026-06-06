@@ -10,6 +10,7 @@ import { HttpErrorNavBridge } from './components/HttpErrorNavBridge';
 import { CustomerSiteRoleEnforcer } from './components/CustomerSiteRoleEnforcer';
 import { NetworkStatusToasts } from './components/NetworkStatusToasts';
 import { Loader2, Sparkles } from 'lucide-react';
+import { RESELLER_SITE_URL } from './lib/resellerAuth';
 
 import { ResellerLayout } from './components/reseller/ResellerLayout';
 import { ResellerProtectedRoute } from './components/reseller/ResellerProtectedRoute';
@@ -44,6 +45,7 @@ const Profile = React.lazy(() => import('./pages/Profile').then(module => ({ def
 const TutorialHelp = React.lazy(() => import('./pages/TutorialHelp').then(module => ({ default: module.TutorialHelp })));
 const Support = React.lazy(() => import('./pages/Support').then(module => ({ default: module.Support })));
 const Status = React.lazy(() => import('./pages/Status').then(module => ({ default: module.Status })));
+const AccountSearch = React.lazy(() => import('./pages/AccountSearch').then((m) => ({ default: m.AccountSearch })));
 const Referral = React.lazy(() => import('./pages/Referral').then(module => ({ default: module.Referral })));
 const Downloads = React.lazy(() => import('./pages/Downloads').then(module => ({ default: module.Downloads })));
 const Landing = React.lazy(() => import('./pages/Landing.tsx').then(module => ({ default: module.Landing })));
@@ -55,6 +57,13 @@ const HttpErrorPage = React.lazy(() =>
   import('./pages/HttpErrorPage').then((module) => ({ default: module.HttpErrorPage })),
 );
 const BkashReturn = React.lazy(() => import('./pages/BkashReturn').then((m) => ({ default: m.BkashReturn })));
+
+function RedirectToResellerSearch() {
+  React.useEffect(() => {
+    window.location.replace(`${RESELLER_SITE_URL}/reseller/search${window.location.search}`);
+  }, []);
+  return <PageLoader />;
+}
 
 // Loading Fallback Component
 const PageLoader = () => (
@@ -141,6 +150,7 @@ function AppRoutes() {
         <Route path="/register" element={!user ? <Register /> : <Navigate to="/app" replace />} />
         <Route path="/oauth/desktop-callback" element={<DesktopOauthCallback />} />
         <Route path="/status" element={<Status />} />
+        <Route path="/search" element={<RedirectToResellerSearch />} />
         <Route path="/error/:code" element={<HttpErrorPage />} />
 
         <Route
@@ -157,6 +167,7 @@ function AppRoutes() {
         <Route path="/reseller/signup" element={<ResellerSignup />} />
         <Route path="/reseller/forgot-password" element={<ResellerForgotPassword />} />
         <Route path="/reseller/oauth/callback" element={<ResellerOauthCallback />} />
+        <Route path="/reseller/search" element={<AccountSearch />} />
 
         {/* Reseller Panel Protected Routes */}
         <Route path="/reseller" element={<ResellerProtectedRoute><ResellerLayout /></ResellerProtectedRoute>}>

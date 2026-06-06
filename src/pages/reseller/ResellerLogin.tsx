@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mail, Lock, ArrowRight, Loader2, Hexagon, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2, Search } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { toast } from '../../lib/toast';
@@ -328,7 +328,7 @@ export const ResellerLogin = () => {
                 <div className="w-full border-t border-white/10" />
               </div>
               <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-[#0a0a0a] text-gray-500">Don't have a reseller account?</span>
+                <span className="px-4 bg-[#0a0a0a] text-gray-500">Don&apos;t have a reseller account?</span>
               </div>
             </div>
 
@@ -343,6 +343,21 @@ export const ResellerLogin = () => {
             </div>
           </div>
         </div>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.45 }}
+        className="mt-4 sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4 sm:px-0 text-center"
+      >
+        <Link
+          to="/reseller/search"
+          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-white transition-colors"
+        >
+          <Search className="h-4 w-4" />
+          Status check
+        </Link>
       </motion.div>
     </div>
   );

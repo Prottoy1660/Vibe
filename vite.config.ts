@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
+import { injectSpaSiteMeta } from './api/lib/spaSiteMeta';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -13,10 +14,13 @@ export default defineConfig({
       },
     }),
     tsconfigPaths(),
-    {
+    (() => {
+      let devRequestHost = '';
+      return {
       name: 'superreseller-pwa-manifest',
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
+          devRequestHost = req.headers.host ?? '';
           if (req.url?.startsWith('/manifest.webmanifest')) {
             const host = req.headers.host ?? '';
             if (host.includes('superreseller')) {
@@ -26,7 +30,17 @@ export default defineConfig({
           next();
         });
       },
-    },
+      transformIndexHtml: {
+        order: 'post',
+        handler(html, ctx) {
+          const pathOnly = (ctx.originalUrl ?? ctx.path ?? '/').split('?')[0] || '/';
+          const host = devRequestHost;
+          if (!host.includes('superreseller')) return html;
+          return injectSpaSiteMeta(html, host, pathOnly);
+        },
+      },
+      };
+    })(),
     VitePWA({
       // We need a custom service worker to handle Web Push events.
       strategies: 'injectManifest',

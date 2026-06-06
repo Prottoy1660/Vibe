@@ -13,7 +13,7 @@ export const AddFunds = () => {
   const [copied, setCopied] = useState(false);
 
   const predefinedAmounts = ['1', '5', '10', '50', '100'];
-  const binancePayId = '1096316678';
+  const binancePayId = import.meta.env.VITE_BINANCE_PAY_UID || '1115056911';
 
   const handleGenerateQR = async () => {
     setLoading(true);

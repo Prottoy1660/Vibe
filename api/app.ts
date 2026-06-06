@@ -13,7 +13,7 @@ import cors from 'cors'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import authRoutes from './routes/auth.js'
 import paymentRoutes from './routes/payment.js'
 import cpanelRoutes from './routes/cpanel.js'
@@ -27,6 +27,7 @@ import referralRoutes from './routes/referral.js'
 import supportChatRoutes from './routes/supportChat.js'
 import pushRoutes from './routes/push.js'
 import resellerRoutes from './routes/reseller.js'
+import { injectSpaSiteMeta } from './lib/spaSiteMeta.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -215,12 +216,28 @@ if (process.env.SERVE_STATIC_SPA === '1') {
       if (err) next(err)
     })
   })
+  const indexHtmlPath = path.join(distPath, 'index.html')
+  let cachedIndexHtml: string | null = existsSync(indexHtmlPath)
+    ? null
+    : ''
+
   app.use(express.static(distPath, { index: false }))
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/api')) return next()
-    res.sendFile(path.join(distPath, 'index.html'), (err) => {
-      if (err) next(err)
-    })
+    if (cachedIndexHtml === '') {
+      return next(new Error('index.html missing in SPA dist'))
+    }
+
+    try {
+      if (cachedIndexHtml === null) {
+        cachedIndexHtml = readFileSync(indexHtmlPath, 'utf8')
+      }
+      const host = req.get('host') ?? ''
+      const html = injectSpaSiteMeta(cachedIndexHtml, host, req.path)
+      res.type('html').send(html)
+    } catch (err) {
+      next(err)
+    }
   })
 }
 

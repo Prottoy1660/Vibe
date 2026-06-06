@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 const BINANCE_API_KEY = process.env.BINANCE_API_KEY || '';
 const BINANCE_SECRET_KEY = process.env.BINANCE_SECRET_KEY || '';
-const BINANCE_PAY_UID = process.env.BINANCE_PAY_UID || '1096316678';
+const BINANCE_PAY_UID = process.env.BINANCE_PAY_UID || '1115056911';
 const STABLE_COINS = new Set(['USDT', 'BUSD', 'USDC']);
 
 export type BinancePayerInfo = {
