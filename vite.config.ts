@@ -2,7 +2,9 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 import { VitePWA } from 'vite-plugin-pwa';
-import { injectSpaSiteMeta } from './api/lib/spaSiteMeta';
+import fs from 'node:fs'
+import path from 'node:path'
+import { buildBrandedSpaIndexVariants, injectSpaSiteMeta } from './api/lib/spaSiteMeta';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -34,13 +36,25 @@ export default defineConfig({
         order: 'post',
         handler(html, ctx) {
           const pathOnly = (ctx.originalUrl ?? ctx.path ?? '/').split('?')[0] || '/';
-          const host = devRequestHost;
-          if (!host.includes('superreseller')) return html;
+          const host = devRequestHost || 'localhost:5173';
           return injectSpaSiteMeta(html, host, pathOnly);
         },
       },
       };
     })(),
+    {
+      name: 'spa-branded-index-build',
+      closeBundle() {
+        const outDir = path.resolve(process.cwd(), 'dist')
+        const indexPath = path.join(outDir, 'index.html')
+        if (!fs.existsSync(indexPath)) return
+
+        const raw = fs.readFileSync(indexPath, 'utf8')
+        const branded = buildBrandedSpaIndexVariants(raw)
+        fs.writeFileSync(path.join(outDir, 'index.vibe.html'), branded.vibe)
+        fs.writeFileSync(path.join(outDir, 'index.superreseller.html'), branded.superReseller)
+      },
+    },
     VitePWA({
       // We need a custom service worker to handle Web Push events.
       strategies: 'injectManifest',

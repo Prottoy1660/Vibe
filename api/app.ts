@@ -27,7 +27,7 @@ import referralRoutes from './routes/referral.js'
 import supportChatRoutes from './routes/supportChat.js'
 import pushRoutes from './routes/push.js'
 import resellerRoutes from './routes/reseller.js'
-import { injectSpaSiteMeta } from './lib/spaSiteMeta.js'
+import { injectSpaSiteMeta, isSuperResellerHost, resolveRequestHost } from './lib/spaSiteMeta.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -66,6 +66,8 @@ const allowedOrigins = new Set([
   ...(process.env.VERCEL_URL ? withWwwVariants(`https://${process.env.VERCEL_URL}`) : []),
   'https://vibeaccessbd.com',
   'https://www.vibeaccessbd.com',
+  'https://superreseller.shop',
+  'https://www.superreseller.shop',
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:3001',
@@ -205,8 +207,8 @@ if (process.env.SERVE_STATIC_SPA === '1') {
     return siblingDist
   })()
   app.get('/manifest.webmanifest', (req: Request, res: Response, next: NextFunction) => {
-    const host = (req.get('host') ?? '').toLowerCase()
-    if (!host.includes('superreseller')) return next()
+    const host = resolveRequestHost(req.headers)
+    if (!isSuperResellerHost(host)) return next()
 
     const resellerManifest = path.join(distPath, 'manifest.superreseller.webmanifest')
     if (!existsSync(resellerManifest)) return next()
@@ -217,23 +219,46 @@ if (process.env.SERVE_STATIC_SPA === '1') {
     })
   })
   const indexHtmlPath = path.join(distPath, 'index.html')
-  let cachedIndexHtml: string | null = existsSync(indexHtmlPath)
-    ? null
-    : ''
+  const vibeIndexPath = path.join(distPath, 'index.vibe.html')
+  const resellerIndexPath = path.join(distPath, 'index.superreseller.html')
+
+  let cachedVibeHtml: string | null = null
+  let cachedResellerHtml: string | null = null
+  let cachedFallbackHtml: string | null = existsSync(indexHtmlPath) ? null : ''
+
+  const loadBrandTemplate = (host: string): string => {
+    if (cachedFallbackHtml === '') {
+      throw new Error('index.html missing in SPA dist')
+    }
+
+    if (isSuperResellerHost(host)) {
+      if (cachedResellerHtml === null) {
+        const templatePath = existsSync(resellerIndexPath) ? resellerIndexPath : indexHtmlPath
+        cachedResellerHtml = readFileSync(templatePath, 'utf8')
+      }
+      return cachedResellerHtml
+    }
+
+    if (cachedVibeHtml === null) {
+      const templatePath = existsSync(vibeIndexPath) ? vibeIndexPath : indexHtmlPath
+      cachedVibeHtml = readFileSync(templatePath, 'utf8')
+    }
+    return cachedVibeHtml
+  }
 
   app.use(express.static(distPath, { index: false }))
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith('/api')) return next()
-    if (cachedIndexHtml === '') {
-      return next(new Error('index.html missing in SPA dist'))
-    }
 
     try {
-      if (cachedIndexHtml === null) {
-        cachedIndexHtml = readFileSync(indexHtmlPath, 'utf8')
+      if (cachedFallbackHtml === null && !existsSync(indexHtmlPath)) {
+        cachedFallbackHtml = ''
       }
-      const host = req.get('host') ?? ''
-      const html = injectSpaSiteMeta(cachedIndexHtml, host, req.path)
+      const host = resolveRequestHost(req.headers)
+      const template = loadBrandTemplate(host)
+      const html = injectSpaSiteMeta(template, host, req.path)
+      res.setHeader('Vary', 'Host, X-Forwarded-Host')
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate')
       res.type('html').send(html)
     } catch (err) {
       next(err)

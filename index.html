@@ -44,7 +44,17 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      // Dynamically update the document title and favicon based on the domain
+      // Update branding client-side (browsers). Social crawlers rely on server-injected meta tags.
+      const setMetaContent = (key, value, attrName) => {
+        let el = document.querySelector(`meta[${attrName}="${key}"]`);
+        if (!el) {
+          el = document.createElement('meta');
+          el.setAttribute(attrName, key);
+          document.head.appendChild(el);
+        }
+        el.setAttribute('content', value);
+      };
+
       const changeFavicon = (src) => {
         const link = document.createElement('link');
         const oldLinks = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]');
@@ -55,13 +65,22 @@
         document.head.appendChild(link);
       };
 
+      const hostname = window.location.hostname.toLowerCase();
       const isSuperReseller =
-        window.location.hostname === 'superreseller.shop' ||
-        window.location.hostname.includes('superreseller') ||
-        window.location.pathname.startsWith('/reseller');
+        hostname === 'superreseller.shop' ||
+        hostname === 'www.superreseller.shop' ||
+        hostname.includes('superreseller');
 
       if (isSuperReseller) {
-        document.title = 'Super Reseller - Premium Dashboard';
+        const origin = window.location.origin;
+        const title = document.title.includes('Super Reseller')
+          ? document.title
+          : 'Super Reseller - Premium Dashboard';
+        const description = 'Premium reseller dashboard for managing digital subscriptions';
+        const image = origin + '/super.png';
+        const pageUrl = window.location.href.split('#')[0];
+
+        document.title = title;
         changeFavicon('/super-favicon.svg');
 
         const appleTouch = document.createElement('link');
@@ -69,13 +88,16 @@
         appleTouch.href = '/super.png';
         document.head.appendChild(appleTouch);
 
-        const description = document.querySelector('meta[name="description"]');
-        if (description) {
-          description.setAttribute(
-            'content',
-            'Premium reseller dashboard for managing digital subscriptions',
-          );
-        }
+        setMetaContent('description', description, 'name');
+        setMetaContent('application-name', 'Super Reseller', 'name');
+        setMetaContent('og:site_name', 'Super Reseller', 'property');
+        setMetaContent('og:title', title, 'property');
+        setMetaContent('og:description', description, 'property');
+        setMetaContent('og:image', image, 'property');
+        setMetaContent('og:url', pageUrl, 'property');
+        setMetaContent('twitter:title', title, 'name');
+        setMetaContent('twitter:description', description, 'name');
+        setMetaContent('twitter:image', image, 'name');
 
         const manifest = document.querySelector('link[rel="manifest"]');
         if (manifest) {
