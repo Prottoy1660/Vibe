@@ -90,6 +90,15 @@ export interface AdminResellerProfile {
   customers: AdminResellerCustomer[];
 }
 
+export interface AdminResellerPackagePricingItem {
+  packageId: string;
+  label: string;
+  value: string;
+  baseCost: number;
+  customCost: number | null;
+  effectiveCost: number;
+}
+
 async function adminFetch<T>(path: string): Promise<T> {
   const token = await getAccessTokenForApi();
   const base = getApiBaseUrl();
@@ -130,6 +139,33 @@ export const AdminResellerApi = {
       transactions: data.transactions,
       customers: data.customers,
     };
+  },
+
+  getPackagePricing: async (resellerId: string) => {
+    const data = await adminFetch<{ success: true; packages: AdminResellerPackagePricingItem[] }>(
+      `/resellers/${encodeURIComponent(resellerId)}/package-pricing`,
+    );
+    return data.packages;
+  },
+
+  setPackagePricing: async (resellerId: string, packageId: string, customCost: number | null) => {
+    const token = await getAccessTokenForApi();
+    const base = getApiBaseUrl();
+    if (!token || !base) throw new Error('Not authenticated');
+
+    const res = await fetch(`${base}/api/admin/resellers/${encodeURIComponent(resellerId)}/package-pricing`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ packageId, customCost }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.success === false) {
+      throw new Error(json.error || `Request failed (${res.status})`);
+    }
+    return (json.packages || []) as AdminResellerPackagePricingItem[];
   },
 };
 

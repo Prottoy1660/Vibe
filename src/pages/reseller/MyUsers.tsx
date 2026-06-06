@@ -421,6 +421,7 @@ export const MyUsers = () => {
                     {extendPackages.map((pkg) => (
                       <option key={pkg.id} value={pkg.value} className="bg-[#1a1a1a]">
                         {pkg.label} — ${pkg.cost.toFixed(2)}
+                        {pkg.isCustomPrice && pkg.baseCost != null ? ` (was $${pkg.baseCost.toFixed(2)})` : ''}
                       </option>
                     ))}
                   </select>

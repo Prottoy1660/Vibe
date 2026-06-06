@@ -162,7 +162,10 @@ export const BulkExtend = () => {
                       <option>No monthly packages available</option>
                     ) : (
                       extendPackages.map(d => (
-                        <option key={d.id} value={d.value} className="bg-[#1a1a1a]">{d.label} - ${d.cost.toFixed(2)} per user</option>
+                        <option key={d.id} value={d.value} className="bg-[#1a1a1a]">
+                          {d.label} - ${d.cost.toFixed(2)} per user
+                          {d.isCustomPrice && d.baseCost != null ? ` (was $${d.baseCost.toFixed(2)})` : ''}
+                        </option>
                       ))
                     )}
                   </select>

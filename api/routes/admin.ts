@@ -56,6 +56,11 @@ import {
   syncDepositRowFromBinance,
 } from '../lib/binancePaymentSync.js';
 import {
+  clearResellerPackagePricing,
+  getAdminPackagePricingRows,
+  upsertResellerPackagePricing,
+} from '../lib/resellerPackagePricing.js';
+import {
   seizeRedeemOrderForUnpaid,
   restoreRedeemOrderAfterSeize,
 } from '../lib/redeemSeizeUnpaid.js';
@@ -3730,6 +3735,86 @@ router.get('/resellers/:resellerId', verifyAdmin, async (req, res) => {
   } catch (error: any) {
     console.error('admin resellers/:id:', error);
     return res.status(500).json({ success: false, error: error?.message || 'Failed to load reseller profile' });
+  }
+});
+
+/** Per-reseller custom package pricing */
+router.get('/resellers/:id/package-pricing', verifyAdmin, async (req, res) => {
+  try {
+    const resellerId = String(req.params.id || '').trim();
+    if (!resellerId) {
+      return res.status(400).json({ success: false, error: 'Missing reseller id' });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', resellerId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return res.status(404).json({ success: false, error: 'Reseller not found' });
+    }
+    if (profile.role !== 'reseller') {
+      return res.status(400).json({ success: false, error: 'User is not a reseller' });
+    }
+
+    const packages = await getAdminPackagePricingRows(supabase, resellerId);
+    return res.json({ success: true, packages });
+  } catch (error: any) {
+    console.error('admin resellers/:id/package-pricing GET:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load package pricing' });
+  }
+});
+
+router.put('/resellers/:id/package-pricing', verifyAdmin, async (req, res) => {
+  try {
+    const resellerId = String(req.params.id || '').trim();
+    const packageId = String(req.body?.packageId || '').trim();
+    const customCostRaw = req.body?.customCost;
+
+    if (!resellerId || !packageId) {
+      return res.status(400).json({ success: false, error: 'Missing reseller id or package id' });
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', resellerId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      return res.status(404).json({ success: false, error: 'Reseller not found' });
+    }
+    if (profile.role !== 'reseller') {
+      return res.status(400).json({ success: false, error: 'User is not a reseller' });
+    }
+
+    const { data: pkg, error: pkgError } = await supabase
+      .from('reseller_packages')
+      .select('id')
+      .eq('id', packageId)
+      .maybeSingle();
+
+    if (pkgError || !pkg) {
+      return res.status(404).json({ success: false, error: 'Package not found' });
+    }
+
+    if (customCostRaw == null || customCostRaw === '') {
+      await clearResellerPackagePricing(supabase, resellerId, packageId);
+    } else {
+      const customCost = Number(customCostRaw);
+      if (!Number.isFinite(customCost) || customCost < 0) {
+        return res.status(400).json({ success: false, error: 'Invalid custom price' });
+      }
+      await upsertResellerPackagePricing(supabase, resellerId, packageId, customCost);
+    }
+
+    const packages = await getAdminPackagePricingRows(supabase, resellerId);
+    return res.json({ success: true, packages });
+  } catch (error: any) {
+    console.error('admin resellers/:id/package-pricing PUT:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to update package pricing' });
   }
 });
 

@@ -148,7 +148,10 @@ export const ActivateUser = () => {
                       <option>No packages available</option>
                     ) : (
                       packages.map(d => (
-                        <option key={d.id} value={d.value} className="bg-[#1a1a1a]">{d.label} - ${d.cost.toFixed(2)}</option>
+                        <option key={d.id} value={d.value} className="bg-[#1a1a1a]">
+                          {d.label} - ${d.cost.toFixed(2)}
+                          {d.isCustomPrice && d.baseCost != null ? ` (was $${d.baseCost.toFixed(2)})` : ''}
+                        </option>
                       ))
                     )}
                   </select>

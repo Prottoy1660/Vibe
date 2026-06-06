@@ -17,6 +17,10 @@ import {
   syncDepositRowFromBinance,
 } from '../lib/binancePaymentSync.js';
 import { MIN_RESELLER_DEPOSIT_USD } from '../lib/resellerDepositLimits.js';
+import {
+  getResellerPackagesWithPricing,
+  resolvePackageCostByValue,
+} from '../lib/resellerPackagePricing.js';
 
 const router = express.Router();
 
@@ -397,6 +401,41 @@ router.get('/users/:id/status', async (req, res) => {
 });
 
 /**
+ * GET /api/reseller/packages
+ * Packages with effective pricing for the authenticated reseller.
+ */
+router.get('/packages', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase client not initialized' });
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+
+    if (authError || !user) {
+      return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+
+    const { data: userRoleProfile } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (userRoleProfile?.role !== 'reseller') {
+      return res.status(403).json({ success: false, error: 'Forbidden' });
+    }
+
+    const packages = await getResellerPackagesWithPricing(supabase, user.id);
+    return res.json({ success: true, packages });
+  } catch (error: any) {
+    console.error('Reseller packages error:', error);
+    return res.status(500).json({ success: false, error: error?.message || 'Failed to load packages' });
+  }
+});
+
+/**
  * POST /api/reseller/adobe/activate
  * Add a user via Adobe Reseller API
  */
@@ -425,13 +464,26 @@ router.post('/adobe/activate', async (req, res) => {
        return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
-    const { email, durationMonths, cost, durationDays } = req.body;
+    const { email, durationMonths, durationDays } = req.body;
     if (!email || !durationMonths) {
       return res.status(400).json({ success: false, error: 'Missing email or durationMonths' });
     }
 
-    const costNum = Number(cost) || 0;
-    const daysNum = Number(durationDays) || 30;
+    const resolved = await resolvePackageCostByValue(supabase, user.id, String(durationMonths));
+    if (!resolved) {
+      return res.status(400).json({ success: false, error: 'Invalid package selected.' });
+    }
+
+    const costNum = resolved.cost;
+    let daysNum = Number(durationDays);
+    if (!Number.isFinite(daysNum) || daysNum <= 0) {
+      const pkgValue = String(resolved.pkg.value).toLowerCase();
+      if (pkgValue.endsWith('d')) {
+        daysNum = parseInt(pkgValue.replace('d', ''), 10) || 7;
+      } else {
+        daysNum = (parseInt(pkgValue, 10) || 1) * 30;
+      }
+    }
 
     // Verify balance before calling Adobe API
     const { data: balanceProfile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -569,7 +621,7 @@ router.post('/adobe/extend', async (req, res) => {
        return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
-    const { email, durationMonths, cost, durationDays } = req.body;
+    const { email, durationMonths, durationDays } = req.body;
     if (!email || !durationMonths) {
       return res.status(400).json({ success: false, error: 'Missing email or durationMonths' });
     }
@@ -590,7 +642,12 @@ router.post('/adobe/extend', async (req, res) => {
       });
     }
 
-    const costNum = Number(cost) || 0;
+    const resolved = await resolvePackageCostByValue(supabase, user.id, durationStr);
+    if (!resolved) {
+      return res.status(400).json({ success: false, error: 'Invalid package selected.' });
+    }
+
+    const costNum = resolved.cost;
     const daysNum = Number(durationDays) || monthsNum * 30;
 
     // Verify balance
@@ -690,9 +747,28 @@ router.post('/adobe/deactivate', async (req, res) => {
        return res.status(403).json({ success: false, error: 'Forbidden' });
     }
 
-    const { email, recordId, cost, hoursDiff, currentBalance, status } = req.body;
+    const { email, recordId, hoursDiff, currentBalance, status } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: 'Missing email' });
+    }
+
+    let refundCost = 0;
+    if (recordId) {
+      const { data: accessForRefund } = await supabase
+        .from('reseller_user_access')
+        .select('duration_months')
+        .eq('id', recordId)
+        .eq('reseller_id', user.id)
+        .maybeSingle();
+
+      if (accessForRefund?.duration_months) {
+        const resolved = await resolvePackageCostByValue(
+          supabase,
+          user.id,
+          String(accessForRefund.duration_months),
+        );
+        refundCost = resolved?.cost ?? 0;
+      }
     }
 
     const adobe = await revokeAdobeCloudAccess(email);
@@ -717,13 +793,13 @@ router.post('/adobe/deactivate', async (req, res) => {
       
       if (hoursDiff <= 24 && status === 'active') {
         newStatus = 'refunded';
-        finalBalance += (cost || 0);
+        finalBalance += refundCost;
 
         await supabase.from('users').update({ wallet_balance: finalBalance }).eq('id', user.id);
 
         await supabase.from('reseller_transactions').insert({
           reseller_id: user.id,
-          amount: cost || 0,
+          amount: refundCost,
           type: 'refund',
           status: 'completed',
           description: `Refunded: ${email} (within 24h)`,

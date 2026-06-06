@@ -79,6 +79,8 @@ export interface ResellerPackage {
   label: string;
   value: string;
   cost: number;
+  baseCost?: number;
+  isCustomPrice?: boolean;
 }
 
 export interface ResellerUserStatus {
@@ -161,9 +163,19 @@ export const ResellerApi = {
   },
 
   getPackages: async () => {
-    const { data, error } = await supabase.from('reseller_packages').select('*').order('cost', { ascending: true });
-    if (error) throw error;
-    return data as ResellerPackage[];
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+
+    const apiRes = await fetch(`${getApiBaseUrl()}/api/reseller/packages`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+    const data = await apiRes.json();
+    if (!apiRes.ok || !data.success) {
+      throw new Error(data.error || 'Failed to load packages');
+    }
+    return (data.packages || []) as ResellerPackage[];
   },
 
   syncAdobeOrganizations: async (force = false) => {
@@ -504,9 +516,14 @@ export const ResellerApi = {
     const now = new Date();
     const hoursDiff = (now.getTime() - activatedAt.getTime()) / (1000 * 60 * 60);
 
-    // Fetch the package cost
-    const { data: pkg } = await supabase.from('reseller_packages').select('cost').eq('value', accessRecord.duration_months).single();
-    const cost = pkg ? pkg.cost : (accessRecord.duration_months.endsWith('d') ? parseInt(accessRecord.duration_months) * 0.5 : parseInt(accessRecord.duration_months) * 5.0);
+    // Fetch effective package cost (includes per-reseller custom pricing)
+    const packages = await ResellerApi.getPackages();
+    const pkg = packages.find((p) => p.value === accessRecord.duration_months);
+    const cost = pkg
+      ? pkg.cost
+      : accessRecord.duration_months.endsWith('d')
+        ? parseInt(accessRecord.duration_months) * 0.5
+        : parseInt(accessRecord.duration_months) * 5.0;
 
     // Get current balance
     const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();
@@ -565,8 +582,8 @@ export const ResellerApi = {
     }
 
     // 2. Fetch packages to calculate costs
-    const { data: packages } = await supabase.from('reseller_packages').select('*');
-    const packageMap = new Map((packages || []).map(p => [p.value, p.cost]));
+    const packages = await ResellerApi.getPackages();
+    const packageMap = new Map(packages.map((p) => [p.value, p.cost]));
 
     // Get current balance
     const { data: profile } = await supabase.from('users').select('wallet_balance').eq('id', user.id).single();

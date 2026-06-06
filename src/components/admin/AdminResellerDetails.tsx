@@ -29,6 +29,7 @@ import { formatAuthProviderLabel } from '../../lib/authProviderLabels';
 import { paginateItems, TablePagination } from '../TablePagination';
 import { ResellerDateRangeFilter } from './ResellerDateRangeFilter';
 import { ResellerDepositSpendChart } from './ResellerDepositSpendChart';
+import { AdminResellerPackagePricing } from './AdminResellerPackagePricing';
 import { supabase } from '../../lib/supabase';
 import { getApiBaseUrl } from '../../lib/apiBase';
 import { getAccessTokenForApi } from '../../lib/getAccessTokenForApi';
@@ -72,7 +73,7 @@ export const AdminResellerDetails: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dateRange, setDateRange] = useState<ResellerDateRange>(initialDateRange);
-  const [tab, setTab] = useState<'transactions' | 'customers'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'customers' | 'pricing'>('transactions');
   const [txPage, setTxPage] = useState(1);
   const [custPage, setCustPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -408,7 +409,7 @@ export const AdminResellerDetails: React.FC<Props> = ({
       <div className="rounded-2xl border border-gray-100 dark:border-[#26262d] bg-white dark:bg-[#151518] overflow-hidden shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-[#26262d]">
           <div className="flex border-b sm:border-b-0 border-gray-100 dark:border-[#26262d] -mb-px sm:mb-0">
-            {(['transactions', 'customers'] as const).map((key) => (
+            {(['transactions', 'customers', 'pricing'] as const).map((key) => (
               <button
                 key={key}
                 type="button"
@@ -419,10 +420,15 @@ export const AdminResellerDetails: React.FC<Props> = ({
                     : 'text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                 }`}
               >
-                {key === 'transactions' ? `Transactions (${profile.transactions.length})` : `Customers (${profile.customers.length})`}
+                {key === 'transactions'
+                  ? `Transactions (${profile.transactions.length})`
+                  : key === 'customers'
+                    ? `Customers (${profile.customers.length})`
+                    : 'Package pricing'}
               </button>
             ))}
           </div>
+          {tab !== 'pricing' && (
           <button
             type="button"
             onClick={tab === 'transactions' ? exportTransactionsCsv : exportCustomersCsv}
@@ -432,6 +438,7 @@ export const AdminResellerDetails: React.FC<Props> = ({
             <Download className="h-4 w-4" />
             Export CSV
           </button>
+          )}
         </div>
 
         {tab === 'transactions' ? (
@@ -496,7 +503,7 @@ export const AdminResellerDetails: React.FC<Props> = ({
               />
             )}
           </>
-        ) : (
+        ) : tab === 'customers' ? (
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -564,6 +571,8 @@ export const AdminResellerDetails: React.FC<Props> = ({
               />
             )}
           </>
+        ) : (
+          <AdminResellerPackagePricing resellerId={resellerId} />
         )}
       </div>
     </div>
