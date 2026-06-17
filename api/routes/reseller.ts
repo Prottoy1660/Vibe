@@ -1,5 +1,4 @@
 import express from 'express';
-import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import {
   extendAdobeCloudAccess,
@@ -7,6 +6,7 @@ import {
   getAdobeOrgMap,
   getAdobeOrgSnapshotByEmail,
   getAdobePanelUserByEmail,
+  grantAdobeCloudAccess,
   revokeAdobeCloudAccess,
 } from '../lib/adobeApi.js';
 import {
@@ -30,26 +30,14 @@ const supabase = supabaseUrl && supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey) 
   : null;
 
-const ADOBE_API_KEY = process.env.ADOBE_API_KEY || '';
-const ADOBE_BASE_URL = 'https://reseller.ado-besoft.com/api/credits-pool/external';
-
-/**
- * Helper function to generate HMAC signature and headers for Adobe API
- */
-function getAdobeApiHeaders(body: object) {
-  const timestamp = Date.now().toString();
-  const payload = timestamp + JSON.stringify(body);
-  const signature = crypto
-    .createHmac('sha256', ADOBE_API_KEY)
-    .update(payload)
-    .digest('hex');
-
-  return {
-    'Content-Type': 'application/json',
-    'x-api-key': ADOBE_API_KEY,
-    'x-timestamp': timestamp,
-    'x-signature': signature,
-  };
+async function loadAdobeApiConfig() {
+  if (!supabase) return {} as { organizationId?: number; products?: string[] };
+  const { data: adobeCfgRow } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('key', 'adobe_api_config')
+    .maybeSingle();
+  return (adobeCfgRow?.value || {}) as { organizationId?: number; products?: string[] };
 }
 
 async function syncAdobeOrganizationsForReseller(resellerId: string, forceRefresh = false) {
@@ -497,38 +485,38 @@ router.post('/adobe/activate', async (req, res) => {
     // otherwise pass it exactly as it is since the Adobe API might be handling '7d' directly.
     const durationStr = durationMonths.toString();
 
-    // 2. Prepare payload for Adobe API
-    const body = {
-      email,
-      durationMonths: durationStr
-    };
+    const adobeCfg = await loadAdobeApiConfig();
 
-    const headers = getAdobeApiHeaders(body);
-
-    // 3. Call Adobe API
-    const response = await fetch(`${ADOBE_BASE_URL}/add-user`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body)
+    const adobeResult = await grantAdobeCloudAccess(email, durationStr, {
+      organizationId: adobeCfg.organizationId,
+      products: adobeCfg.products,
     });
 
-    const text = await response.text();
-    let data;
-    try {
-      data = text ? JSON.parse(text) : {};
-    } catch (e) {
-      console.error('Adobe API returned non-JSON:', text);
-      return res.status(response.status).json({
+    if (!adobeResult.success) {
+      return res.status(400).json({
         success: false,
-        error: `Adobe API Error: ${response.status} ${response.statusText}`
+        error: adobeResult.error || 'Failed to activate user on Adobe API',
       });
     }
 
-    if (!response.ok || data.success === false) {
-      return res.status(response.status === 200 ? 400 : response.status).json({ 
-        success: false, 
-        error: data.error || data.message || data.msg || 'Failed to activate user on Adobe API' 
-      });
+    const data = adobeResult.data;
+
+    const orgFromResponse = Number((data as any)?.user?.organizationId || 0);
+    if (
+      Number.isFinite(orgFromResponse) &&
+      orgFromResponse > 0 &&
+      orgFromResponse !== Number(adobeCfg.organizationId || 0)
+    ) {
+      await supabase.from('system_settings').upsert(
+        {
+          key: 'adobe_api_config',
+          value: {
+            organizationId: orgFromResponse,
+            products: Array.isArray(adobeCfg.products) ? adobeCfg.products : undefined,
+          },
+        },
+        { onConflict: 'key' },
+      );
     }
 
     // 4. Update Database (bypasses RLS because supabase uses service_role key)

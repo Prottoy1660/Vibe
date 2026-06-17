@@ -17,10 +17,16 @@ const DEFAULT_PRODUCTS = (process.env.ADOBE_PRODUCTS || '')
 
 type AdobeBody = {
   email: string;
-  durationMonths: number;
+  durationMonths: number | string;
   organizationId?: number;
   products?: string[];
 };
+
+function normalizeAdobeDuration(durationMonths: string | number): number | string {
+  const raw = String(durationMonths ?? '').trim();
+  if (/^\d+d$/i.test(raw)) return raw.toLowerCase();
+  return Math.max(1, Math.min(120, Math.floor(Number(raw)) || 1));
+}
 
 type GrantOptions = {
   organizationId?: number | null;
@@ -29,7 +35,7 @@ type GrantOptions = {
 
 export async function grantAdobeCloudAccess(
   email: string,
-  durationMonths: number,
+  durationMonths: string | number,
   opts?: GrantOptions,
 ): Promise<{ success: boolean; error?: string; data?: any }> {
   if (!API_KEY) {
@@ -41,22 +47,29 @@ export async function grantAdobeCloudAccess(
     return { success: false, error: 'Invalid email for Adobe provisioning' };
   }
 
-  const months = Math.max(1, Math.min(120, Math.floor(Number(durationMonths)) || 1));
+  const duration = normalizeAdobeDuration(durationMonths);
 
   try {
-    const preferredOrgId =
-      Number.isFinite(Number(opts?.organizationId)) && Number(opts?.organizationId) > 0
-        ? Number(opts?.organizationId)
-        : Number.isFinite(DEFAULT_ORGANIZATION_ID) && DEFAULT_ORGANIZATION_ID > 0
-          ? DEFAULT_ORGANIZATION_ID
-          : null;
+    await getPanelToken();
+    await fetchAdobePanelUsers();
+
+    const { orgId: preferredOrgId, products: orgProducts } = pickAccessibleOrganization(
+      [
+        opts?.organizationId,
+        DEFAULT_ORGANIZATION_ID,
+        inferAdobeOrganizationIdFromPanel(),
+      ],
+      cachedOrgAccess ?? [],
+    );
     const preferredProducts =
       Array.isArray(opts?.products) && opts!.products!.length > 0
         ? opts!.products!.filter(Boolean)
-        : DEFAULT_PRODUCTS;
+        : orgProducts.length > 0
+          ? orgProducts
+          : DEFAULT_PRODUCTS;
 
     const makeBody = (orgId?: number | null): AdobeBody => {
-      const body: AdobeBody = { email: normalizedEmail, durationMonths: months };
+      const body: AdobeBody = { email: normalizedEmail, durationMonths: duration };
       if (orgId && Number.isFinite(orgId) && orgId > 0) body.organizationId = orgId;
       if (preferredProducts.length > 0) body.products = preferredProducts;
       return body;
@@ -99,9 +112,11 @@ export async function grantAdobeCloudAccess(
     const attempts: Array<{ label: string; body: AdobeBody; mode: 'signed' | 'unsigned' }> = [];
     attempts.push({ label: 'preferred signed', body: makeBody(preferredOrgId), mode: 'signed' });
     attempts.push({ label: 'preferred unsigned', body: makeBody(preferredOrgId), mode: 'unsigned' });
-    // Auto-adapt: if provider default org changed, org-less attempts can succeed and reveal latest organizationId.
-    attempts.push({ label: 'org-less signed', body: makeBody(null), mode: 'signed' });
-    attempts.push({ label: 'org-less unsigned', body: makeBody(null), mode: 'unsigned' });
+    // Only try org-less when no accessible organizations are known (single-org legacy keys).
+    if (!preferredOrgId && (cachedOrgAccess?.length ?? 0) === 0) {
+      attempts.push({ label: 'org-less signed', body: makeBody(null), mode: 'signed' });
+      attempts.push({ label: 'org-less unsigned', body: makeBody(null), mode: 'unsigned' });
+    }
 
     const debug: any[] = [];
     let finalErr = 'Adobe provisioning failed';
@@ -112,9 +127,15 @@ export async function grantAdobeCloudAccess(
       finalErr = out.err || finalErr;
     }
 
-    if (/missing required fields/i.test(finalErr) && !preferredOrgId) {
+    if (/organizationId is required|missing required fields/i.test(finalErr) && !preferredOrgId) {
       finalErr =
-        'Missing required fields (organizationId is likely required for this API key). Configure Adobe org ID in settings/env.';
+        'organizationId is required for this API account. Set ADOBE_ORGANIZATION_ID in .env or configure adobe_api_config.organizationId in system settings.';
+    }
+    if (/do not have access to this organization/i.test(finalErr) && (cachedOrgAccess?.length ?? 0) > 0) {
+      const names = (cachedOrgAccess ?? [])
+        .map((o) => `${o.organizationName} (${o.organizationId})`)
+        .join(', ');
+      finalErr = `Configured organization is not accessible. Available organizations: ${names}`;
     }
     console.error('[Adobe API add-user] failed', normalizedEmail, finalErr, JSON.stringify(debug).slice(0, 700));
     return { success: false, error: finalErr, data: { debug } };
@@ -145,6 +166,52 @@ function panelCredentials() {
 
 let cachedToken: { token: string; expMs: number } | null = null;
 
+export type AdobeOrganizationAccess = {
+  organizationId: number;
+  organizationName: string;
+  products: string[];
+};
+
+let cachedOrgAccess: AdobeOrganizationAccess[] | null = null;
+
+function parseOrganizationAccess(data: any): AdobeOrganizationAccess[] {
+  const raw = data?.reseller?.organizationAccess;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row: any) => ({
+      organizationId: Number(row.organizationId),
+      organizationName: String(row.organizationName || '').trim(),
+      products: Array.isArray(row.products) ? row.products.filter(Boolean) : [],
+    }))
+    .filter((row) => Number.isFinite(row.organizationId) && row.organizationId > 0);
+}
+
+export function getAdobeOrganizationAccess(): AdobeOrganizationAccess[] {
+  return cachedOrgAccess ?? [];
+}
+
+function pickAccessibleOrganization(
+  candidates: Array<number | null | undefined>,
+  accessList: AdobeOrganizationAccess[],
+): { orgId: number | null; products: string[] } {
+  const allowed = new Map(accessList.map((a) => [a.organizationId, a]));
+  for (const c of candidates) {
+    const id = Number(c);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const match = allowed.get(id);
+    if (match) return { orgId: id, products: match.products };
+  }
+  if (accessList.length > 0) {
+    const first = accessList[0];
+    return { orgId: first.organizationId, products: first.products };
+  }
+  for (const c of candidates) {
+    const id = Number(c);
+    if (Number.isFinite(id) && id > 0) return { orgId: id, products: [] };
+  }
+  return { orgId: null, products: [] };
+}
+
 export type AdobePanelUserRow = {
   email: string;
   organizationId?: number;
@@ -168,6 +235,26 @@ let panelUsersCache: {
   fullByEmail: Map<string, AdobePanelUserRow>;
 } | null = null;
 const PANEL_USERS_CACHE_MS = 3 * 60 * 1000;
+
+/** Infer org from existing panel users when env/settings omit organizationId. */
+export function inferAdobeOrganizationIdFromPanel(): number | null {
+  if (!panelUsersCache?.map.size) return null;
+  const counts = new Map<number, number>();
+  for (const snap of panelUsersCache.map.values()) {
+    const id = snap.organizationId;
+    if (id && id > 0) counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  if (!counts.size) return null;
+  let best: number | null = null;
+  let bestCount = 0;
+  for (const [id, count] of counts) {
+    if (count > bestCount) {
+      best = id;
+      bestCount = count;
+    }
+  }
+  return best;
+}
 
 async function panelGet(path: string, token: string) {
   const res = await fetch(`${PANEL_ROOT}${path}`, {
@@ -288,6 +375,7 @@ async function getPanelToken(force = false): Promise<{ token?: string; error?: s
       /* keep default */
     }
     cachedToken = { token, expMs };
+    cachedOrgAccess = parseOrganizationAccess(data);
     return { token };
   } catch (error: any) {
     return { error: error?.message || 'Panel login request failed' };
