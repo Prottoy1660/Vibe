@@ -369,8 +369,12 @@ export const ResellerApi = {
       durationDays = (parseInt(durationStr) || 1) * 30;
     }
 
-    // Process in chunks or sequentially to avoid overwhelming the external API
-    for (const email of emails) {
+    // Process sequentially with spacing to avoid Adobe API rate limits (429).
+    for (let i = 0; i < emails.length; i++) {
+      const email = emails[i];
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
       try {
         const apiRes = await fetch('/api/reseller/adobe/activate', {
           method: 'POST',

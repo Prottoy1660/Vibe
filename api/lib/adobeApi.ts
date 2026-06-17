@@ -14,6 +14,73 @@ const DEFAULT_PRODUCTS = (process.env.ADOBE_PRODUCTS || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
+const MIN_ADOBE_API_INTERVAL_MS = Math.max(
+  500,
+  Number(process.env.ADOBE_API_MIN_INTERVAL_MS || 1500) || 1500,
+);
+const ADOBE_RATE_LIMIT_MAX_RETRIES = Math.max(
+  0,
+  Math.min(5, Number(process.env.ADOBE_RATE_LIMIT_MAX_RETRIES || 3) || 3),
+);
+
+let lastAdobeApiCallAt = 0;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function throttleAdobeApi() {
+  const now = Date.now();
+  const wait = lastAdobeApiCallAt + MIN_ADOBE_API_INTERVAL_MS - now;
+  if (wait > 0) await sleep(wait);
+  lastAdobeApiCallAt = Date.now();
+}
+
+function isAdobeRateLimitError(status: number, err: string | null | undefined): boolean {
+  if (status === 429) return true;
+  const text = String(err || '');
+  return /429|rate.?limit|too many requests/i.test(text);
+}
+
+function looksLikeSignatureError(err: string | null | undefined): boolean {
+  const text = String(err || '');
+  return /signature|timestamp|unauthorized|authentication|invalid api key|hmac/i.test(text);
+}
+
+function formatAdobeRateLimitError(err: string): string {
+  if (!isAdobeRateLimitError(0, err)) return err;
+  return 'Adobe API rate limit reached. Please wait a minute and try again.';
+}
+
+// Some provider orgs have invalid/expired credentials and return a cached 401.
+// Remember them briefly so we skip straight to a working org on the next try.
+const BAD_ORG_CREDENTIALS_CACHE_MS = 10 * 60 * 1000;
+const badOrgCredentialsUntil = new Map<number, number>();
+
+function isOrgCredentialsInvalidError(status: number, err: string | null | undefined): boolean {
+  if (status === 401) return true;
+  const text = String(err || '');
+  return /credentials are invalid|cached 401|update credentials/i.test(text);
+}
+
+function shouldTryNextOrganization(status: number, err: string | null | undefined): boolean {
+  if (isOrgCredentialsInvalidError(status, err)) return true;
+  return /do not have access to this organization/i.test(String(err || ''));
+}
+
+function isOrgTemporarilyUnavailable(orgId: number): boolean {
+  const until = badOrgCredentialsUntil.get(orgId);
+  if (until == null) return false;
+  if (Date.now() >= until) {
+    badOrgCredentialsUntil.delete(orgId);
+    return false;
+  }
+  return true;
+}
+
+function markOrgUnavailable(orgId: number) {
+  if (orgId > 0) badOrgCredentialsUntil.set(orgId, Date.now() + BAD_ORG_CREDENTIALS_CACHE_MS);
+}
 
 type AdobeBody = {
   email: string;
@@ -33,6 +100,47 @@ type GrantOptions = {
   products?: string[] | null;
 };
 
+/**
+ * Build the order of organizations to attempt provisioning against.
+ * Preferred (opts/env/inferred) orgs come first, then every other accessible org as
+ * fallback so a single org with invalid credentials does not block activation.
+ * Orgs known to be temporarily failing (cached 401) are pushed to the end.
+ */
+async function buildOrganizationTryOrder(opts?: GrantOptions): Promise<AdobeOrganizationAccess[]> {
+  await getPanelToken();
+
+  let access = cachedOrgAccess ?? [];
+  if (access.length === 0) {
+    await fetchAdobePanelUsers();
+    access = cachedOrgAccess ?? [];
+  }
+
+  const byId = new Map(access.map((o) => [o.organizationId, o]));
+  const seen = new Set<number>();
+  const preferred: AdobeOrganizationAccess[] = [];
+
+  const pushPreferred = (id: number | null | undefined) => {
+    const n = Number(id);
+    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) return;
+    const match = byId.get(n);
+    if (!match) return;
+    seen.add(n);
+    preferred.push(match);
+  };
+
+  pushPreferred(opts?.organizationId);
+  pushPreferred(DEFAULT_ORGANIZATION_ID);
+  if (preferred.length === 0) pushPreferred(inferAdobeOrganizationIdFromPanel());
+
+  const rest = access.filter((o) => !seen.has(o.organizationId));
+  const ordered = [...preferred, ...rest];
+
+  // Keep relative order but move temporarily-bad orgs to the end.
+  const healthy = ordered.filter((o) => !isOrgTemporarilyUnavailable(o.organizationId));
+  const unhealthy = ordered.filter((o) => isOrgTemporarilyUnavailable(o.organizationId));
+  return [...healthy, ...unhealthy];
+}
+
 export async function grantAdobeCloudAccess(
   email: string,
   durationMonths: string | number,
@@ -50,28 +158,20 @@ export async function grantAdobeCloudAccess(
   const duration = normalizeAdobeDuration(durationMonths);
 
   try {
-    await getPanelToken();
-    await fetchAdobePanelUsers();
+    const orgTryOrder = await buildOrganizationTryOrder(opts);
 
-    const { orgId: preferredOrgId, products: orgProducts } = pickAccessibleOrganization(
-      [
-        opts?.organizationId,
-        DEFAULT_ORGANIZATION_ID,
-        inferAdobeOrganizationIdFromPanel(),
-      ],
-      cachedOrgAccess ?? [],
-    );
-    const preferredProducts =
-      Array.isArray(opts?.products) && opts!.products!.length > 0
-        ? opts!.products!.filter(Boolean)
-        : orgProducts.length > 0
-          ? orgProducts
-          : DEFAULT_PRODUCTS;
+    const resolveProducts = (org: AdobeOrganizationAccess | null): string[] => {
+      if (Array.isArray(opts?.products) && opts!.products!.length > 0) {
+        return opts!.products!.filter(Boolean);
+      }
+      if (org?.products?.length) return org.products;
+      return DEFAULT_PRODUCTS;
+    };
 
-    const makeBody = (orgId?: number | null): AdobeBody => {
+    const makeBody = (orgId: number | null, products: string[]): AdobeBody => {
       const body: AdobeBody = { email: normalizedEmail, durationMonths: duration };
       if (orgId && Number.isFinite(orgId) && orgId > 0) body.organizationId = orgId;
-      if (preferredProducts.length > 0) body.products = preferredProducts;
+      if (products.length > 0) body.products = products;
       return body;
     };
 
@@ -90,6 +190,7 @@ export async function grantAdobeCloudAccess(
         headers['x-timestamp'] = timestamp;
         headers['x-signature'] = signature;
       }
+      await throttleAdobeApi();
       const res = await fetch(`${BASE_URL}/add-user`, {
         method: 'POST',
         headers,
@@ -105,38 +206,89 @@ export async function grantAdobeCloudAccess(
       }
       const err =
         data?.error ||
-        (data?.success === false ? data?.message || `HTTP ${res.status}` : null);
+        (res.status === 429 ? `HTTP ${res.status}` : null) ||
+        (data?.success === false ? data?.message || `HTTP ${res.status}` : null) ||
+        (!res.ok ? `HTTP ${res.status}` : null);
       return { ok: res.ok && !err, status: res.status, data, err: err ? String(err) : null };
     };
 
-    const attempts: Array<{ label: string; body: AdobeBody; mode: 'signed' | 'unsigned' }> = [];
-    attempts.push({ label: 'preferred signed', body: makeBody(preferredOrgId), mode: 'signed' });
-    attempts.push({ label: 'preferred unsigned', body: makeBody(preferredOrgId), mode: 'unsigned' });
-    // Only try org-less when no accessible organizations are known (single-org legacy keys).
-    if (!preferredOrgId && (cachedOrgAccess?.length ?? 0) === 0) {
-      attempts.push({ label: 'org-less signed', body: makeBody(null), mode: 'signed' });
-      attempts.push({ label: 'org-less unsigned', body: makeBody(null), mode: 'unsigned' });
-    }
+    const doRequestWithRetry = async (body: AdobeBody, mode: 'signed' | 'unsigned') => {
+      let lastOut: Awaited<ReturnType<typeof doRequest>> | null = null;
+      for (let attempt = 0; attempt <= ADOBE_RATE_LIMIT_MAX_RETRIES; attempt += 1) {
+        const out = await doRequest(body, mode);
+        lastOut = out;
+        if (out.ok || !isAdobeRateLimitError(out.status, out.err) || attempt === ADOBE_RATE_LIMIT_MAX_RETRIES) {
+          return out;
+        }
+        const retryAfterSec = Number(out.data?.retryAfter ?? out.data?.retry_after ?? 0);
+        const delayMs =
+          retryAfterSec > 0
+            ? retryAfterSec * 1000
+            : Math.min(30_000, 2_000 * 2 ** attempt);
+        await sleep(delayMs);
+      }
+      return lastOut!;
+    };
 
     const debug: any[] = [];
     let finalErr = 'Adobe provisioning failed';
-    for (const a of attempts) {
-      const out = await doRequest(a.body, a.mode);
-      debug.push({ attempt: a.label, status: out.status, err: out.err });
+
+    // Try an organization signed, then unsigned only when the failure looks signature-related.
+    const attemptOrg = async (org: AdobeOrganizationAccess | null) => {
+      const orgId = org?.organizationId ?? null;
+      const label = org ? `${org.organizationName} (${orgId})` : 'org-less';
+      const products = resolveProducts(org);
+      const body = makeBody(orgId, products);
+
+      let out = await doRequestWithRetry(body, 'signed');
+      debug.push({ org: label, attempt: 'signed', status: out.status, err: out.err });
+      if (out.ok) return out;
+
+      if (looksLikeSignatureError(out.err) && !isOrgCredentialsInvalidError(out.status, out.err)) {
+        out = await doRequestWithRetry(body, 'unsigned');
+        debug.push({ org: label, attempt: 'unsigned', status: out.status, err: out.err });
+      }
+      return out;
+    };
+
+    if (orgTryOrder.length > 0) {
+      for (const org of orgTryOrder) {
+        const out = await attemptOrg(org);
+        if (out.ok) return { success: true, data: out.data };
+        finalErr = out.err || finalErr;
+
+        // Org credentials invalid / no access → remember and fall through to the next org.
+        if (shouldTryNextOrganization(out.status, out.err)) {
+          markOrgUnavailable(org.organizationId);
+          continue;
+        }
+        // Any other error (e.g. user-level) is not org-specific → stop.
+        break;
+      }
+    } else {
+      // No accessible org list (legacy single-org key) → attempt org-less.
+      const out = await attemptOrg(null);
       if (out.ok) return { success: true, data: out.data };
       finalErr = out.err || finalErr;
     }
 
-    if (/organizationId is required|missing required fields/i.test(finalErr) && !preferredOrgId) {
+    if (/organizationId is required|missing required fields/i.test(finalErr) && orgTryOrder.length === 0) {
       finalErr =
         'organizationId is required for this API account. Set ADOBE_ORGANIZATION_ID in .env or configure adobe_api_config.organizationId in system settings.';
     }
-    if (/do not have access to this organization/i.test(finalErr) && (cachedOrgAccess?.length ?? 0) > 0) {
-      const names = (cachedOrgAccess ?? [])
-        .map((o) => `${o.organizationName} (${o.organizationId})`)
-        .join(', ');
+    if (/credentials are invalid|cached 401|update credentials/i.test(finalErr)) {
+      const working = orgTryOrder
+        .filter((o) => !isOrgTemporarilyUnavailable(o.organizationId))
+        .map((o) => `${o.organizationName} (${o.organizationId})`);
+      finalErr =
+        working.length > 0
+          ? `All preferred Adobe organizations rejected the request (invalid credentials). Try again or set ADOBE_ORGANIZATION_ID to a working org: ${working.join(', ')}.`
+          : 'All accessible Adobe organizations returned invalid credentials. Update org credentials in the reseller.ado-besoft.com admin panel.';
+    } else if (/do not have access to this organization/i.test(finalErr) && orgTryOrder.length > 0) {
+      const names = orgTryOrder.map((o) => `${o.organizationName} (${o.organizationId})`).join(', ');
       finalErr = `Configured organization is not accessible. Available organizations: ${names}`;
     }
+    finalErr = formatAdobeRateLimitError(finalErr);
     console.error('[Adobe API add-user] failed', normalizedEmail, finalErr, JSON.stringify(debug).slice(0, 700));
     return { success: false, error: finalErr, data: { debug } };
   } catch (error: any) {
@@ -190,28 +342,6 @@ export function getAdobeOrganizationAccess(): AdobeOrganizationAccess[] {
   return cachedOrgAccess ?? [];
 }
 
-function pickAccessibleOrganization(
-  candidates: Array<number | null | undefined>,
-  accessList: AdobeOrganizationAccess[],
-): { orgId: number | null; products: string[] } {
-  const allowed = new Map(accessList.map((a) => [a.organizationId, a]));
-  for (const c of candidates) {
-    const id = Number(c);
-    if (!Number.isFinite(id) || id <= 0) continue;
-    const match = allowed.get(id);
-    if (match) return { orgId: id, products: match.products };
-  }
-  if (accessList.length > 0) {
-    const first = accessList[0];
-    return { orgId: first.organizationId, products: first.products };
-  }
-  for (const c of candidates) {
-    const id = Number(c);
-    if (Number.isFinite(id) && id > 0) return { orgId: id, products: [] };
-  }
-  return { orgId: null, products: [] };
-}
-
 export type AdobePanelUserRow = {
   email: string;
   organizationId?: number;
@@ -257,6 +387,7 @@ export function inferAdobeOrganizationIdFromPanel(): number | null {
 }
 
 async function panelGet(path: string, token: string) {
+  await throttleAdobeApi();
   const res = await fetch(`${PANEL_ROOT}${path}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}` },
@@ -349,6 +480,7 @@ async function getPanelToken(force = false): Promise<{ token?: string; error?: s
     return { token: cachedToken.token };
   }
   try {
+    await throttleAdobeApi();
     const res = await fetch(`${PANEL_ROOT}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
