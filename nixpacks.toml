@@ -4,6 +4,8 @@ providers = ["node"]
 
 [variables]
 NIXPACKS_NODE_VERSION = "22"
+# Vite production build can exceed default Node heap on small Coolify builders.
+NODE_OPTIONS = "--max-old-space-size=4096"
 
 [phases.install]
 cmds = ["npm ci"]
