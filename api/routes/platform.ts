@@ -5,6 +5,7 @@ import { Router, type Request, type Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import { createClient } from '@supabase/supabase-js'
 import { lookupPublicAccountByEmail } from '../lib/publicAccountStatus.js'
+import { fetchAdobePanelUsers, switchAdobeOrganization } from '../lib/adobeApi.js'
 
 const router = Router()
 
@@ -14,6 +15,14 @@ const searchStatusLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many search requests, please wait and try again.' },
+})
+
+const orgSwitchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_ORG_SWITCH_RATE_LIMIT_MAX || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many switch requests, please wait and try again.' },
 })
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || ''
@@ -69,6 +78,27 @@ router.post('/search-status', searchStatusLimiter, async (req: Request, res: Res
   }
 
   res.status(200).json({ success: true, data: result.data })
+})
+
+/**
+ * POST /api/platform/org-switch
+ * Public self-service move to a working Adobe organization (same as ado-besoft status portal).
+ */
+router.post('/org-switch', orgSwitchLimiter, async (req: Request, res: Response): Promise<void> => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(400).json({ success: false, error: 'Valid email is required.' })
+    return
+  }
+
+  const result = await switchAdobeOrganization(email)
+  if (!result.success) {
+    res.status(400).json({ success: false, error: result.error || 'Switch failed.' })
+    return
+  }
+
+  await fetchAdobePanelUsers(true)
+  res.status(200).json({ success: true, message: result.message })
 })
 
 export default router

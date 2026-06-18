@@ -22,7 +22,7 @@ export const AccountSearch: React.FC = () => {
     }
   }, []);
 
-  const runSearch = async (value: string) => {
+  const runSearch = async (value: string, options?: { silent?: boolean }) => {
     const trimmed = value.trim();
     if (!trimmed) {
       setError('Please enter an email address.');
@@ -30,9 +30,11 @@ export const AccountSearch: React.FC = () => {
       return;
     }
 
-    setLoading(true);
-    setError('');
-    setResult(null);
+    if (!options?.silent) {
+      setLoading(true);
+      setError('');
+      setResult(null);
+    }
 
     try {
       const base = getApiBaseUrl();
@@ -43,9 +45,13 @@ export const AccountSearch: React.FC = () => {
       setResult(data);
       setSearchParams(trimmed ? { email: trimmed } : {}, { replace: true });
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Search failed');
+      if (!options?.silent) {
+        setError(e instanceof Error ? e.message : 'Search failed');
+      }
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -57,6 +63,19 @@ export const AccountSearch: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const needsOrgPoll = result?.resellerSubscriptions.some(
+    (s) => s.teamStatus === 'inactive' && !s.orgSwitch?.available,
+  );
+
+  useEffect(() => {
+    if (!needsOrgPoll || !email.trim()) return;
+    const timer = window.setInterval(() => {
+      void runSearch(email, { silent: true });
+    }, 20000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsOrgPoll, email]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,7 +161,11 @@ export const AccountSearch: React.FC = () => {
         {result && result.resellerSubscriptions.length > 0 && (
           <section className="space-y-4">
             {result.resellerSubscriptions.map((status) => (
-              <PublicSubscriptionStatusCard key={status.id} status={status} />
+              <PublicSubscriptionStatusCard
+                key={status.id}
+                status={status}
+                onRefresh={() => runSearch(status.email, { silent: true })}
+              />
             ))}
           </section>
         )}

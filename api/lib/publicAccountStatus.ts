@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { fetchAdobePanelUsers, getAdobePanelUserByEmail } from './adobeApi.js'
+import {
+  fetchAdobeOrgSwitchOptions,
+  fetchAdobePanelUsers,
+  fetchAdobePublicUserStatus,
+  getAdobePanelUserByEmail,
+} from './adobeApi.js'
 import {
   buildResellerUserStatusFromPanel,
   buildResellerUserStatusFromRow,
@@ -74,6 +79,38 @@ export async function lookupPublicAccountByEmail(rawEmail: string): Promise<
   const status = localRow
     ? buildResellerUserStatusFromRow({ ...localRow, customer_email: searchedEmail })
     : buildResellerUserStatusFromPanel(searchedEmail, live, null)
+
+  const [portalStatus, orgSwitch] = await Promise.all([
+    fetchAdobePublicUserStatus(searchedEmail),
+    fetchAdobeOrgSwitchOptions(searchedEmail),
+  ])
+
+  if (portalStatus?.organization?.name) {
+    status.organizationName = portalStatus.organization.name
+    if (portalStatus.organization.id) {
+      status.organizationId = portalStatus.organization.id
+    }
+  }
+  if (portalStatus?.products?.length) {
+    status.products = portalStatus.products
+  }
+  if (portalStatus?.organizationStatus) {
+    status.organizationStatus = {
+      status: portalStatus.organizationStatus.status,
+      label: portalStatus.organizationStatus.label,
+      message: portalStatus.organizationStatus.message,
+      lastCheckedAt: portalStatus.organizationStatus.lastCheckedAt ?? null,
+    }
+    const orgHealth = portalStatus.organizationStatus.status.toLowerCase()
+    if (orgHealth === 'inactive') {
+      status.teamStatus = 'inactive'
+      status.teamMessage = portalStatus.organizationStatus.message
+    } else if (orgHealth === 'normal') {
+      status.teamStatus = 'normal'
+      status.teamMessage = portalStatus.organizationStatus.message
+    }
+  }
+  status.orgSwitch = orgSwitch
 
   return {
     ok: true,

@@ -18,11 +18,25 @@ export function formatPlanDurationLabel(durationMonths: string, durationDays: nu
   return raw || '—'
 }
 
+export type OrganizationStatusInfo = {
+  status: string
+  label: string
+  message: string
+  lastCheckedAt?: string | null
+}
+
+export type OrgSwitchInfo = {
+  available: boolean
+  currentOrgName?: string | null
+  targetOrgName?: string | null
+  cooldownActive?: boolean
+}
+
 export type ResellerUserStatusPayload = {
   id: string
   email: string
   overallStatus: 'active' | 'expired' | 'refunded' | string
-  teamStatus: 'normal' | 'attention' | 'unknown'
+  teamStatus: 'normal' | 'attention' | 'unknown' | 'inactive'
   teamMessage: string
   organizationName: string | null
   organizationId: number | null
@@ -37,6 +51,8 @@ export type ResellerUserStatusPayload = {
   refundEligible: boolean
   refundRemainingMs: number | null
   adobeStatus: string | null
+  organizationStatus?: OrganizationStatusInfo | null
+  orgSwitch?: OrgSwitchInfo | null
 }
 
 function computeStatusTiming(activatedAt: string, expiresAt: string) {

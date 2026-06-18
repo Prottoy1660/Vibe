@@ -83,11 +83,25 @@ export interface ResellerPackage {
   isCustomPrice?: boolean;
 }
 
+export interface OrganizationStatusInfo {
+  status: string;
+  label: string;
+  message: string;
+  lastCheckedAt?: string | null;
+}
+
+export interface OrgSwitchInfo {
+  available: boolean;
+  currentOrgName?: string | null;
+  targetOrgName?: string | null;
+  cooldownActive?: boolean;
+}
+
 export interface ResellerUserStatus {
   id: string;
   email: string;
   overallStatus: 'active' | 'expired' | 'refunded';
-  teamStatus: 'normal' | 'attention' | 'unknown';
+  teamStatus: 'normal' | 'attention' | 'unknown' | 'inactive';
   teamMessage: string;
   organizationName: string | null;
   organizationId: number | null;
@@ -102,6 +116,8 @@ export interface ResellerUserStatus {
   refundEligible: boolean;
   refundRemainingMs: number | null;
   adobeStatus: string | null;
+  organizationStatus?: OrganizationStatusInfo | null;
+  orgSwitch?: OrgSwitchInfo | null;
 }
 
 export const ResellerApi = {
