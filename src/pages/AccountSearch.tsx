@@ -72,7 +72,7 @@ export const AccountSearch: React.FC = () => {
     if (!needsOrgPoll || !email.trim()) return;
     const timer = window.setInterval(() => {
       void runSearch(email, { silent: true });
-    }, 20000);
+    }, 45000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsOrgPoll, email]);

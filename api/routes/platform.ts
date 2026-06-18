@@ -5,7 +5,7 @@ import { Router, type Request, type Response } from 'express'
 import rateLimit from 'express-rate-limit'
 import { createClient } from '@supabase/supabase-js'
 import { lookupPublicAccountByEmail } from '../lib/publicAccountStatus.js'
-import { fetchAdobePanelUsers, switchAdobeOrganization } from '../lib/adobeApi.js'
+import { switchAdobeOrganization } from '../lib/adobeApi.js'
 
 const router = Router()
 
@@ -93,11 +93,11 @@ router.post('/org-switch', orgSwitchLimiter, async (req: Request, res: Response)
 
   const result = await switchAdobeOrganization(email)
   if (!result.success) {
-    res.status(400).json({ success: false, error: result.error || 'Switch failed.' })
+    const isRateLimit = /rate limit|429|too many requests/i.test(result.error || '')
+    res.status(isRateLimit ? 429 : 400).json({ success: false, error: result.error || 'Switch failed.' })
     return
   }
 
-  await fetchAdobePanelUsers(true)
   res.status(200).json({ success: true, message: result.message })
 })
 

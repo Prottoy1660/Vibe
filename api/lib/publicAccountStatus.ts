@@ -50,16 +50,30 @@ export async function lookupPublicAccountByEmail(rawEmail: string): Promise<
     return { ok: false, statusCode: 400, error: 'Valid email is required.' }
   }
 
-  const panelSync = await fetchAdobePanelUsers(true)
+  const panelSync = await fetchAdobePanelUsers(false)
   if (!panelSync.success) {
-    return {
-      ok: false,
-      statusCode: 503,
-      error: panelSync.error || 'Could not load live activation data. Try again shortly.',
+    const retry = await fetchAdobePanelUsers(true)
+    if (!retry.success) {
+      return {
+        ok: false,
+        statusCode: 503,
+        error: retry.error || panelSync.error || 'Could not load live activation data. Try again shortly.',
+      }
     }
   }
 
-  const live = getAdobePanelUserByEmail(searchedEmail)
+  let live = getAdobePanelUserByEmail(searchedEmail)
+  if (!live) {
+    const refresh = await fetchAdobePanelUsers(true)
+    if (!refresh.success) {
+      return {
+        ok: false,
+        statusCode: 503,
+        error: refresh.error || 'Could not load live activation data. Try again shortly.',
+      }
+    }
+    live = getAdobePanelUserByEmail(searchedEmail)
+  }
   if (!live) {
     return {
       ok: false,

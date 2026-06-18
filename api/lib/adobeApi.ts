@@ -642,7 +642,10 @@ export type AdobeOrgSwitchOptions = {
   cooldownActive?: boolean;
 };
 
-async function postAdobePublicJson<T>(path: string, body: Record<string, unknown>): Promise<T | null> {
+async function postAdobePublicJson<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; data: T | null }> {
   try {
     await throttleAdobeApi();
     const res = await fetch(`${PUBLIC_API_ROOT}${path}`, {
@@ -653,31 +656,83 @@ async function postAdobePublicJson<T>(path: string, body: Record<string, unknown
     });
     const text = await res.text();
     try {
-      return JSON.parse(text) as T;
+      return { status: res.status, data: JSON.parse(text) as T };
     } catch {
-      return null;
+      return { status: res.status, data: null };
     }
   } catch {
-    return null;
+    return { status: 0, data: null };
   }
+}
+
+function rateLimitDelayMs(status: number, data: any, attempt: number): number {
+  const retryAfterSec = Number(data?.retryAfter ?? data?.retry_after ?? 0);
+  if (retryAfterSec > 0) return retryAfterSec * 1000;
+  if (status === 429) return Math.min(60_000, 5_000 * 2 ** attempt);
+  return Math.min(30_000, 2_000 * 2 ** attempt);
 }
 
 /** Live organization health from the credits-pool status portal (same as reseller.ado-besoft.com/status). */
 export async function fetchAdobePublicUserStatus(email: string): Promise<AdobePublicUserStatus | null> {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) return null;
-  const data = await postAdobePublicJson<AdobePublicUserStatus>('/user-status', { email: normalizedEmail });
-  return data?.found ? data : null;
+  const out = await postAdobePublicJson<AdobePublicUserStatus>('/user-status', { email: normalizedEmail });
+  return out.data?.found ? out.data : null;
 }
 
 /** Whether a customer can self-switch away from a disabled organization. */
 export async function fetchAdobeOrgSwitchOptions(email: string): Promise<AdobeOrgSwitchOptions> {
   const normalizedEmail = String(email || '').trim().toLowerCase();
   if (!normalizedEmail) return { available: false };
-  const data = await postAdobePublicJson<AdobeOrgSwitchOptions>('/credits-pool/public/org-switch/options', {
+  const out = await postAdobePublicJson<AdobeOrgSwitchOptions>('/credits-pool/public/org-switch/options', {
     email: normalizedEmail,
   });
-  return data ?? { available: false };
+  return out.data ?? { available: false };
+}
+
+type OrgSwitchAttempt = {
+  ok: boolean;
+  status: number;
+  data: { success?: boolean; message?: string; error?: string };
+};
+
+async function switchAdobeOrganizationPublic(email: string): Promise<OrgSwitchAttempt> {
+  await throttleAdobeApi();
+  const res = await fetch(`${PUBLIC_API_ROOT}/credits-pool/public/org-switch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = (await res.json().catch(() => ({}))) as OrgSwitchAttempt['data'];
+  const err = data.error || data.message || null;
+  return {
+    ok: res.ok && !!data.success,
+    status: res.status,
+    data: { ...data, error: err || undefined },
+  };
+}
+
+/** External org-switch (x-api-key) — often more reliable under load than the public portal route. */
+async function switchAdobeOrganizationExternal(email: string): Promise<OrgSwitchAttempt | null> {
+  if (!API_KEY) return null;
+  await throttleAdobeApi();
+  const res = await fetch(`${BASE_URL}/org-switch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': API_KEY,
+    },
+    body: JSON.stringify({ email }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const data = (await res.json().catch(() => ({}))) as OrgSwitchAttempt['data'];
+  const err = data.error || data.message || null;
+  return {
+    ok: res.ok && !!data.success,
+    status: res.status,
+    data: { ...data, error: err || undefined },
+  };
 }
 
 /** Move a customer to an available organization (keeps remaining time and products). */
@@ -690,27 +745,49 @@ export async function switchAdobeOrganization(
   }
 
   try {
-    await throttleAdobeApi();
-    const res = await fetch(`${PUBLIC_API_ROOT}/credits-pool/public/org-switch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: normalizedEmail }),
-      signal: AbortSignal.timeout(30000),
-    });
-    const data = (await res.json().catch(() => ({}))) as {
-      success?: boolean;
-      message?: string;
-      error?: string;
-    };
-    if (res.ok && data.success) {
-      panelUsersCache = null;
-      return { success: true, message: data.message || 'You have been moved to the new organization.' };
+    let lastErr = 'Failed to switch organization. Please try again.';
+
+    for (let attempt = 0; attempt <= ADOBE_RATE_LIMIT_MAX_RETRIES; attempt += 1) {
+      let hitRateLimit = false;
+
+      const external = await switchAdobeOrganizationExternal(normalizedEmail);
+      if (external?.ok) {
+        panelUsersCache = null;
+        return {
+          success: true,
+          message: external.data.message || 'You have been moved to the new organization.',
+        };
+      }
+      if (external) {
+        lastErr = external.data.error || lastErr;
+        if (isAdobeRateLimitError(external.status, lastErr)) hitRateLimit = true;
+      }
+
+      const pub = await switchAdobeOrganizationPublic(normalizedEmail);
+      if (pub.ok) {
+        panelUsersCache = null;
+        return {
+          success: true,
+          message: pub.data.message || 'You have been moved to the new organization.',
+        };
+      }
+      lastErr = pub.data.error || lastErr;
+      if (isAdobeRateLimitError(pub.status, lastErr)) {
+        hitRateLimit = true;
+      } else {
+        return { success: false, error: formatAdobeRateLimitError(lastErr) };
+      }
+
+      if (!hitRateLimit || attempt === ADOBE_RATE_LIMIT_MAX_RETRIES) break;
+      await sleep(rateLimitDelayMs(429, pub.data, attempt));
     }
+
     return {
       success: false,
-      error: data.error || 'Failed to switch organization. Please try again.',
+      error: formatAdobeRateLimitError(lastErr),
     };
   } catch (error: any) {
-    return { success: false, error: error?.message || 'Network error. Please try again.' };
+    const msg = error?.message || 'Network error. Please try again.';
+    return { success: false, error: formatAdobeRateLimitError(msg) };
   }
 }
